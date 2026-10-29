@@ -124,16 +124,21 @@ def run_worker_once(*, limit: int | None = None) -> int:
         with session_scope() as db:
             rows = crud_yolo_preannotate_job.list_runnable_jobs(db, limit=1)
             job_id = int(rows[0].id) if rows else None
-            token = (
-                crud_yolo_preannotate_job.claim_with_token(
-                    db,
-                    job_id=job_id,
-                    lease_owner=owner,
-                    lease_seconds=lease_seconds,
+            # Claiming changes the durable queue state.  Without an explicit
+            # transaction, SQLAlchemy rolls the UPDATE back when this short
+            # lived session closes, leaving the job PENDING and causing the
+            # worker to execute the same request repeatedly.
+            with begin_transaction(db):
+                token = (
+                    crud_yolo_preannotate_job.claim_with_token(
+                        db,
+                        job_id=job_id,
+                        lease_owner=owner,
+                        lease_seconds=lease_seconds,
+                    )
+                    if job_id is not None
+                    else None
                 )
-                if job_id is not None
-                else None
-            )
         if job_id is None or token is None:
             break
         claimed += 1

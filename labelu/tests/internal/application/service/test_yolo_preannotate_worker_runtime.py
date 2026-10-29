@@ -9,7 +9,7 @@ from labelu.internal.adapter.persistence import crud_task, crud_yolo_preannotate
 from labelu.internal.application.service import yolo_preannotate_worker_runtime as worker
 from labelu.internal.application.service import yolo_preannotate
 from labelu.internal.common.config import settings
-from labelu.internal.common.db import begin_transaction
+from labelu.internal.common.db import SessionLocal, begin_transaction
 from labelu.internal.domain.models.task import MediaType, Task
 from labelu.internal.domain.models.user import User
 from pathlib import Path
@@ -118,6 +118,32 @@ def test_worker_claims_persisted_payload_and_reuses_sync_runtime(db, monkeypatch
     assert seen["kwargs"]["lease_fencing_token"] == 1
     assert seen["kwargs"]["apply_to_canvas_overwrite"] is options.get("apply_to_canvas_overwrite")
     assert seen["kwargs"]["agnostic_nms"] is options.get("agnostic_nms", False)
+    # The worker closes the claiming session before running inference.  Verify
+    # the lease survived that boundary instead of only observing the in-memory
+    # update from the same SQLAlchemy session.
+    with SessionLocal() as check_db:
+        persisted = crud_yolo_preannotate_job.get(db=check_db, job_id=job.id)
+        assert persisted.status == "PROCESSING"
+        assert persisted.lease_owner == seen["kwargs"]["lease_owner"]
+        assert persisted.lease_fencing_token == 1
+
+
+def test_worker_converges_fatal_job_to_failed(db, monkeypatch):
+    user = db.query(User).filter(User.username == "test@example.com").first()
+    job = _job(db, user)
+    monkeypatch.setattr(settings, "YOLO_PREANNOTATE_DEDICATED_WORKER_ENABLED", True)
+
+    def fail_sync(*args, **kwargs):
+        raise RuntimeError("contract changed")
+
+    monkeypatch.setattr(yolo_preannotate, "_run_yolo_preannotate_sync", fail_sync)
+    assert worker.run_worker_once(limit=1) == 1
+
+    with SessionLocal() as check_db:
+        persisted = crud_yolo_preannotate_job.get(db=check_db, job_id=job.id)
+        assert persisted.status == "FAILED"
+        assert persisted.error_message == "contract changed"
+        assert persisted.lease_owner is None
 
 
 def test_worker_loop_fails_closed_when_disabled(monkeypatch):
