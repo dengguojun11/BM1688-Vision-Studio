@@ -342,6 +342,19 @@
     closeMenu(root);
     if (action === "vlx") return open("vlx");
     if (action === "rex") return open("rex");
+    if (action === "yolo") {
+      if (window.LabelUYoloPreannotate && typeof window.LabelUYoloPreannotate.open === "function") {
+        window.LabelUYoloPreannotate.open();
+        return;
+      }
+      var yoloTarget = targetFor("yolo");
+      if (yoloTarget) {
+        yoloTarget.click();
+        return;
+      }
+      window.alert("YOLO 预标注模块仍在加载，请稍后重试。");
+      return;
+    }
     if (action === "ai" && isTaskPage()) {
       window.dispatchEvent(new CustomEvent("labelu:open-ai-batch-preannotation", {
         detail: { taskId: Number(taskId()) },

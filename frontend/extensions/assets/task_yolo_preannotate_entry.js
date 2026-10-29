@@ -887,6 +887,18 @@
     loadModalModels();
   }
 
+  // The unified pre-annotation menu can be rendered before the legacy button
+  // is mounted. Expose the modal action directly so that menu clicks do not
+  // depend on a DOM button or script-injection timing.
+  window.LabelUYoloPreannotate = window.LabelUYoloPreannotate || {};
+  window.LabelUYoloPreannotate.open = function () {
+    var taskId = parseTaskId();
+    if (!taskId) return false;
+    var sampleId = parseSampleId();
+    openYoloModal(taskId, sampleId);
+    return true;
+  };
+
   function attachNextTo(anchor, taskId, mode, sampleId) {
     if (!anchor || !anchor.parentElement) return false;
     var p = anchor.parentElement;
