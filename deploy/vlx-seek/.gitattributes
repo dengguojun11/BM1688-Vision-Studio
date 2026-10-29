@@ -1,0 +1,6 @@
+*.sh text eol=lf
+*.service text eol=lf
+*.py text eol=lf
+*.html text eol=lf
+UPSTREAM_REVISION text eol=lf
+README.md text eol=lf

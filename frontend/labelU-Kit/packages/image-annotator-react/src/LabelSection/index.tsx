@@ -1,0 +1,484 @@
+import React, { createRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import styled from 'styled-components';
+import type { DraggableModalRef, ValidationContextType } from '@labelu/components-react';
+import { Kbd, getOS, DraggableModel, AttributeForm, EllipsisText, FlexLayout } from '@labelu/components-react';
+import { useTranslation } from '@labelu/i18n';
+import type { AttributeValue, EnumerableAttribute, ILabel, TextAttribute } from '@labelu/interface';
+import type { AnnotationData, Annotator, ToolName } from '@labelu/image';
+
+import { ReactComponent as MenuOpenIcon } from '@/assets/icons/menu-open.svg';
+import { ReactComponent as MenuCloseIcon } from '@/assets/icons/menu-close.svg';
+import { useTool } from '@/context/tool.context';
+import { useAnnotationCtx } from '@/context/annotation.context';
+import { ReactComponent as MouseRightClick } from '@/Toolbar/assets/mouse-right.svg';
+
+import { buildToolLabelEntries, type ToolLabelEntry } from './labelAssociations';
+const os = getOS();
+export const dragModalRef = createRef<DraggableModalRef>();
+
+export interface AttributeModalOpenParams {
+  labelValue: string | undefined;
+  engine: Annotator | null;
+  e?: MouseEvent | React.MouseEvent;
+  initialValues?: any;
+  labelConfig?: ILabel;
+
+  /** 无论是否有标签属性，都打开编辑弹框 */
+  openModalAnyway?: boolean;
+}
+
+function generateDefaultAttributes(attributes?: (TextAttribute | EnumerableAttribute)[]) {
+  const values: AttributeValue = {};
+
+  attributes?.forEach((item) => {
+    const defaultValues = [];
+
+    if ((item as TextAttribute).type === 'string') {
+      const stringItem = item as TextAttribute;
+
+      values[stringItem.value] = stringItem.defaultValue || '';
+    } else {
+      const tagItem = item as EnumerableAttribute;
+
+      if (Array.isArray(tagItem.options)) {
+        for (let i = 0; i < tagItem.options.length; i++) {
+          if (tagItem.options[i].isDefault) {
+            defaultValues.push(tagItem.options[i].value);
+          }
+        }
+      }
+
+      values[tagItem.value] = defaultValues;
+    }
+  });
+
+  return values;
+}
+
+export const openAttributeModal = ({
+  engine,
+  labelValue,
+  e,
+  labelConfig,
+  openModalAnyway,
+}: AttributeModalOpenParams) => {
+  const selectedAnnotation = engine?.getSelectedAnnotation();
+
+  if (!dragModalRef.current || !selectedAnnotation || !labelValue || !labelConfig) {
+    return;
+  }
+
+  // 点击编辑属性时，不管有没有标签属性，都打开编辑框，用来编辑标签
+  if (!openModalAnyway && !labelConfig.attributes) {
+    return;
+  }
+
+  dragModalRef.current.toggleVisibility(true);
+
+  if (e) {
+    dragModalRef.current.setPosition({
+      x: e.pageX + 10 + 330,
+      y: e.pageY + 10,
+    });
+  } else {
+    // 通过快捷键设置属性打开属性编辑框，默认位置为顶部居中
+    dragModalRef.current.setPosition({
+      x: window.innerWidth / 2 - 330 / 2,
+      y: 160,
+    });
+  }
+};
+
+const Wrapper = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 44px;
+  border-bottom: 1px rgba(235, 236, 240, 1) solid;
+  background-color: #f8f8f8;
+  padding: 0 1rem;
+  flex-shrink: 0;
+`;
+
+const LABEL_GAP = 8;
+
+const MoreTrigger = styled.div`
+  white-space: nowrap;
+`;
+
+const TriggerWrapper = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  cursor: pointer;
+`;
+
+const MoreAttribute = styled.div<{ $visible: boolean }>`
+  visibility: ${({ $visible }) => ($visible ? 'visible' : 'hidden')};
+  position: absolute;
+  background-color: #fff;
+  right: 0;
+  display: flex;
+  top: 100%;
+  flex-wrap: wrap;
+  z-index: 1002;
+  padding: 0.5rem;
+  box-shadow: 0px 3px 6px 0px rgb(0 0 0 / 21%);
+  border-radius: 3px;
+  gap: ${LABEL_GAP}px;
+`;
+
+const Labels = styled.div`
+  position: relative;
+  max-width: calc(100vw - 280px);
+  display: flex;
+  align-items: center;
+  gap: ${LABEL_GAP}px;
+  height: 100%;
+  font-size: 14px;
+`;
+
+const LabelWrapper = styled.button<{ $color: string; $active: boolean }>`
+  --attribute-color: ${({ $color }) => $color};
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  background-color: ${({ $active }) => ($active ? `var(--attribute-color)` : '#fff')};
+  color: ${({ $active }) => ($active ? '#fff' : '#333')};
+  border: 1px solid ${({ $active }) => ($active ? 'var(--attribute-color)' : '#e3e5e8')};
+  border-radius: 2px;
+  max-width: 16em;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  box-sizing: border-box;
+  font: inherit;
+
+  &:hover {
+    color: ${({ $active }) => ($active ? '#fff' : 'var(--attribute-color)')};
+    border-color: var(--attribute-color);
+  }
+
+  &:before {
+    position: absolute;
+    content: '';
+    display: block;
+    width: 3px;
+    height: 60%;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: ${({ $color }) => $color};
+  }
+`;
+
+const ToolNameText = styled.span<{ $active: boolean }>`
+  color: ${({ $active }) => ($active ? 'inherit' : '#666')};
+`;
+
+const LabelCount = styled.span<{ $active: boolean }>`
+  min-width: 1.25rem;
+  padding: 0 0.25rem;
+  border-radius: 2px;
+  background: ${({ $active }) => ($active ? 'rgb(255 255 255 / 22%)' : '#f1f2f4')};
+  color: inherit;
+  text-align: center;
+  font-size: 12px;
+`;
+
+function LabelItem({
+  entry,
+  toolNameText,
+  active,
+  onSelect,
+}: {
+  entry: ToolLabelEntry;
+  toolNameText: string;
+  active: boolean;
+  onSelect: (entry: ToolLabelEntry, e: React.MouseEvent) => void;
+}) {
+  const handleClick = (e: React.MouseEvent) => {
+    onSelect(entry, e);
+  };
+
+  const title = `${toolNameText} · ${entry.label.key}${entry.count > 0 ? ` ${entry.count}` : ''}`;
+
+  return (
+    <EllipsisText maxWidth={224} title={title}>
+      <LabelWrapper
+        type="button"
+        aria-pressed={active}
+        $active={active}
+        $color={entry.label.color ?? '#000'}
+        onClick={handleClick}
+      >
+        <ToolNameText $active={active}>{toolNameText}</ToolNameText>
+        <span>·</span>
+        <span>{entry.label.key}</span>
+        {entry.count > 0 && <LabelCount $active={active}>{entry.count}</LabelCount>}
+      </LabelWrapper>
+    </EllipsisText>
+  );
+}
+
+export function LabelSection() {
+  const { engine, config, tools, labels, selectedLabel, requestEdit, currentTool, setAttributeModalOpen } = useTool();
+  const { selectedAnnotation, sortedImageAnnotations } = useAnnotationCtx();
+  const validationRef = useRef<ValidationContextType | null>(null);
+  const labelsWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [collapsed, setCollapsed] = useState(false);
+  // @ts-ignore
+  const { t } = useTranslation();
+
+  const toolNameTextMapping = useMemo<Record<ToolName, string>>(
+    () => ({
+      point: t('point'),
+      line: t('line'),
+      rect: t('rect'),
+      polygon: t('polygon'),
+      cuboid: t('cuboid'),
+      relation: t('relationWithTips'),
+    }),
+    [t],
+  );
+
+  const labelEntries = useMemo(
+    () => buildToolLabelEntries(tools, config, sortedImageAnnotations),
+    [config, sortedImageAnnotations, tools],
+  );
+
+  const isLabelEditable = useCallback(
+    (toolName: ToolName | undefined, label: string | undefined) => {
+      return typeof requestEdit === 'function'
+        ? requestEdit('update', {
+            toolName: toolName!,
+            label,
+            modifiedProperty: 'label',
+          })
+        : true;
+    },
+    [requestEdit],
+  );
+
+  const handleSelect = (entry: ToolLabelEntry, e: React.MouseEvent) => {
+    if (!isLabelEditable(entry.toolName, entry.label.value)) {
+      return;
+    }
+
+    // 清除上一个标签的属性
+    engine?.setAttributes({});
+    engine?.switch(entry.toolName, entry.label.value);
+
+    openAttributeModal({
+      labelValue: entry.label.value,
+      engine,
+      e,
+      labelConfig: entry.label,
+    });
+  };
+
+  const handleAttributesChange = useCallback(
+    (values: any) => {
+      const { attributes, label } = values;
+
+      if (label && label !== selectedLabel?.value) {
+        // 清除上一个标签的属性
+        engine?.setAttributes({});
+        engine?.setLabel(label);
+      }
+
+      if (attributes) {
+        engine?.setAttributes(attributes);
+      }
+    },
+    [engine, selectedLabel?.value],
+  );
+
+  // 标记完后打开标签属性编辑框
+  useEffect(() => {
+    const handleAnnotateEnd = (_annotation: AnnotationData, e: MouseEvent) => {
+      openAttributeModal({
+        labelValue: selectedLabel?.value,
+        engine,
+        e,
+        labelConfig: selectedLabel!,
+      });
+    };
+
+    engine?.on('add', handleAnnotateEnd);
+
+    return () => {
+      engine?.off('add', handleAnnotateEnd);
+    };
+  }, [engine, selectedLabel]);
+
+  const handleOnModalClose = useCallback(async () => {
+    if (!dragModalRef.current || !validationRef.current) {
+      return;
+    }
+
+    try {
+      await validationRef.current.submit();
+    } catch (error) {
+      return Promise.reject(error);
+    }
+
+    setAttributeModalOpen(false);
+    dragModalRef.current.toggleVisibility(false);
+  }, [setAttributeModalOpen]);
+
+  const handleOnModalOpen = useCallback(() => {
+    setAttributeModalOpen(true);
+  }, [setAttributeModalOpen]);
+
+  const [sliceIndex, setSliceIndex] = React.useState(0);
+  const [showMore, setShowMore] = React.useState(false);
+  const timerRef = useRef<number | undefined>();
+
+  const handleOnMouseOver = () => {
+    clearTimeout(timerRef.current);
+    setShowMore(true);
+  };
+  const handleOnMouseOut = () => {
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      setShowMore(false);
+    }, 1000) as unknown as number;
+  };
+
+  useLayoutEffect(() => {
+    const processAttributes = () => {
+      const maxWidth = window.innerWidth - 280;
+      if (!labelsWrapperRef.current) {
+        return;
+      }
+
+      const labelElements = labelsWrapperRef.current.childNodes;
+
+      let totalWidth = 0;
+      let index = 0;
+
+      for (let i = 0; i < labelElements.length; i++) {
+        const labelElement = labelElements[i] as HTMLElement;
+        totalWidth += labelElement.clientWidth + LABEL_GAP;
+
+        if (totalWidth >= maxWidth) {
+          index = i - 1;
+          break;
+        }
+      }
+
+      setSliceIndex(index);
+    };
+
+    processAttributes();
+
+    window.addEventListener('resize', processAttributes);
+
+    return () => {
+      window.removeEventListener('resize', processAttributes);
+    };
+  }, [labelEntries]);
+
+  const finalLabels = sliceIndex > 0 ? labelEntries.slice(0, sliceIndex) : labelEntries;
+  const extraLabels = sliceIndex > 0 ? labelEntries.slice(sliceIndex) : [];
+
+  const formValue = useMemo(() => {
+    return {
+      label: selectedLabel?.value,
+      attributes: selectedAnnotation?.attributes ?? generateDefaultAttributes(selectedLabel?.attributes),
+    };
+  }, [selectedAnnotation?.attributes, selectedLabel?.attributes, selectedLabel?.value]);
+
+  const isLabelDisabled = useMemo(() => {
+    return !isLabelEditable(currentTool, formValue.label);
+  }, [currentTool, formValue.label, isLabelEditable]);
+
+  return (
+    <Wrapper>
+      <Labels ref={labelsWrapperRef}>
+        {finalLabels.map((entry) => {
+          return (
+            <LabelItem
+              entry={entry}
+              toolNameText={toolNameTextMapping[entry.toolName]}
+              key={`${entry.toolName}:${entry.label.value}`}
+              onSelect={handleSelect}
+              active={currentTool === entry.toolName && selectedLabel?.value === entry.label.value}
+            />
+          );
+        })}
+        {extraLabels.length > 0 && (
+          <MoreTrigger onMouseOver={handleOnMouseOver} onMouseOut={handleOnMouseOut}>
+            {t('more')}
+          </MoreTrigger>
+        )}
+
+        <MoreAttribute
+          onMouseOver={handleOnMouseOver}
+          $visible={extraLabels.length > 0 && showMore}
+          onMouseOut={handleOnMouseOut}
+        >
+          {extraLabels.map((entry) => (
+            <LabelItem
+              entry={entry}
+              toolNameText={toolNameTextMapping[entry.toolName]}
+              key={`${entry.toolName}:${entry.label.value}`}
+              onSelect={handleSelect}
+              active={currentTool === entry.toolName && selectedLabel?.value === entry.label.value}
+            />
+          ))}
+        </MoreAttribute>
+      </Labels>
+      <TriggerWrapper
+        onClick={() => {
+          setCollapsed((pre) => {
+            document.dispatchEvent(
+              new CustomEvent('attribute-collapse', {
+                detail: {
+                  collapsed: !pre,
+                },
+              }),
+            );
+            return !pre;
+          });
+        }}
+      >
+        {collapsed && <MenuOpenIcon />}
+        {!collapsed && <MenuCloseIcon />}
+      </TriggerWrapper>
+      <DraggableModel
+        beforeClose={handleOnModalClose}
+        onOpen={handleOnModalOpen}
+        title={
+          <FlexLayout items="center" gap="0.5rem">
+            {t('details')} &nbsp;{os === 'MacOS' ? <Kbd>⇧</Kbd> : <Kbd>Shift</Kbd>} + <MouseRightClick />
+          </FlexLayout>
+        }
+        ref={dragModalRef}
+        width={333}
+        okText={t('ok')}
+        cancelText={t('cancel')}
+      >
+        <AttributeForm
+          ref={validationRef}
+          onAttributeChange={handleAttributesChange}
+          onLabelChange={(label) => {
+            // 清除上一个标签的属性
+            engine?.setAttributes({});
+            engine?.setLabel(label.value);
+          }}
+          attributes={labels}
+          labelDisabled={isLabelDisabled}
+          initialValues={formValue}
+          currentAttribute={selectedLabel}
+        />
+      </DraggableModel>
+    </Wrapper>
+  );
+}

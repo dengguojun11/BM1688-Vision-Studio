@@ -1,0 +1,155 @@
+#jobObservabilityPanel {
+  margin-top: 12px;
+}
+
+#jobObservabilityPanel .lu-observe-shell {
+  border: 1px solid #dbe4f0;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 14px;
+}
+
+#jobObservabilityPanel .lu-observe-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+#jobObservabilityPanel .lu-observe-head h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+#jobObservabilityPanel .lu-observe-head p {
+  margin: 3px 0 0;
+  color: rgba(15, 23, 42, 0.56);
+  font-size: 11px;
+}
+
+#jobObservabilityPanel .lu-observe-refresh {
+  color: rgba(15, 23, 42, 0.55);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#jobObservabilityPanel .lu-observe-alert {
+  border: 1px solid #ffccc7;
+  border-left: 3px solid #cf1322;
+  border-radius: 7px;
+  background: #fff2f0;
+  color: #820014;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+#jobObservabilityPanel .lu-observe-alert strong {
+  display: block;
+  margin-bottom: 2px;
+}
+
+#jobObservabilityPanel .lu-observe-alert ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+#jobObservabilityPanel .lu-observe-pipeline {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#jobObservabilityPanel .lu-observe-stage,
+#jobObservabilityPanel .lu-observe-metric,
+#jobObservabilityPanel .lu-observe-lineage {
+  min-width: 0;
+  border: 1px solid #dbe4f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 9px 10px;
+}
+
+#jobObservabilityPanel .lu-observe-stage {
+  border-top: 3px solid #bfbfbf;
+}
+
+#jobObservabilityPanel .lu-observe-stage.is-ok { border-top-color: #52c41a; }
+#jobObservabilityPanel .lu-observe-stage.is-running { border-top-color: #fa8c16; }
+#jobObservabilityPanel .lu-observe-stage.is-fail { border-top-color: #cf1322; }
+#jobObservabilityPanel .lu-observe-stage.is-wait { border-top-color: #bfbfbf; }
+
+#jobObservabilityPanel .lu-observe-label {
+  color: rgba(15, 23, 42, 0.55);
+  font-size: 11px;
+}
+
+#jobObservabilityPanel .lu-observe-value {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#jobObservabilityPanel .lu-observe-sub {
+  display: block;
+  overflow: hidden;
+  margin-top: 3px;
+  color: rgba(15, 23, 42, 0.55);
+  font-size: 10px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#jobObservabilityPanel .lu-observe-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+#jobObservabilityPanel .lu-observe-section-title {
+  margin: 12px 0 7px;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+#jobObservabilityPanel .lu-observe-lineage-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+#jobObservabilityPanel .lu-observe-lineage p {
+  margin: 4px 0 0;
+  color: rgba(15, 23, 42, 0.62);
+  font-size: 11px;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+#jobObservabilityPanel .lu-observe-empty {
+  color: rgba(15, 23, 42, 0.55);
+  font-size: 12px;
+}
+
+@media (max-width: 700px) {
+  #jobObservabilityPanel .lu-observe-pipeline,
+  #jobObservabilityPanel .lu-observe-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #jobObservabilityPanel .lu-observe-lineage-grid {
+    grid-template-columns: 1fr;
+  }
+}

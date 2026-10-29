@@ -1,0 +1,146 @@
+<h2>模型验证页草图</h2>
+<p class="subtitle">按你的反馈调整：主区域改成左右对比，左边原图上传与展示，右边识别结果展示，便于直接比对。</p>
+
+<div class="section">
+  <div class="label">入口位置</div>
+  <div class="mockup">
+    <div class="mockup-header">模型库 / 操作列 / 更多</div>
+    <div class="mockup-body" style="padding:18px;">
+      <div style="display:grid;grid-template-columns:1.3fr 0.8fr 1fr 1fr;gap:12px;align-items:center;font-size:13px;">
+        <div>
+          <div style="font-weight:700;">garbageStreet-v11s</div>
+          <div class="subtitle" style="margin:4px 0 0;">作业 #128 · 垃圾街景检测</div>
+        </div>
+        <div><span class="mock-button" style="display:inline-block;">详情</span></div>
+        <div><span class="mock-button" style="display:inline-block;background:#1f6feb;color:#fff;">BM1688</span></div>
+        <div style="position:relative;">
+          <div class="mock-button" style="display:inline-block;">更多</div>
+          <div style="position:absolute;top:38px;right:0;width:180px;background:#fff;border:1px solid #d0d7de;border-radius:12px;box-shadow:0 12px 30px rgba(15,23,42,.12);padding:8px;">
+            <div style="padding:10px 12px;border-radius:8px;">查看工作流</div>
+            <div style="padding:10px 12px;border-radius:8px;background:#eef6ff;color:#0b5394;font-weight:700;">模型验证</div>
+            <div style="padding:10px 12px;border-radius:8px;">下载 best.pt</div>
+            <div style="padding:10px 12px;border-radius:8px;color:#b42318;">删除作业</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">新开页面</div>
+  <div class="mockup">
+    <div class="mockup-header">左右对比：原图 vs 识别结果</div>
+    <div class="mockup-body" style="padding:18px;">
+      <div style="display:flex;justify-content:space-between;align-items:end;gap:16px;margin-bottom:14px;">
+        <div>
+          <div style="font-weight:700;font-size:20px;">模型验证</div>
+          <div class="subtitle" style="margin-top:6px;">模型：作业 #128 / best.pt</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <div class="mock-input" style="width:88px;">0.25</div>
+          <div class="mock-input" style="width:88px;">640</div>
+          <span class="mock-button" style="display:inline-block;background:#16a34a;color:#fff;">开始识别</span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+        <div style="background:#fff;border:1px solid #d0d7de;border-radius:18px;padding:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="font-weight:700;">原图</div>
+            <span class="mock-button" style="display:inline-block;background:#1f6feb;color:#fff;">选择图片</span>
+          </div>
+          <div style="height:360px;border:2px dashed #c7d2fe;border-radius:16px;background:linear-gradient(135deg,#f8fbff 0%,#eef6ff 100%);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">
+            <div style="text-align:center;">
+              <div style="font-weight:700;">上传后这里显示原图</div>
+              <div class="subtitle" style="margin-top:6px;">支持单张 JPG / PNG</div>
+            </div>
+            <div style="position:absolute;left:20px;bottom:16px;background:rgba(255,255,255,.94);padding:8px 10px;border-radius:10px;font-size:12px;">未识别前保持原图</div>
+          </div>
+          <div style="margin-top:12px;padding:12px 14px;background:#f6f8fa;border-radius:12px;font-size:12px;color:#57606a;">
+            首版建议：上传后先预览原图，点击“开始识别”再请求后端，不自动触发推理。
+          </div>
+        </div>
+
+        <div style="background:#fff;border:1px solid #d0d7de;border-radius:18px;padding:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div style="font-weight:700;">识别结果</div>
+            <div style="font-size:12px;color:#57606a;">同尺寸回显带框结果图</div>
+          </div>
+          <div style="height:360px;border-radius:16px;background:linear-gradient(135deg,#dbeafe 0%,#eff6ff 100%);position:relative;overflow:hidden;border:1px solid #cbd5e1;">
+            <div style="position:absolute;left:34px;top:42px;width:142px;height:112px;border:3px solid #ef4444;border-radius:10px;"></div>
+            <div style="position:absolute;left:34px;top:18px;background:#ef4444;color:#fff;padding:4px 8px;border-radius:999px;font-size:12px;">塑料袋 0.92</div>
+            <div style="position:absolute;left:228px;top:126px;width:112px;height:148px;border:3px solid #f59e0b;border-radius:10px;"></div>
+            <div style="position:absolute;left:228px;top:102px;background:#f59e0b;color:#111827;padding:4px 8px;border-radius:999px;font-size:12px;">纸盒 0.81</div>
+            <div style="position:absolute;right:18px;bottom:18px;background:rgba(255,255,255,.92);padding:8px 10px;border-radius:10px;font-size:12px;">识别结果图</div>
+          </div>
+          <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div style="background:#fff5f5;border:1px solid #fecaca;border-radius:12px;padding:12px;">
+              <div style="font-weight:700;">检测框数量</div>
+              <div style="font-size:22px;margin-top:4px;">2</div>
+            </div>
+            <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:12px;">
+              <div style="font-weight:700;">最高置信度</div>
+              <div style="font-size:22px;margin-top:4px;">0.92</div>
+            </div>
+          </div>
+          <div style="margin-top:12px;background:#fff;border:1px solid #d0d7de;border-radius:12px;padding:12px;">
+            <div style="font-weight:700;margin-bottom:8px;">检测明细</div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid #f0f2f5;"><span>塑料袋</span><span>0.92</span></div>
+            <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;"><span>纸盒</span><span>0.81</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">实现方案</div>
+  <div class="options">
+    <div class="option" data-choice="a" onclick="toggleSelect(this)">
+      <div class="letter">A</div>
+      <div class="content">
+        <h3>独立扩展页 + 临时推理接口</h3>
+        <p>新增 `/yolo-model-validate` 页面和一个单图上传推理 API，模型库“更多”新开窗口跳转过去。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="b" onclick="toggleSelect(this)">
+      <div class="letter">B</div>
+      <div class="content">
+        <h3>当前页弹层</h3>
+        <p>不新开页面，直接在模型库页弹出大弹层做左右对比，改动较小但不符合当前目标。</p>
+      </div>
+    </div>
+    <div class="option" data-choice="c" onclick="toggleSelect(this)">
+      <div class="letter">C</div>
+      <div class="content">
+        <h3>复用预标注页能力</h3>
+        <p>把已有 YOLO 推理能力抽成通用入口，但会把“临时验证”和“任务预标注”耦合，首版偏重。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="label">推荐边界</div>
+  <div class="pros-cons">
+    <div class="pros">
+      <h4>首版做</h4>
+      <ul>
+        <li>只支持单张图片上传</li>
+        <li>左原图右结果图并排对比</li>
+        <li>调用该训练作业 best.pt 即时推理</li>
+        <li>返回结果图和检测明细</li>
+      </ul>
+    </div>
+    <div class="cons">
+      <h4>首版不做</h4>
+      <ul>
+        <li>不保存验证历史</li>
+        <li>不批量上传</li>
+        <li>不和任务样本或预标注打通</li>
+      </ul>
+    </div>
+  </div>
+</div>

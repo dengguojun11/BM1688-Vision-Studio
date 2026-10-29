@@ -1,0 +1,40 @@
+{
+  "required_paths": [
+    "/api/v1/tasks",
+    "/api/v1/datasets",
+    "/api/v1/algorithms",
+    "/api/v1/yolo-train-jobs",
+    "/api/v1/model-versions",
+    "/api/v1/yolo-bm1688-exports",
+    "/api/v1/yolo-edge-validation/jobs",
+    "/api/v1/published-models",
+    "/api/v1/strategy-integration-s3-config",
+    "/api/v1/workspace/summary"
+  ],
+  "retired_prefixes": [
+    "/api/v1/projects",
+    "/api/v1/organizations",
+    "/api/v1/deployment-releases",
+    "/api/v1/edge-agents",
+    "/api/v1/edge-device-jobs",
+    "/api/v1/rule-templates",
+    "/api/v1/workflows"
+  ],
+  "allowed_paths": [
+    "/api/v1/workflows/outbox",
+    "/api/v1/workflows/outbox/{outbox_id}/retry",
+    "/api/v1/workflows/outbox/{outbox_id}/dispatch"
+  ],
+  "retired_write_probes": [
+    {
+      "name": "一期已禁用边端作业写入",
+      "method": "POST",
+      "path": "/api/v1/edge-device-jobs",
+      "body": {
+        "export_job_id": 1,
+        "payload": {}
+      },
+      "expected_status": [403, 404]
+    }
+  ]
+}

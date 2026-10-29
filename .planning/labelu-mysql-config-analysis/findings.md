@@ -1,0 +1,108 @@
+# Findings
+
+## Initial
+- 主配置入口在 `labelu/internal/common/config.py`，使用 `pydantic_settings.BaseSettings` 从环境变量和 `.env` 加载。
+- 仓库内已经存在多类“页面可编辑但未入库”的 JSON 文件配置，主要位于 `labelu/internal/common/`，落在 `BASE_DATA_DIR`。
+- 不能只看 ORM；还要同时盘点迁移、文件化配置、媒体目录和运行产物。
+
+## Repo facts verified
+- `labelu/internal/common/db.py` 当前是 MySQL / SQLite 双后端模式：
+  - `DATABASE_URL.startswith("mysql")` 时走 MySQL engine + pool。
+  - 否则回退到 SQLite，并开启 WAL 等 PRAGMA。
+- `labelu/internal/common/config.py` 没有自定义 `settings_customise_sources()`，所以配置优先级仍是 `BaseSettings` 默认机制；仓库自己通过 `_settings_env_files()` 和 `LABELU_ENV_FILE` 决定读取哪个 `.env`。
+- 基于 `Base.metadata` 的当前真实注册结果：
+  - 已注册表：26 张
+  - 已注册字段：301 个
+  - 带 `comment` 的字段：54 个
+  - 表级 `comment` 当前基本为空
+- `labelu/internal/domain/models/` 目录中实际存在 `auto_label_job.py` 和 `yolo_board_validation.py`，且有对应 Alembic 迁移、CRUD、service 使用；但 `models/__init__.py` 当前没有导入这两个模型。
+  - 这意味着 `init_tables()` 仅通过 `import labelu.internal.domain.models` 时，不会自动注册这两个表模型。
+  - 这是“代码结构与实际落库链路不完全一致”的一个风险点。
+- 当前明确的文件化配置包括：
+  - `ai_labeling_runtime.json`
+  - `yolo_eval_prompts.json`
+  - `edge_ssh_config.json`
+  - `remote_train_nodes.json`
+  - `bm1688_compiler_config.json`
+  - `yolo_quality_policy.json`
+  - `aicm_publish_environments.json`（兼容旧 `aicm_publish_config.json`）
+- 当前明显不应直接归类为“配置入库”的文件化运行数据包括：
+  - `BASE_DATA_DIR/aicm_publish_jobs/{job_id}/job.json`
+  - `BASE_DATA_DIR/aicm_publish_jobs/{job_id}/process.log`
+  - `MEDIA_ROOT/yolo_train/job-{id}/process.log`
+  - `MEDIA_ROOT/yolo_bm1688_exports/{id}/compile.log`
+  - `MEDIA_ROOT/yolo_bm1688_exports/{id}/quantize.log`
+  - `MEDIA_ROOT/yolo_train/.deploy_resume_queue.json`
+  - `MEDIA_ROOT/.../gpu_allocation.json`
+  - `MEDIA_ROOT/.../consistent_pool_registry.json`
+  - 各类 manifest、dataset、report、calibration、staging 产物
+- 业务数据虽然大部分已经在 ORM / DB 层，但内部仍有大量 JSON-in-Text 字段，例如：
+  - `task.config`
+  - `task.annotation_audit_json`
+  - `task_sample.data`
+  - `task_pre_annotation.data`
+  - `yolo_train_job.hyperparams_json`
+  - `yolo_train_job.source_task_ids_json`
+  - `yolo_train_job.remote_status_json`
+  - `yolo_eval_report.suggested_params`
+  - `yolo_bm1688_export.quality_report`
+  - `yolo_edge_validation_job.sample_ids_json`
+  - `yolo_edge_validation_job.thresholds_json`
+  - `yolo_edge_validation_job.ai_thresholds_json`
+  - `yolo_edge_validation_job.result_json`
+- `task.config` 列注释写的是 `task config yaml`，但实际 service 代码多处按 JSON 解析，这是一个真实的不一致点。
+- `Settings` 一共有 163 个配置字段：
+  - 有 `description` 的：75 个
+  - 没有 `description` 的：88 个
+  - 说明“配置字段解释元数据”本身也还不完整
+- 已核对到的前端 / Router 入口：
+  - `/ai-labeling-settings` -> `ai_labeling_runtime` + `yolo_eval_prompts`
+  - `/yolo-quality-policies` -> `yolo_quality_policy_store`
+  - `/yolo-bm1688-exports` -> `edge_ssh_config` + `bm1688_compiler_config`
+  - `/yolo-aicm-publish` -> `aicm_publish_config`
+  - `yolo_train.py` 相关端点还会读取 `remote_train_nodes_config`
+
+## Solidified implementation decisions
+- 一期范围只覆盖三件事：配置入 MySQL 骨架、26 张业务表字段 COMMENT 补齐机制、数据字典表与台账机制。
+- 二期才处理业务表内的 JSON-in-Text 结构化治理，例如 `task.config`、`task_sample.data`、`yolo_train_job.hyperparams_json`、`yolo_edge_validation_job.*_json`。
+- 敏感凭证永久不入业务 MySQL；配置优先级固定为：显式运行时覆盖 > 环境变量/密钥 > MySQL 当前值 > 代码默认值。
+- 7 组文件配置需要拆成三种入库模式：
+  - DB 主存：非敏感、页面治理型配置。
+  - DB overlay：可被环境变量覆盖的业务默认值与运行参数。
+  - env-only：密码、token、api_key、数据库连接、JWT secret、SSH 密码等敏感项。
+- 推荐新增 5 张治理表：
+  - `system_config_group`
+  - `system_config_item`
+  - `system_config_value`
+  - `system_config_history`
+  - `system_data_dictionary`
+- `system_data_dictionary` 负责字段中文名、业务含义、枚举、校验规则、作用域、敏感级别与来源；MySQL COMMENT 负责数据库内直接可见的中文解释。
+- 迁移批次应拆开执行：
+  - 第 1 批：新建治理表，不改业务读写。
+  - 第 2 批：7 组文件配置切换到 DB 优先读取，同时保留 env 覆盖和回退。
+  - 第 3 批：补齐 26 张业务表字段 COMMENT 和字典台账。
+  - 第 4 批：治理 JSON 文本列，必要时拆表或改 MySQL JSON。
+
+## Batch 1 and Batch 2 prep details
+- 第 1 批只动 4 类文件：
+  - `labelu/internal/domain/models/` 下新增治理表模型；
+  - `labelu/internal/adapter/persistence/` 下新增治理表 CRUD；
+  - `labelu/alembic_labelu/versions/` 下新增治理表 migration；
+  - `labelu/internal/domain/models/__init__.py` 补模型导入。
+- 第 2 批会围绕 7 个文件配置的当前入口函数做改造，重点函数包括：
+  - `load_ai_labeling_runtime()/write_ai_labeling_runtime()/save_ai_labeling_runtime()`
+  - `load_yolo_eval_prompts()/save_yolo_eval_prompts()`
+  - `load_edge_ssh_config()/save_edge_ssh_config()`
+  - `load_remote_train_nodes_config()/save_remote_train_nodes_config()/update_node_test_result()`
+  - `load_bm1688_compiler_config()/save_bm1688_compiler_config()`
+  - `load_quality_policy_store()/save_quality_policy_store()`
+  - `load_environments_store()/load_aicm_publish_config()/save_aicm_publish_config()/create_environment_record()/update_environment_record()/delete_environment_record()/set_active_environment_id()`
+- 第 2 批需要同步影响的后端入口：
+  - Router：`ai_labeling_settings.py`、`yolo_eval_prompts.py`、`yolo_train.py`、`yolo_aicm_publish.py`
+  - Service：`ai_labeling_runtime.py`、`ai_labeling_profiles.py`、`edge_ssh_config.py`、`remote_train_nodes.py`、`bm1688_compiler_config.py`、`yolo_quality_policy.py`、`yolo_aicm_publish.py`、`vision_llm_chain.py`、`remote_yolo_train.py`、`yolo_bm1688_export.py`、`yolo_train.py`、`yolo_train_evaluation.py`、`yolo_quality_policy_recommendation.py`
+- 第 2 批需要同步影响的页面：
+  - `frontend/extensions/pages/ai_labeling_settings.html`
+  - `frontend/extensions/pages/yolo_quality_policies.html`
+  - `frontend/extensions/pages/yolo_bm1688_exports.html`
+  - `frontend/extensions/pages/yolo_model_publish.html`
+  - `frontend/extensions/pages/yolo_training.html`

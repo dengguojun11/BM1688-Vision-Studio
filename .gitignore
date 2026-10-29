@@ -1,0 +1,98 @@
+# Byte-compiled / optimized
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+.venv_run/
+venv/
+ENV/
+
+# 运行时 .env 由 config/env 模板同步；仓库内保留 local/server 两套模板
+.env
+.env.*
+!.env.example
+!config/env/.env.local
+!config/env/.env.server
+
+# Test / tooling
+.pytest_cache/
+.pytest_labelu_data/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+*.cover
+test.db
+test.db-*
+playwright_verify.db
+playwright_verify.db-*
+playwright_e2e.db
+playwright_e2e.db-*
+deploy_simulate.db
+deploy_simulate.db-*
+*.db-shm
+*.db-wal
+.playwright-mcp/
+.playwright-upload-paths.txt
+*.sqlite3
+
+# 本地预标注 JSON 转换与样例数据（勿提交）
+jsondata/
+
+# 上传媒体与流水线暂存（在 MEDIA_ROOT / 数据目录，勿提交）
+upload/
+export/
+.image_pipeline_staging/
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build / dist
+dist/
+build/
+*.egg-info/
+
+# labelU-Kit 依赖与构建缓存（源码在 frontend/labelU-Kit，纳入 git）
+frontend/labelU-Kit/node_modules/
+frontend/labelU-Kit/**/node_modules/
+frontend/labelU-Kit/apps/frontend/dist/
+frontend/labelU-Kit/packages/**/dist/
+frontend/labelU-Kit/.husky/_/
+# Windows 保留名下由 TypeScript 生成的临时增量构建元数据
+frontend/labelU-Kit/NUL
+
+# statics = 部署时自动生成（deploy / labelu frontend-build）
+labelu/internal/statics/*
+!labelu/internal/statics/README.md
+!labelu/internal/statics/.gitkeep
+
+# 本地生成文档/清单
+/docs/
+docs/_generated_*
+.agents/
+.codex/
+.cursor/
+.codex_tmp/
+/.tmp/
+/.codex_*
+/.tmp_*
+/tmp_*
+/progress.md
+/findings.md
+/task_plan.md
+
+# BM1688 离线 zip 临时文件（tar.gz 由 Git LFS 管理，见 .gitattributes）
+deploy/offline/*.tgz
+deploy/offline/*.zip
+deploy/offline/_build/

@@ -1,0 +1,2045 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>标注数据管理 — 预设与全局维度</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --card: #fff;
+      --border: #d7d8dd;
+      --primary: #1677ff;
+      --danger: #cf1322;
+      --success: #389e0d;
+      --warn: #d46b08;
+      --text: rgba(18, 19, 22, 0.88);
+      --muted: rgba(18, 19, 22, 0.5);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: var(--lu-font, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    .page-main {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 16px 20px 40px;
+    }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0;
+      flex-wrap: wrap;
+    }
+    .tabs button {
+      padding: 10px 16px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .tabs button.active {
+      color: var(--primary);
+      font-weight: 600;
+      border-bottom-color: var(--primary);
+    }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .card-block {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px 18px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    .card-block .muted.hint-line { margin: 0 0 12px; }
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+    .toolbar-left,
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .toolbar-right { margin-left: auto; }
+    .search-input {
+      width: min(240px, 36vw);
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    .filter-select { min-width: 112px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+    .pagination-row { display:flex; align-items:center; justify-content:flex-end; gap:8px; padding-top:12px; flex-wrap:wrap; }
+    .pagination-row select { padding:5px 8px; border:1px solid var(--border); border-radius:6px; background:#fff; }
+    .attribute-builder { border-top:1px solid var(--border); margin-top:18px; padding-top:16px; }
+    .attribute-builder-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:10px; }
+    .attribute-actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .attribute-card { border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:10px; background:#fafafa; }
+    .attribute-card-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+    .attribute-grid { display:grid; grid-template-columns:minmax(150px,1fr) minmax(150px,1fr) 120px auto; gap:8px; align-items:center; }
+    .attribute-grid input, .attribute-grid select, .option-row input, .text-attribute-fields input, .text-attribute-fields select, .text-attribute-fields textarea { width:100%; padding:7px 9px; border:1px solid var(--border); border-radius:6px; background:#fff; }
+    .attribute-grid > label, .option-row > label { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+    .attribute-grid input[type="checkbox"], .option-row input[type="checkbox"], .option-row input[type="radio"] { width:auto; padding:0; }
+    .option-list { margin:10px 0 0 20px; }
+    .option-row { display:grid; grid-template-columns:minmax(120px,1fr) minmax(120px,1fr) auto auto; gap:8px; align-items:center; margin-bottom:7px; }
+    .text-attribute-fields { display:grid; grid-template-columns:140px 1fr; gap:8px 10px; align-items:center; margin:10px 0 0 20px; }
+    #modalLabel { width:min(860px,calc(100vw - 32px)); }
+    #labelColor { width:96px; height:38px; padding:3px; cursor:pointer; }
+    .table-wrap { overflow-x: auto; }
+    button.btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+      font-size: 13px;
+    }
+    button.btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    button.btn-danger {
+      color: var(--danger);
+      border-color: #ffccc7;
+      background: #fff2f0;
+    }
+    button.btn-sm { padding: 4px 10px; font-size: 12px; }
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    table.data th, table.data td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    table.data th { background: #fafafa; font-weight: 600; color: var(--muted); }
+    table.data tr:last-child td { border-bottom: none; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .auth-box {
+      background: #fffbe6;
+      border: 1px solid #ffe58f;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    .auth-box input[type="text"] { width: 100%; max-width: 420px; padding: 8px; margin-top: 8px; }
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      border-radius: 8px;
+      background: #333;
+      color: #fff;
+      font-size: 14px;
+      z-index: 9999;
+      display: none;
+      max-width: 90vw;
+    }
+    #toast.err { background: #a8071a; }
+    #toast.ok { background: #237804; }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s;
+    }
+    .modal-backdrop.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-panel {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: min(760px, calc(100vw - 32px));
+      max-height: min(880px, calc(100vh - 32px));
+      height: auto;
+      background: var(--card);
+      z-index: 1001;
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.18);
+      transform: translate(-50%, -46%) scale(0.98);
+      transition: transform 0.2s ease, opacity 0.2s ease;
+      opacity: 0;
+      display: flex;
+      flex-direction: column;
+      border-radius: 8px;
+    }
+    .modal-panel:not(.open) {
+      visibility: hidden;
+      pointer-events: none;
+    }
+    .modal-panel.open {
+      transform: translate(-50%, -50%) scale(1);
+      visibility: visible;
+      pointer-events: auto;
+      opacity: 1;
+    }
+    .modal-head {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 16px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .modal-head button.modal-close {
+      border: none;
+      background: transparent;
+      font-size: 20px;
+      line-height: 1;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 4px 8px;
+    }
+    .modal-body { flex: 1; overflow-y: auto; padding: 16px 20px; }
+    .modal-foot {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .tag {
+      display: inline-block;
+      max-width: 160px;
+      padding: 0 8px;
+      line-height: 22px;
+      border-radius: 4px;
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: middle;
+    }
+    .tag-tech {
+      background: #f5f5f5;
+      color: #595959;
+      border: 1px solid #d9d9d9;
+      font-family: ui-monospace, Consolas, monospace;
+      cursor: help;
+    }
+    .tag-count {
+      background: #e6f4ff;
+      color: #0958d9;
+      border: 1px solid #91caff;
+    }
+    .import-toolbar-stack { margin-top: 12px; }
+    .import-actions-row { margin-top: 12px; }
+    .form-row { margin-bottom: 12px; }
+    .form-row label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .form-row input, .form-row textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .form-row textarea { min-height: 56px; resize: vertical; }
+    .sub-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+    .sub-table th, .sub-table td { border: 1px solid var(--border); padding: 6px 8px; }
+    .sub-table input { width: 100%; border: none; padding: 4px; font-size: 12px; }
+    .sub-table input[type="color"] { height: 28px; padding: 2px; cursor: pointer; }
+    a { color: var(--primary); }
+    .import-sample {
+      font-size: 12px;
+      background: #fafafa;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      margin: 8px 0 12px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    #jsonImportArea {
+      width: 100%;
+      min-height: 200px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      resize: vertical;
+    }
+    #importPreview { margin-top: 12px; font-size: 13px; }
+    #importPreview .warn { color: #ad6800; }
+    #importPreview .err-line { color: var(--danger); }
+    .label-picker { border: 1px solid var(--border); border-radius: 6px; max-height: 320px; overflow: auto; }
+    .label-picker-row { display: grid; grid-template-columns: 28px 32px minmax(120px, 1fr) minmax(130px, 1fr); align-items: center; gap: 8px; padding: 9px 10px; border-bottom: 1px solid #f0f0f0; }
+    .label-picker-row:last-child { border-bottom: 0; }
+    .color-swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0,0,0,.12); display: inline-block; }
+    .status-active { color: #237804; background: #f6ffed; border: 1px solid #b7eb8f; }
+    .status-disabled { color: #595959; background: #fafafa; border: 1px solid #d9d9d9; }
+    .status-chip { display: inline-block; padding: 1px 7px; border-radius: 4px; font-size: 12px; }
+    .runtime-overview { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:0 0 16px; }
+    .runtime-stat { border-left:3px solid #bfbfbf; padding:2px 0 2px 12px; min-width:0; }
+    .runtime-stat.ready { border-left-color:var(--success); }
+    .runtime-stat.warn { border-left-color:var(--warn); }
+    .runtime-stat strong { display:block; font-size:20px; line-height:1.2; margin-bottom:3px; }
+    .runtime-template-name { min-width:180px; }
+    .runtime-template-name strong { display:block; margin-bottom:2px; }
+    .runtime-model-id { font-family:ui-monospace,Consolas,monospace; font-weight:600; color:#0958d9; }
+    .runtime-empty { text-align:center; padding:28px 12px !important; color:var(--muted); }
+    .runtime-config-section { border-top:1px solid #f0f0f0; padding-top:16px; margin-top:16px; }
+    .runtime-config-section:first-child { border-top:0; padding-top:0; margin-top:0; }
+    .runtime-config-section h3 { margin:0 0 4px; font-size:14px; }
+    .runtime-config-section > p { margin:0 0 12px; font-size:12px; color:var(--muted); }
+    .runtime-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
+    .runtime-model-toolbar { display:flex; gap:8px; margin-bottom:8px; }
+    .runtime-model-toolbar input { flex:1; min-width:0; }
+    .runtime-model-picker { width:100%; min-height:190px; border:1px solid var(--border); border-radius:6px; padding:4px; background:#fff; }
+    .runtime-model-picker option { padding:8px 6px; border-bottom:1px solid #f0f0f0; }
+    .runtime-env-state { padding:9px 10px; border-radius:6px; background:#fafafa; border:1px solid #e8e8e8; font-size:12px; margin-bottom:10px; }
+    .runtime-env-state.ready { color:#237804; background:#f6ffed; border-color:#b7eb8f; }
+    .runtime-env-state.warn { color:#ad4e00; background:#fff7e6; border-color:#ffd591; }
+    .runtime-inline-check { display:flex; align-items:center; gap:8px; min-height:36px; font-size:13px; }
+    .runtime-inline-check input { width:auto; }
+    .form-row select { width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; background:#fff; font-size:14px; }
+    @media (max-width: 48rem) {
+      .page-main { padding: 10px 12px 24px; }
+      .tabs {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+      .tabs button { flex: 0 0 auto; }
+      .toolbar-left,
+      .toolbar-right { width: 100%; }
+      .toolbar-right { margin-left: 0; }
+      .search-input { flex: 1 1 auto; min-width: 0; width: auto; }
+      table.data { min-width: 680px; }
+      .attribute-grid, .option-row { grid-template-columns:1fr; }
+      .text-attribute-fields { grid-template-columns:1fr; margin-left:0; }
+      .runtime-overview, .runtime-form-grid { grid-template-columns:1fr; }
+    }
+    @media (max-width: 640px) {
+      .modal-panel { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+      .modal-head, .modal-body, .modal-foot { padding-left: 14px; padding-right: 14px; }
+    }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="annotation">
+  <div class="labelu-shell-header" role="banner">
+    <div class="labelu-shell-brand">
+      <a class="labelu-shell-logo" href="/">7GAI进化平台</a>
+      <span class="labelu-shell-page-title">系统标签体系</span>
+    </div>
+    <nav class="labelu-shell-nav" aria-label="7GAI进化平台工具导航"></nav>
+  </div>
+  <main class="page-main">
+    <div id="luPageHero"></div>
+    <div id="authBox" class="auth-box" data-lu-auth-panel style="display:none;">
+      <div id="authNeedLogin">
+        <strong>未检测到登录。</strong>请先在主站 <a href="/login">登录</a>，成功后返回本页将自动鉴权。
+      </div>
+      <details class="auth-manual" style="margin-top:10px;">
+        <summary class="muted" style="cursor:pointer;font-size:12px;">无法自动登录？手动粘贴 Token</summary>
+        <input type="text" id="tokenInput" placeholder="Bearer … 或 JWT（与 Authorization 一致）" autocomplete="off" style="margin-top:8px;" />
+        <div style="margin-top:8px;">
+          <button type="button" class="btn btn-primary btn-sm" id="btnSaveToken">保存到浏览器</button>
+        </div>
+      </details>
+    </div>
+
+    <nav class="tabs" role="tablist">
+      <button type="button" class="tab active" data-tab="labels" role="tab">标签库</button>
+      <button type="button" class="tab" data-tab="presets" role="tab">标注预设</button>
+      <button type="button" class="tab" data-tab="categories" role="tab">数据集分类</button>
+      <button type="button" class="tab" data-tab="aliases" role="tab">第三方别名</button>
+      <button type="button" class="tab" data-tab="recipes" role="tab">训练配方</button>
+      <button type="button" class="tab" data-tab="runtime" role="tab">运行时模板</button>
+      <button type="button" class="tab" data-tab="dimensions" role="tab">全局维度</button>
+      <button type="button" class="tab" data-tab="import" role="tab">JSON 导入</button>
+    </nav>
+
+    <section id="panel-labels" class="panel active">
+      <div class="card-block">
+        <div class="toolbar-row"><div class="toolbar-left"><button type="button" class="btn btn-primary" id="btnNewLabel">新建标签</button></div><div class="toolbar-right"><input type="search" class="search-input" id="searchLabels" placeholder="搜索中文名 / label_value / 说明" /><select class="filter-select" id="filterLabelStatus"><option value="">全部状态</option><option value="active">启用</option><option value="disabled">停用</option></select><select class="filter-select" id="filterLabelKind"><option value="">全部类型</option><option value="bbox">拉框</option></select><button type="button" class="btn" id="btnResetLabelSearch">重置</button><button type="button" class="btn" id="btnReloadLabels">刷新</button></div></div>
+        <div class="table-wrap"><table class="data" id="tblLabels"><thead><tr><th>ID</th><th>颜色</th><th>中文名</th><th>label_value</th><th>二级属性</th><th>类型</th><th>状态</th><th>引用</th><th>版本</th><th>操作</th></tr></thead><tbody></tbody></table></div>
+        <div class="pagination-row"><span class="muted" id="labelPageSummary">共 0 条</span><select id="labelPageSize" aria-label="每页条数"><option value="10">10 条/页</option><option value="20" selected>20 条/页</option><option value="50">50 条/页</option><option value="100">100 条/页</option></select><button type="button" class="btn btn-sm" id="btnLabelPrev">上一页</button><span id="labelPageIndex">第 1 / 1 页</span><button type="button" class="btn btn-sm" id="btnLabelNext">下一页</button></div>
+      </div>
+    </section>
+
+    <section id="panel-presets" class="panel">
+      <div class="card-block">
+        <p class="muted hint-line">删除为软删，列表不再显示；编辑标签行时保存为整表替换。</p>
+        <div class="toolbar-row">
+          <div class="toolbar-left">
+            <button type="button" class="btn btn-primary" id="btnNewPreset">+ 新建预设</button>
+          </div>
+          <div class="toolbar-right">
+            <input type="search" class="search-input" id="searchPresets" placeholder="搜索 slug / 名称 / ID" autocomplete="off" />
+            <button type="button" class="btn" id="btnResetPresets" title="清空搜索并刷新">重置</button>
+            <button type="button" class="btn" id="btnReloadPresets">刷新</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data" id="tblPresets">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>slug</th>
+                <th>名称</th>
+                <th>排序</th>
+                <th>标签</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-categories" class="panel"><div class="card-block"><div class="toolbar-row"><div class="toolbar-left"><button type="button" class="btn btn-primary" id="btnNewCategory">新建分类</button></div><div class="toolbar-right"><input type="search" class="search-input" id="searchCategories" placeholder="搜索 key / 名称 / 说明" /><select class="filter-select" id="filterCategoryStatus"><option value="">全部状态</option><option value="active">启用</option><option value="disabled">停用</option></select><button type="button" class="btn" id="btnResetCategories">重置</button><button type="button" class="btn" id="btnReloadCategories">刷新</button></div></div><div class="table-wrap"><table class="data" id="tblCategories"><thead><tr><th>ID</th><th>category_key</th><th>名称</th><th>说明</th><th>状态</th><th>引用</th><th>版本</th><th>操作</th></tr></thead><tbody></tbody></table></div><div class="pagination-row"><span class="muted" id="categoryPageSummary">共 0 条</span><select id="categoryPageSize" aria-label="每页条数"><option value="10">10 条/页</option><option value="20" selected>20 条/页</option><option value="50">50 条/页</option><option value="100">100 条/页</option></select><button type="button" class="btn btn-sm" id="btnCategoryPrev">上一页</button><span id="categoryPageIndex">第 1 / 1 页</span><button type="button" class="btn btn-sm" id="btnCategoryNext">下一页</button></div></div></section>
+    <section id="panel-aliases" class="panel"><div class="card-block"><div class="toolbar-row"><div class="toolbar-left"><button type="button" class="btn btn-primary" id="btnNewAlias">新建别名</button></div><div class="toolbar-right"><input type="search" class="search-input" id="searchAliases" placeholder="搜索来源系统 / 外部标签 / 系统标签" autocomplete="off" /><button type="button" class="btn" id="btnResetAliases">重置</button><button type="button" class="btn" id="btnReloadAliases">刷新</button></div></div><div class="table-wrap"><table class="data" id="tblAliases"><thead><tr><th>ID</th><th>来源系统</th><th>外部标签</th><th>系统标签</th><th>状态</th><th>版本</th><th>操作</th></tr></thead><tbody></tbody></table></div><div class="pagination-row"><span class="muted" id="aliasPageSummary">共 0 条</span><select id="aliasPageSize" aria-label="每页条数"><option value="10">10 条/页</option><option value="20" selected>20 条/页</option><option value="50">50 条/页</option><option value="100">100 条/页</option></select><button type="button" class="btn btn-sm" id="btnAliasPrev">上一页</button><span id="aliasPageIndex">第 1 / 1 页</span><button type="button" class="btn btn-sm" id="btnAliasNext">下一页</button></div></div></section>
+    <section id="panel-recipes" class="panel"><div class="card-block"><p class="muted hint-line">训练方式独立版本化，不再保存在预设中。</p><div class="toolbar-row"><div></div><div class="toolbar-right"><input type="search" class="search-input" id="searchRecipes" placeholder="搜索配方键 / 名称 / 模型族" autocomplete="off" /><button type="button" class="btn" id="btnResetRecipes">重置</button><button type="button" class="btn" id="btnReloadRecipes">刷新</button></div></div><div class="table-wrap"><table class="data" id="tblRecipes"><thead><tr><th>配方键</th><th>版本</th><th>名称</th><th>作业类型</th><th>模型族</th><th>标注类型</th><th>状态</th></tr></thead><tbody></tbody></table></div><div class="pagination-row"><span class="muted" id="recipePageSummary">共 0 条</span><select id="recipePageSize" aria-label="每页条数"><option value="10">10 条/页</option><option value="20" selected>20 条/页</option><option value="50">50 条/页</option><option value="100">100 条/页</option></select><button type="button" class="btn btn-sm" id="btnRecipePrev">上一页</button><span id="recipePageIndex">第 1 / 1 页</span><button type="button" class="btn btn-sm" id="btnRecipeNext">下一页</button></div></div></section>
+    <section id="panel-runtime" class="panel">
+      <div class="card-block">
+        <div class="runtime-overview">
+          <div class="runtime-stat"><strong id="runtimeTotal">0</strong><span class="muted">运行模板</span></div>
+          <div class="runtime-stat ready"><strong id="runtimeReady">0</strong><span class="muted">可用于发布</span></div>
+          <div class="runtime-stat warn"><strong id="runtimeIncomplete">0</strong><span class="muted">待补全配置</span></div>
+        </div>
+        <div class="toolbar-row">
+          <div class="toolbar-left"><button type="button" class="btn btn-primary" id="btnNewRuntime">新建运行模板</button></div>
+          <div class="toolbar-right"><input type="search" class="search-input" id="searchRuntime" placeholder="搜索模板 / 运行类型 / 模型集" autocomplete="off" /><button type="button" class="btn" id="btnResetRuntime">重置</button><a class="btn" href="/aicm-publish-environments">发布环境配置</a><button type="button" class="btn" id="btnReloadRuntime">刷新</button></div>
+        </div>
+        <p class="muted hint-line">运行模板只按运行类型、接口版本和发布环境匹配。旧预设模板不再参与发布。</p>
+        <div class="table-wrap"><table class="data" id="tblRuntime"><thead><tr><th>模板</th><th>发布环境</th><th>AICM 模型集</th><th>运行契约</th><th>默认</th><th>状态</th><th>版本</th><th>操作</th></tr></thead><tbody><tr><td colspan="8" class="runtime-empty">正在加载运行模板…</td></tr></tbody></table></div><div class="pagination-row"><span class="muted" id="runtimePageSummary">共 0 条</span><select id="runtimePageSize" aria-label="每页条数"><option value="10">10 条/页</option><option value="20" selected>20 条/页</option><option value="50">50 条/页</option><option value="100">100 条/页</option></select><button type="button" class="btn btn-sm" id="btnRuntimePrev">上一页</button><span id="runtimePageIndex">第 1 / 1 页</span><button type="button" class="btn btn-sm" id="btnRuntimeNext">下一页</button></div>
+      </div>
+    </section>
+
+    <section id="panel-dimensions" class="panel">
+      <div class="card-block">
+        <p class="muted hint-line">维度创建后 field_key 不可改；选项列表保存时为整表替换。</p>
+        <div class="toolbar-row">
+          <div class="toolbar-left">
+            <button type="button" class="btn btn-primary" id="btnNewDim">+ 新建维度</button>
+          </div>
+          <div class="toolbar-right">
+            <input type="search" class="search-input" id="searchDims" placeholder="搜索 field_key / 中文名 / ID" autocomplete="off" />
+            <button type="button" class="btn" id="btnResetDims" title="清空搜索并刷新">重置</button>
+            <button type="button" class="btn" id="btnReloadDims">刷新</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data" id="tblDims">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>field_key</th>
+                <th>中文名</th>
+                <th>排序</th>
+                <th>选项</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-import" class="panel">
+      <div class="card-block">
+        <p class="muted hint-line">
+          粘贴 JSON 或上传 <code>.json</code> 文件，先「校验并预览」再「执行导入」。Token 与主站登录一致。
+        </p>
+        <div class="toolbar-row import-actions-row">
+          <div class="toolbar-left">
+            <button type="button" class="btn btn-primary" id="btnJsonValidate">校验并预览</button>
+            <button type="button" class="btn btn-primary" id="btnJsonImport">执行导入</button>
+            <button type="button" class="btn" id="btnFillSample">填入示例</button>
+          </div>
+          <div class="toolbar-right">
+            <label class="muted" style="cursor:pointer; display:flex; align-items:center; gap:8px;">
+              <input type="file" id="jsonFileInput" accept=".json,application/json" />
+              <span>上传 JSON</span>
+            </label>
+            <button type="button" class="btn" id="btnResetImport">重置</button>
+          </div>
+        </div>
+        <details style="margin-bottom:12px;">
+          <summary style="cursor:pointer; font-weight:600;">支持的字段与示例 JSON</summary>
+          <ul class="muted" style="margin:8px 0; padding-left:1.25rem;">
+            <li><code>label_presets</code> / <code>presets</code>：拉框预设数组</li>
+            <li><code>global_dimensions</code> / <code>dimensions</code>：全局维度数组</li>
+          </ul>
+          <pre class="import-sample" id="importSampleJson"></pre>
+        </details>
+        <textarea id="jsonImportArea" placeholder='例如：{ "label_presets": [...], "global_dimensions": [...] }'></textarea>
+        <div class="import-toolbar-stack">
+          <label class="muted"><input type="checkbox" id="chkOverwrite" checked /> 若 slug / field_key 已存在则<strong>覆盖更新</strong>（否则跳过）</label>
+        </div>
+        <div id="importPreview"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast"></div>
+  <div id="modalBackdrop" class="modal-backdrop" aria-hidden="true"></div>
+
+  <section id="modalConfirm" class="modal-panel" aria-labelledby="modalConfirmTitle" aria-hidden="true">
+    <div class="modal-head"><span id="modalConfirmTitle">请确认操作</span><button type="button" class="modal-close" data-close-modal="modalConfirm" aria-label="关闭">×</button></div>
+    <div class="modal-body"><p id="modalConfirmMessage" class="muted" style="margin:0; white-space:pre-wrap;"></p></div>
+    <div class="modal-foot"><button type="button" class="btn" data-close-modal="modalConfirm">取消</button><button type="button" class="btn btn-danger" id="btnConfirmAction">确认</button></div>
+  </section>
+
+  <section id="modalLabel" class="modal-panel" aria-hidden="true"><div class="modal-head"><span id="modalLabelTitle">标签</span><button type="button" class="modal-close" data-close-modal="modalLabel" aria-label="关闭">×</button></div><div class="modal-body"><div class="form-row"><label>中文名称</label><input id="labelKey" maxlength="128" /></div><div class="form-row"><label>label_value（创建后不可改）</label><input id="labelValue" maxlength="128" placeholder="person_electricbike" /></div><div class="form-row"><label>颜色（全局唯一）</label><input id="labelColor" type="color" value="#1677ff" /></div><div class="form-row"><label>说明</label><textarea id="labelDescription" maxlength="512"></textarea></div><div class="form-row" id="labelStatusRow"><label>状态</label><select id="labelStatus"><option value="active">启用</option><option value="disabled">停用</option></select></div><div class="attribute-builder"><div class="attribute-builder-head"><div><strong>二级属性</strong><div class="muted">随标签带入新任务；已创建任务保留自己的属性快照。</div></div><div class="attribute-actions"><button type="button" class="btn btn-sm" id="btnAddEnumAttribute">+ 分类属性</button><button type="button" class="btn btn-sm" id="btnAddTextAttribute">+ 文本属性</button></div></div><div id="labelAttributesEditor"></div></div></div><div class="modal-foot"><button type="button" class="btn" data-close-modal="modalLabel">取消</button><button type="button" class="btn btn-primary" id="btnSaveLabel">保存</button></div></section>
+  <section id="modalCategory" class="modal-panel" aria-hidden="true"><div class="modal-head"><span id="modalCategoryTitle">数据集分类</span><button type="button" class="modal-close" data-close-modal="modalCategory" aria-label="关闭">×</button></div><div class="modal-body"><div class="form-row"><label>category_key（创建后不可改）</label><input id="categoryKey" maxlength="128" /></div><div class="form-row"><label>分类名称</label><input id="categoryName" maxlength="128" /></div><div class="form-row"><label>说明</label><textarea id="categoryDescription" maxlength="512"></textarea></div><div class="form-row" id="categoryStatusRow"><label>状态</label><select id="categoryStatus"><option value="active">启用</option><option value="disabled">停用</option></select></div></div><div class="modal-foot"><button type="button" class="btn" data-close-modal="modalCategory">取消</button><button type="button" class="btn btn-primary" id="btnSaveCategory">保存</button></div></section>
+  <section id="modalAlias" class="modal-panel" aria-hidden="true"><div class="modal-head"><span>第三方标签别名</span><button type="button" class="modal-close" data-close-modal="modalAlias" aria-label="关闭">×</button></div><div class="modal-body"><div class="form-row"><label>来源系统</label><input id="aliasSource" maxlength="64" /></div><div class="form-row"><label>外部标签值</label><input id="aliasExternal" maxlength="128" /></div><div class="form-row"><label>映射到系统标签</label><select id="aliasLabelId"></select></div></div><div class="modal-foot"><button type="button" class="btn" data-close-modal="modalAlias">取消</button><button type="button" class="btn btn-primary" id="btnSaveAlias">保存</button></div></section>
+
+  <section id="modalRuntime" class="modal-panel" aria-labelledby="modalRuntimeTitle" aria-hidden="true">
+    <div class="modal-head"><span id="modalRuntimeTitle">运行模板</span><button type="button" class="modal-close" data-close-modal="modalRuntime" aria-label="关闭">×</button></div>
+    <div class="modal-body">
+      <section class="runtime-config-section">
+        <h3>基础信息</h3><p>标识训练作业应使用的运行包，不与标签或标注预设绑定。</p>
+        <div class="runtime-form-grid">
+          <div class="form-row"><label>模板名称</label><input id="runtimeName" maxlength="128" placeholder="如 YOLOv11 检测运行模板" /></div>
+          <div class="form-row"><label>模板键</label><input id="runtimeTemplateKey" maxlength="128" placeholder="yolov11_detection" /></div>
+          <div class="form-row"><label>运行类型</label><input id="runtimeProfile" maxlength="128" value="yolov11_detection" /></div>
+          <div class="form-row"><label>接口版本</label><input id="runtimeInterfaceVersion" type="number" min="1" value="1" /></div>
+        </div>
+      </section>
+      <section class="runtime-config-section">
+        <h3>AICM 模型集</h3><p>模型集提供发布包结构。启用模板前必须从当前环境选择一个有效模型集。</p>
+        <div class="form-row"><label>发布环境</label><select id="runtimeEnvironment"></select></div>
+        <div id="runtimeEnvironmentState" class="runtime-env-state">请选择发布环境</div>
+        <div class="runtime-model-toolbar"><input id="runtimeCandidateSearch" type="search" placeholder="搜索 AICM 模型集名称" /><button type="button" class="btn" id="btnSearchRuntimeCandidates">查询</button></div>
+        <select id="runtimeModelSetId" class="runtime-model-picker" size="7" aria-label="AICM 模型集"></select>
+        <div id="runtimeCandidateSummary" class="muted" style="font-size:12px;margin-top:6px;">选择环境后查询模型集</div>
+      </section>
+      <section class="runtime-config-section">
+        <h3>能力契约</h3><p>用于发布前校验训练类型和类别规模。</p>
+        <div class="runtime-form-grid">
+          <div class="form-row"><label>模型算法类型</label><input id="runtimeExpectedAlg" maxlength="128" value="yoloV11" /></div>
+          <div class="form-row"><label>最大类别数（留空表示不限）</label><input id="runtimeMaxClasses" type="number" min="1" /></div>
+          <div class="form-row"><label>支持的训练类型（逗号分隔）</label><input id="runtimeJobTypes" value="yolo_detection" /></div>
+          <div class="form-row"><label>模板 SHA256（可选）</label><input id="runtimeSha256" maxlength="64" /></div>
+          <label class="runtime-inline-check"><input id="runtimeIsDefault" type="checkbox" /> 设为当前环境和运行类型的默认模板</label>
+          <div class="form-row"><label>状态</label><select id="runtimeStatus"><option value="active">启用</option><option value="disabled">停用</option></select></div>
+        </div>
+      </section>
+    </div>
+    <div class="modal-foot"><button type="button" class="btn" id="btnDisableRuntime">停用</button><button type="button" class="btn" data-close-modal="modalRuntime">取消</button><button type="button" class="btn btn-primary" id="btnSaveRuntime">保存模板</button></div>
+  </section>
+
+  <section id="modalPreset" class="modal-panel" aria-labelledby="modalPresetTitle" aria-hidden="true">
+    <div class="modal-head">
+      <span id="modalPresetTitle">预设</span>
+      <button type="button" class="modal-close" data-close-modal="modalPreset" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row" id="rowPresetSlug">
+        <label>slug（英文键，创建后不可改）</label>
+        <input type="text" id="presetSlug" maxlength="64" placeholder="如 ridingNoHelmet" />
+      </div>
+      <div class="form-row">
+        <label>名称 name</label>
+        <input type="text" id="presetName" maxlength="128" />
+      </div>
+      <div class="form-row">
+        <label>描述 description（可选）</label>
+        <textarea id="presetDesc" maxlength="512"></textarea>
+      </div>
+      <div class="form-row">
+        <label>排序 sort_order</label>
+        <input type="number" id="presetSort" value="0" step="1" />
+      </div>
+      <div class="form-row">
+        <label>从全局标签库选择（勾选顺序即预设顺序）</label>
+        <div id="presetLabelPicker" class="label-picker"></div>
+        <button type="button" class="btn btn-sm" id="btnAddPresetItem" style="display:none">+ 添加一行</button>
+        <table class="sub-table" id="tblPresetItems" style="display:none">
+          <thead>
+            <tr>
+              <th>label_key（中文展示）</th>
+              <th>label_value（英文）</th>
+              <th>color</th>
+              <th>sort</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-close-modal="modalPreset">取消</button>
+      <button type="button" class="btn btn-primary" id="btnSavePreset">保存</button>
+    </div>
+  </section>
+
+  <section id="modalDim" class="modal-panel" aria-labelledby="modalDimTitle" aria-hidden="true">
+    <div class="modal-head">
+      <span id="modalDimTitle">全局维度</span>
+      <button type="button" class="modal-close" data-close-modal="modalDim" aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row" id="rowDimKey">
+        <label>field_key（创建后不可改）</label>
+        <input type="text" id="dimFieldKey" maxlength="64" placeholder="如 sceneType" />
+      </div>
+      <div class="form-row">
+        <label>中文名 name_cn</label>
+        <input type="text" id="dimNameCn" maxlength="128" />
+      </div>
+      <div class="form-row">
+        <label>排序 sort_order</label>
+        <input type="number" id="dimSort" value="0" step="1" />
+      </div>
+      <div class="form-row">
+        <label>选项 global_tag_option</label>
+        <button type="button" class="btn btn-sm" id="btnAddDimOpt">+ 添加选项</button>
+        <table class="sub-table" id="tblDimOpts">
+          <thead>
+            <tr>
+              <th>name_cn</th>
+              <th>value_en</th>
+              <th>sort</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn" data-close-modal="modalDim">取消</button>
+      <button type="button" class="btn btn-primary" id="btnSaveDim">保存</button>
+    </div>
+  </section>
+
+  <script>
+(function () {
+  var API = "/api/v1";
+
+  function getToken() {
+    if (window.LabeluPortal && LabeluPortal.getAuthToken) return LabeluPortal.getAuthToken();
+    var raw = (localStorage.getItem("token") || "").trim();
+    if (!raw) return "";
+    if (/^bearer\s+/i.test(raw)) return raw;
+    if (raw.indexOf("eyJ") === 0) return "Bearer " + raw;
+    return raw;
+  }
+
+  function setToken(t) {
+    if (window.LabeluPortal && LabeluPortal.setAuthToken) LabeluPortal.setAuthToken(t || "");
+    else if (t) localStorage.setItem("token", getToken() || String(t).trim());
+    else localStorage.removeItem("token");
+  }
+
+  function requireToken(msg) {
+    if (getToken()) return true;
+    showToast(msg || "请先登录", "warn");
+    return false;
+  }
+
+  function showToast(msg, kind) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.className = kind || "";
+    el.style.display = "block";
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(function () {
+      el.style.display = "none";
+    }, 3800);
+  }
+
+  async function api(path, opts) {
+    var token = getToken();
+    var headers = Object.assign({}, (opts && opts.headers) || {}, {
+      "Content-Type": "application/json",
+      Authorization: token,
+    });
+    var r = await fetch(API + path, Object.assign({}, opts, { headers: headers, cache: "no-store" }));
+    var text = await r.text();
+    var json = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch (e) {}
+    return { ok: r.ok, status: r.status, json: json, text: text };
+  }
+
+  // Selectors and client-side filter panels need a complete catalog. Fetch
+  // bounded server pages instead of silently truncating at the first 500 rows.
+  async function apiListAll(path, baseParams) {
+    var params = Object.assign({}, baseParams || {});
+    var page = 0, size = 500, rows = [], total = null, last = null;
+    for (var guard = 0; guard < 1000; guard += 1) {
+      var query = new URLSearchParams();
+      Object.keys(params).forEach(function (key) {
+        if (params[key] !== undefined && params[key] !== null && params[key] !== "") query.set(key, String(params[key]));
+      });
+      query.set("page", String(page));
+      query.set("size", String(size));
+      last = await api(path + "?" + query.toString());
+      if (!last.ok) return last;
+      var chunk = (last.json && last.json.data) || [];
+      rows = rows.concat(chunk);
+      var meta = (last.json && last.json.meta_data) || {};
+      total = Number(meta.total);
+      if (!Number.isFinite(total)) total = rows.length;
+      if (!chunk.length || rows.length >= total || chunk.length < size) break;
+      page += 1;
+    }
+    last.json = Object.assign({}, last.json || {}, {
+      data: rows,
+      meta_data: Object.assign({}, (last.json && last.json.meta_data) || {}, { total: rows.length, page: 0, size: rows.length }),
+    });
+    return last;
+  }
+
+  function errMsg(res) {
+    if (!res.json) return res.text || "HTTP " + res.status;
+    var j = res.json;
+    if (j.errors && j.errors.length) {
+      return j.errors
+        .map(function (e) {
+          var loc = (e.loc || []).filter(function (x) {
+            return x !== "body";
+          });
+          return (loc.length ? loc.join(".") + ": " : "") + (e.msg || e.type || "");
+        })
+        .join("；");
+    }
+    return j.msg || j.detail || JSON.stringify(j);
+  }
+
+  var PRESET_SLUG_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
+
+  function normalizePresetSlugInput(raw) {
+    var s = (raw || "").trim();
+    if (s.length >= 2 && s[0] === s[0].toUpperCase() && s[0] !== s[0].toLowerCase()) {
+      var next = s.charAt(1);
+      if (/[a-z0-9]/.test(next)) {
+        return s.charAt(0).toLowerCase() + s.slice(1);
+      }
+    }
+    return s;
+  }
+
+  function validatePresetForm(isCreate) {
+    if (isCreate) {
+      var slugEl = document.getElementById("presetSlug");
+      var slug = normalizePresetSlugInput(slugEl.value);
+      slugEl.value = slug;
+      if (!slug) {
+        showToast("请填写 slug（英文标识）", "err");
+        return false;
+      }
+      if (!PRESET_SLUG_RE.test(slug)) {
+        showToast("slug 须为英文字母开头，如 illegalParking", "err");
+        return false;
+      }
+    }
+    var name = document.getElementById("presetName").value.trim();
+    if (!name) {
+      showToast("请填写名称 name", "err");
+      return false;
+    }
+    if (!presetSelectedLabelIds.length) {
+      showToast("请至少从标签库选择一个标签", "err");
+      return false;
+    }
+    return true;
+  }
+
+  function checkAuth() {
+    if (window.LabeluPortal && LabeluPortal.syncAuthBox) return LabeluPortal.syncAuthBox();
+    var box = document.getElementById("authBox");
+    if (box) box.style.display = getToken() ? "none" : "block";
+    return !!getToken();
+  }
+
+  document.getElementById("btnSaveToken").onclick = function () {
+    var v = document.getElementById("tokenInput").value || "";
+    setToken(v);
+    checkAuth();
+    showToast("Token 已保存", "ok");
+    loadPresets();
+    loadDimensions();
+    loadSystemLabels(); loadSystemLabelCatalog(); loadCategories(); loadAliases(); loadRecipes(); loadRuntimeEnvironments().then(loadRuntimeTemplates);
+  };
+  window.addEventListener("labelu-token-changed", function () {
+    checkAuth();
+    loadPresets();
+    loadDimensions();
+    loadSystemLabels(); loadSystemLabelCatalog(); loadCategories(); loadAliases(); loadRecipes(); loadRuntimeEnvironments().then(loadRuntimeTemplates);
+  });
+
+  var TAB_PANEL = { labels: "panel-labels", presets: "panel-presets", categories: "panel-categories", aliases: "panel-aliases", recipes: "panel-recipes", runtime: "panel-runtime", dimensions: "panel-dimensions", import: "panel-import" };
+  function activateTab(tab) {
+    var normalized = TAB_PANEL[tab] ? tab : "labels";
+    document.querySelectorAll(".tab").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-tab") === normalized);
+    });
+    document.querySelectorAll(".panel").forEach(function (p) { p.classList.remove("active"); });
+    document.getElementById(TAB_PANEL[normalized]).classList.add("active");
+  }
+  document.querySelectorAll(".tab").forEach(function (btn) {
+    btn.onclick = function () {
+      activateTab(btn.getAttribute("data-tab"));
+    };
+  });
+
+  function openModal(id) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add("open");
+    el.setAttribute("aria-hidden", "false");
+    document.getElementById("modalBackdrop").classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeModal(id) {
+    var el = document.getElementById(id);
+    if (el) {
+      el.classList.remove("open");
+      el.setAttribute("aria-hidden", "true");
+    }
+    if (!document.querySelector(".modal-panel.open")) {
+      document.getElementById("modalBackdrop").classList.remove("open");
+      document.body.style.overflow = "";
+    }
+  }
+
+  function closeAllModals() {
+    document.querySelectorAll(".modal-panel.open").forEach(function (p) {
+      closeModal(p.id);
+    });
+  }
+
+  document.getElementById("modalBackdrop").onclick = closeAllModals;
+  document.querySelectorAll("[data-close-modal]").forEach(function (btn) {
+    btn.onclick = function () {
+      closeModal(btn.getAttribute("data-close-modal"));
+    };
+  });
+  document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape") closeAllModals();
+  });
+
+  function techTag(value, title) {
+    var v = String(value == null ? "" : value);
+    var t = title || v;
+    return '<span class="tag tag-tech" title="' + esc(t) + '">' + esc(v) + "</span>";
+  }
+
+  function countTag(n, label) {
+    return '<span class="tag tag-count" title="' + esc(label || "条数") + '">' + n + "</span>";
+  }
+
+  function filterQuery(q) {
+    return (q || "").trim().toLowerCase();
+  }
+
+  var pendingConfirmAction = null;
+  function askConfirm(message, action, title) {
+    pendingConfirmAction = typeof action === "function" ? action : null;
+    document.getElementById("modalConfirmTitle").textContent = title || "请确认操作";
+    document.getElementById("modalConfirmMessage").textContent = message || "请确认是否继续。";
+    openModal("modalConfirm");
+    document.getElementById("btnConfirmAction").focus();
+  }
+  document.getElementById("btnConfirmAction").onclick = async function () {
+    var action = pendingConfirmAction;
+    pendingConfirmAction = null;
+    closeModal("modalConfirm");
+    if (action) await action();
+  };
+
+  /* ---------- Independent label library ---------- */
+  var systemLabelCache = [], systemLabelCatalogCache = [], editingLabel = null, editingCategory = null;
+  var labelPage = 0, labelPageSize = 20, labelTotal = 0, labelSearchTimer = null, editingLabelAttributes = [];
+  function statusChip(value) { return '<span class="status-chip status-' + esc(value) + '">' + esc(value === "active" ? "启用" : "停用") + '</span>'; }
+  async function loadSystemLabelCatalog() {
+    if (!requireToken()) return;
+    var res = await apiListAll("/annotation-taxonomy/labels", { include_disabled: "true" });
+    if (!res.ok) return;
+    systemLabelCatalogCache = (res.json && res.json.data) || [];
+    renderPresetLabelPicker();
+    fillAliasLabelOptions();
+  }
+  async function loadSystemLabels() {
+    if (!requireToken()) return;
+    var params = new URLSearchParams({page:String(labelPage),size:String(labelPageSize),include_disabled:"true"});
+    var keyword = document.getElementById("searchLabels").value.trim();
+    var labelStatus = document.getElementById("filterLabelStatus").value;
+    var labelKind = document.getElementById("filterLabelKind").value;
+    if (keyword) params.set("q", keyword);
+    if (labelStatus) params.set("status", labelStatus);
+    if (labelKind) params.set("annotation_kind", labelKind);
+    var res = await api("/annotation-taxonomy/labels?" + params.toString());
+    if (!res.ok) { showToast("加载标签失败：" + errMsg(res), "err"); return; }
+    systemLabelCache = (res.json && res.json.data) || [];
+    var meta = (res.json && res.json.meta_data) || {};
+    labelTotal = Number(meta.total || 0);
+    var tb = document.querySelector("#tblLabels tbody"); tb.innerHTML = "";
+    systemLabelCache.forEach(function(x){
+      var attrCount = Array.isArray(x.attributes) ? x.attributes.length : 0;
+      var tr=document.createElement("tr"); tr.innerHTML='<td>'+x.id+'</td><td><span class="color-swatch" style="background:'+esc(x.color)+'" title="'+esc(x.color)+'"></span></td><td>'+esc(x.label_key)+'</td><td>'+techTag(x.label_value)+'</td><td>'+countTag(attrCount,"二级属性数量")+'</td><td>'+esc(x.annotation_kind)+'</td><td>'+statusChip(x.status)+'</td><td>'+x.reference_count+'</td><td>v'+x.version+'</td><td><button class="btn btn-sm edit-label" data-id="'+x.id+'">编辑</button></td>'; tb.appendChild(tr);
+    });
+    if (!systemLabelCache.length) tb.innerHTML='<tr><td colspan="10" class="muted">暂无符合条件的标签</td></tr>';
+    tb.querySelectorAll(".edit-label").forEach(function(b){ b.onclick=function(){ openLabelEditor(+b.dataset.id); }; });
+    var pageCount = Math.max(1, Math.ceil(labelTotal / labelPageSize));
+    document.getElementById("labelPageSummary").textContent="共 "+labelTotal+" 条";
+    document.getElementById("labelPageIndex").textContent="第 "+(labelPage+1)+" / "+pageCount+" 页";
+    document.getElementById("btnLabelPrev").disabled=labelPage<=0;
+    document.getElementById("btnLabelNext").disabled=labelPage+1>=pageCount;
+  }
+  function hslToHex(h,s,l){s/=100;l/=100;var c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((h/60)%2-1)),m=l-c/2,r=0,g=0,b=0;if(h<60){r=c;g=x;}else if(h<120){r=x;g=c;}else if(h<180){g=c;b=x;}else if(h<240){g=x;b=c;}else if(h<300){r=x;b=c;}else{r=c;b=x;}return "#"+[r,g,b].map(function(v){return Math.round((v+m)*255).toString(16).padStart(2,"0");}).join("");}
+  function nextAvailableLabelColor(){var used={};systemLabelCatalogCache.forEach(function(x){used[String(x.color||"").toLowerCase()]=true;});for(var i=0;i<360;i++){var color=hslToHex((i*137.508)%360,68,48);if(!used[color])return color;}return "#1677ff";}
+  function cloneAttributes(value){return JSON.parse(JSON.stringify(Array.isArray(value)?value:[]));}
+  function renderLabelAttributes(){
+    var host=document.getElementById("labelAttributesEditor");host.innerHTML="";
+    if(!editingLabelAttributes.length){host.innerHTML='<div class="muted">暂未配置二级属性</div>';return;}
+    editingLabelAttributes.forEach(function(item,index){
+      var card=document.createElement("div");card.className="attribute-card";
+      var typeOptions='<option value="enum" '+(item.type==="enum"?'selected':'')+'>单选</option><option value="array" '+(item.type==="array"?'selected':'')+'>多选</option><option value="string" '+(item.type==="string"?'selected':'')+'>文本</option>';
+      var detail="";
+      if(item.type==="string"){
+        var st=item.stringType||"text";
+        detail='<div class="text-attribute-fields"><label>最大字符数</label><input type="number" min="1" max="100000" data-attr="'+index+'" data-field="maxLength" value="'+esc(item.maxLength||1000)+'" /><label>字符类型</label><select data-attr="'+index+'" data-field="stringType"><option value="text" '+(st==="text"?'selected':'')+'>任意字符</option><option value="number" '+(st==="number"?'selected':'')+'>仅数字</option><option value="order" '+(st==="order"?'selected':'')+'>序号</option><option value="english" '+(st==="english"?'selected':'')+'>仅英文</option><option value="regexp" '+(st==="regexp"?'selected':'')+'>自定义格式</option></select>'+(st==="regexp"?'<label>正则表达式</label><textarea data-attr="'+index+'" data-field="regexp">'+esc(item.regexp||"")+'</textarea>':'')+'<label>默认值</label><textarea data-attr="'+index+'" data-field="defaultValue">'+esc(item.defaultValue||"")+'</textarea></div>';
+      }else{
+        var options=Array.isArray(item.options)?item.options:[];
+        detail='<div class="option-list">'+options.map(function(opt,oi){var inputType=item.type==="enum"?"radio":"checkbox";return '<div class="option-row"><input data-attr="'+index+'" data-option="'+oi+'" data-option-field="key" placeholder="选项中文名" value="'+esc(opt.key||"")+'" /><input data-attr="'+index+'" data-option="'+oi+'" data-option-field="value" placeholder="选项值" value="'+esc(opt.value||"")+'" /><label><input type="'+inputType+'" name="attr-default-'+index+'" data-action="default-option" data-attr="'+index+'" data-option="'+oi+'" '+(opt.isDefault?'checked':'')+' /> 默认</label><button type="button" class="btn btn-sm" data-action="remove-option" data-attr="'+index+'" data-option="'+oi+'">删除</button></div>';}).join("")+'<button type="button" class="btn btn-sm" data-action="add-option" data-attr="'+index+'">+ 添加选项</button></div>';
+      }
+      card.innerHTML='<div class="attribute-card-head"><strong>属性 '+(index+1)+'</strong><button type="button" class="btn btn-sm btn-danger" data-action="remove-attribute" data-attr="'+index+'">删除属性</button></div><div class="attribute-grid"><input data-attr="'+index+'" data-field="key" placeholder="属性中文名" value="'+esc(item.key||"")+'" /><input data-attr="'+index+'" data-field="value" placeholder="字段名（英文）" value="'+esc(item.value||"")+'" /><select data-attr="'+index+'" data-field="type">'+typeOptions+'</select><label><input type="checkbox" data-attr="'+index+'" data-field="required" '+(item.required?'checked':'')+' /> 必填</label></div>'+detail;
+      host.appendChild(card);
+    });
+    host.querySelectorAll("[data-field]").forEach(function(el){el.onchange=function(){var ai=+el.dataset.attr,field=el.dataset.field,value=el.type==="checkbox"?el.checked:el.value;if(field==="maxLength")value=Number(value||1000);editingLabelAttributes[ai][field]=value;if(field==="type"){if(value==="string")editingLabelAttributes[ai]=Object.assign(editingLabelAttributes[ai],{options:[],maxLength:1000,stringType:"text",defaultValue:"",regexp:""});else{if(!Array.isArray(editingLabelAttributes[ai].options)||!editingLabelAttributes[ai].options.length)editingLabelAttributes[ai].options=[{key:"",value:"",isDefault:false}];if(value==="enum"){var foundDefault=false;editingLabelAttributes[ai].options.forEach(function(o){if(o.isDefault&&!foundDefault){foundDefault=true;}else{o.isDefault=false;}});}}renderLabelAttributes();}else if(field==="stringType")renderLabelAttributes();};});
+    host.querySelectorAll("[data-option-field]").forEach(function(el){el.onchange=function(){editingLabelAttributes[+el.dataset.attr].options[+el.dataset.option][el.dataset.optionField]=el.value;};});
+    host.querySelectorAll("[data-action]").forEach(function(el){el.onclick=function(){var ai=+el.dataset.attr,oi=+el.dataset.option,action=el.dataset.action;if(action==="remove-attribute")editingLabelAttributes.splice(ai,1);if(action==="add-option")editingLabelAttributes[ai].options.push({key:"",value:"",isDefault:false});if(action==="remove-option")editingLabelAttributes[ai].options.splice(oi,1);if(action==="default-option"){if(editingLabelAttributes[ai].type==="enum")editingLabelAttributes[ai].options.forEach(function(o){o.isDefault=false;});editingLabelAttributes[ai].options[oi].isDefault=el.checked;}renderLabelAttributes();};});
+  }
+  function validateLabelAttributes(){var seen={};for(var i=0;i<editingLabelAttributes.length;i++){var a=editingLabelAttributes[i];if(!String(a.key||"").trim()||!String(a.value||"").trim()){showToast("请完整填写属性 "+(i+1)+" 的中文名和字段名","err");return false;}if(seen[a.value]){showToast("二级属性字段名不能重复："+a.value,"err");return false;}seen[a.value]=true;if(a.type!=="string"){if(!a.options||!a.options.length){showToast("分类属性至少需要一个选项","err");return false;}var optionSeen={};for(var j=0;j<a.options.length;j++){var o=a.options[j];if(!String(o.key||"").trim()||!String(o.value||"").trim()){showToast("请完整填写属性 "+(i+1)+" 的选项","err");return false;}if(optionSeen[o.value]){showToast("同一属性的选项值不能重复："+o.value,"err");return false;}optionSeen[o.value]=true;}}}return true;}
+  function openLabelEditor(id){editingLabel=systemLabelCache.concat(systemLabelCatalogCache).find(function(x){return x.id===id;})||null;editingLabelAttributes=cloneAttributes(editingLabel&&editingLabel.attributes);document.getElementById("modalLabelTitle").textContent=editingLabel?"编辑标签 #"+id:"新建标签";document.getElementById("labelKey").value=editingLabel?editingLabel.label_key:"";document.getElementById("labelValue").value=editingLabel?editingLabel.label_value:"";document.getElementById("labelValue").readOnly=!!editingLabel;document.getElementById("labelColor").value=editingLabel?editingLabel.color:nextAvailableLabelColor();document.getElementById("labelDescription").value=editingLabel?(editingLabel.description||""):"";document.getElementById("labelStatusRow").style.display=editingLabel?"":"none";if(editingLabel)document.getElementById("labelStatus").value=editingLabel.status;renderLabelAttributes();openModal("modalLabel");}
+  document.getElementById("btnAddEnumAttribute").onclick=function(){editingLabelAttributes.push({key:"",value:"",type:"enum",required:true,options:[{key:"",value:"",isDefault:false}]});renderLabelAttributes();};
+  document.getElementById("btnAddTextAttribute").onclick=function(){editingLabelAttributes.push({key:"",value:"",type:"string",required:true,options:[],maxLength:1000,stringType:"text",defaultValue:"",regexp:""});renderLabelAttributes();};
+  document.getElementById("btnNewLabel").onclick=function(){openLabelEditor(null);};
+  document.getElementById("btnReloadLabels").onclick=loadSystemLabels;
+  document.getElementById("searchLabels").oninput=function(){clearTimeout(labelSearchTimer);labelPage=0;labelSearchTimer=setTimeout(loadSystemLabels,250);};
+  document.getElementById("filterLabelStatus").onchange=function(){labelPage=0;loadSystemLabels();};
+  document.getElementById("filterLabelKind").onchange=function(){labelPage=0;loadSystemLabels();};
+  document.getElementById("btnResetLabelSearch").onclick=function(){document.getElementById("searchLabels").value="";document.getElementById("filterLabelStatus").value="";document.getElementById("filterLabelKind").value="";labelPage=0;loadSystemLabels();};
+  document.getElementById("labelPageSize").onchange=function(){labelPageSize=+this.value;labelPage=0;loadSystemLabels();};
+  document.getElementById("btnLabelPrev").onclick=function(){if(labelPage>0){labelPage--;loadSystemLabels();}};
+  document.getElementById("btnLabelNext").onclick=function(){if((labelPage+1)*labelPageSize<labelTotal){labelPage++;loadSystemLabels();}};
+  document.getElementById("btnSaveLabel").onclick=async function(){if(!validateLabelAttributes())return;var color=document.getElementById("labelColor").value.toLowerCase();var conflict=systemLabelCatalogCache.find(function(x){return x.id!==(editingLabel&&editingLabel.id)&&String(x.color||"").toLowerCase()===color;});if(conflict){showToast("颜色已被标签“"+conflict.label_key+"”使用，请更换颜色","err");return;}var body={label_key:document.getElementById("labelKey").value.trim(),color:color,description:document.getElementById("labelDescription").value.trim()||null,attributes:editingLabelAttributes};var path="/annotation-taxonomy/labels",method="POST";if(editingLabel){method="PATCH";path+="/"+editingLabel.id;body.version=editingLabel.version;body.status=document.getElementById("labelStatus").value;}else{body.label_value=document.getElementById("labelValue").value.trim();body.annotation_kind="bbox";}var res=await api(path,{method:method,body:JSON.stringify(body)});if(!res.ok){showToast("保存标签失败："+errMsg(res),"err");return;}closeModal("modalLabel");showToast("标签已保存","ok");labelPage=0;await loadSystemLabelCatalog();loadSystemLabels();};
+
+  var categoryCache=[];
+  var categoryPage=0, categoryPageSize=20, categoryTotal=0;
+  async function loadCategories(){
+    if(!requireToken())return;
+    var params=new URLSearchParams({page:String(categoryPage),size:String(categoryPageSize),include_disabled:"true"});
+    var q=(document.getElementById("searchCategories").value||"").trim();
+    var statusValue=document.getElementById("filterCategoryStatus").value;
+    if(q)params.set("q",q); if(statusValue)params.set("status",statusValue);
+    var res=await api("/annotation-taxonomy/dataset-categories?"+params.toString());
+    if(!res.ok){showToast("加载分类失败："+errMsg(res),"err");return;}
+    categoryCache=(res.json&&res.json.data)||[];
+    categoryTotal=Number((res.json&&res.json.meta_data&&res.json.meta_data.total)||0);
+    var tb=document.querySelector("#tblCategories tbody");tb.innerHTML="";
+    categoryCache.forEach(function(x){
+      var tr=document.createElement("tr");
+      var deleteButton=x.reference_count>0?"":" <button class=\"btn btn-sm btn-danger delete-category\" data-id=\""+x.id+"\">删除</button>";
+      var operation=x.is_system?'<span class="muted">系统维护</span>':'<button class="btn btn-sm edit-category" data-id="'+x.id+'">编辑</button>'+deleteButton;
+      var categoryName=esc(x.name)+(x.is_system?' '+techTag("系统分类"):"");
+      tr.innerHTML='<td>'+x.id+'</td><td>'+techTag(x.category_key)+'</td><td>'+categoryName+'</td><td>'+esc(x.description||"")+'</td><td>'+statusChip(x.status)+'</td><td>'+x.reference_count+'</td><td>v'+x.version+'</td><td>'+operation+'</td>';
+      tb.appendChild(tr);
+    });
+    if(!categoryCache.length){var empty=document.createElement("tr");empty.innerHTML='<td colspan="8" class="muted" style="text-align:center;">无匹配数据</td>';tb.appendChild(empty);}
+    tb.querySelectorAll(".edit-category").forEach(function(b){b.onclick=function(){openCategoryEditor(+b.dataset.id);};});
+    tb.querySelectorAll(".delete-category").forEach(function(b){b.onclick=function(){deleteCategory(+b.dataset.id);};});
+    var pageCount=Math.max(1,Math.ceil(categoryTotal/categoryPageSize));
+    document.getElementById("categoryPageSummary").textContent="共 "+categoryTotal+" 条";
+    document.getElementById("categoryPageIndex").textContent="第 "+(categoryPage+1)+" / "+pageCount+" 页";
+    document.getElementById("btnCategoryPrev").disabled=categoryPage<=0;
+    document.getElementById("btnCategoryNext").disabled=categoryPage+1>=pageCount;
+  }
+  function openCategoryEditor(id){editingCategory=categoryCache.find(function(x){return x.id===id;})||null;document.getElementById("modalCategoryTitle").textContent=editingCategory?"编辑分类 #"+id:"新建分类";document.getElementById("categoryKey").value=editingCategory?editingCategory.category_key:"";document.getElementById("categoryKey").readOnly=!!editingCategory;document.getElementById("categoryName").value=editingCategory?editingCategory.name:"";document.getElementById("categoryDescription").value=editingCategory?(editingCategory.description||""):"";document.getElementById("categoryStatusRow").style.display=editingCategory?"":"none";if(editingCategory)document.getElementById("categoryStatus").value=editingCategory.status;openModal("modalCategory");}
+  function deleteCategory(id){var row=categoryCache.find(function(x){return x.id===id;});if(!row)return;if(row.reference_count>0){showToast("该分类仍有引用，不能删除，请先完成任务分类迁移","err");return;}askConfirm("确认删除分类“"+row.name+"”？删除后不可恢复。",async function(){var res=await api("/annotation-taxonomy/dataset-categories/"+id+"?version="+row.version,{method:"DELETE"});if(!res.ok){showToast("删除分类失败："+errMsg(res),"err");return;}showToast("分类已删除","ok");if(categoryPage>0&&categoryCache.length===1)categoryPage--;loadCategories();},"删除数据集分类");}
+  document.getElementById("btnNewCategory").onclick=function(){openCategoryEditor(null);};document.getElementById("btnReloadCategories").onclick=loadCategories;document.getElementById("btnResetCategories").onclick=function(){document.getElementById("searchCategories").value="";document.getElementById("filterCategoryStatus").value="";categoryPage=0;loadCategories();};document.getElementById("searchCategories").oninput=function(){clearTimeout(window.__categorySearchTimer);categoryPage=0;window.__categorySearchTimer=setTimeout(loadCategories,250);};document.getElementById("filterCategoryStatus").onchange=function(){categoryPage=0;loadCategories();};document.getElementById("categoryPageSize").onchange=function(){categoryPageSize=+this.value;categoryPage=0;loadCategories();};document.getElementById("btnCategoryPrev").onclick=function(){if(categoryPage>0){categoryPage--;loadCategories();}};document.getElementById("btnCategoryNext").onclick=function(){if((categoryPage+1)*categoryPageSize<categoryTotal){categoryPage++;loadCategories();}};document.getElementById("btnSaveCategory").onclick=async function(){var body={name:document.getElementById("categoryName").value.trim(),description:document.getElementById("categoryDescription").value.trim()||null};var path="/annotation-taxonomy/dataset-categories",method="POST";if(editingCategory){path+="/"+editingCategory.id;method="PATCH";body.version=editingCategory.version;body.status=document.getElementById("categoryStatus").value;}else body.category_key=document.getElementById("categoryKey").value.trim();var res=await api(path,{method:method,body:JSON.stringify(body)});if(!res.ok){showToast("保存分类失败："+errMsg(res),"err");return;}closeModal("modalCategory");showToast("分类已保存","ok");loadCategories();};
+
+  var aliasCache=[], aliasPage=0, aliasPageSize=20, aliasTotal=0;
+  function fillAliasLabelOptions(){var el=document.getElementById("aliasLabelId");if(!el)return;el.innerHTML=systemLabelCatalogCache.filter(function(x){return x.status==="active";}).map(function(x){return '<option value="'+x.id+'">'+esc(x.label_key)+' ('+esc(x.label_value)+')</option>';}).join("");}
+  async function loadAliases(){if(!requireToken())return;var params=new URLSearchParams({page:String(aliasPage),size:String(aliasPageSize)});var keyword=document.getElementById("searchAliases").value.trim();if(keyword)params.set("q",keyword);var res=await api("/annotation-taxonomy/label-aliases?"+params.toString());if(!res.ok)return;aliasCache=(res.json&&res.json.data)||[];aliasTotal=Number((res.json&&res.json.meta_data&&res.json.meta_data.total)||0);var tb=document.querySelector("#tblAliases tbody");tb.innerHTML="";aliasCache.forEach(function(x){var tr=document.createElement("tr");tr.innerHTML='<td>'+x.id+'</td><td>'+techTag(x.source_system)+'</td><td>'+techTag(x.external_label_value)+'</td><td>'+techTag(x.label_value)+'</td><td>'+statusChip(x.status)+'</td><td>v'+x.version+'</td><td></td>';tb.appendChild(tr);});if(!aliasCache.length)tb.innerHTML='<tr><td colspan="7" class="muted" style="text-align:center;">无匹配数据</td></tr>';var pages=Math.max(1,Math.ceil(aliasTotal/aliasPageSize));document.getElementById("aliasPageSummary").textContent="共 "+aliasTotal+" 条";document.getElementById("aliasPageIndex").textContent="第 "+(aliasPage+1)+" / "+pages+" 页";document.getElementById("btnAliasPrev").disabled=aliasPage<=0;document.getElementById("btnAliasNext").disabled=aliasPage+1>=pages;}
+  document.getElementById("btnNewAlias").onclick=function(){document.getElementById("aliasSource").value="";document.getElementById("aliasExternal").value="";fillAliasLabelOptions();openModal("modalAlias");};document.getElementById("btnReloadAliases").onclick=loadAliases;document.getElementById("btnResetAliases").onclick=function(){document.getElementById("searchAliases").value="";aliasPage=0;loadAliases();};document.getElementById("searchAliases").oninput=function(){clearTimeout(window.__aliasSearchTimer);aliasPage=0;window.__aliasSearchTimer=setTimeout(loadAliases,250);};document.getElementById("aliasPageSize").onchange=function(){aliasPageSize=+this.value;aliasPage=0;loadAliases();};document.getElementById("btnAliasPrev").onclick=function(){if(aliasPage>0){aliasPage--;loadAliases();}};document.getElementById("btnAliasNext").onclick=function(){if((aliasPage+1)*aliasPageSize<aliasTotal){aliasPage++;loadAliases();}};document.getElementById("btnSaveAlias").onclick=async function(){var body={source_system:document.getElementById("aliasSource").value.trim(),external_label_value:document.getElementById("aliasExternal").value.trim(),label_id:+document.getElementById("aliasLabelId").value};var res=await api("/annotation-taxonomy/label-aliases",{method:"POST",body:JSON.stringify(body)});if(!res.ok){showToast("保存别名失败："+errMsg(res),"err");return;}closeModal("modalAlias");showToast("别名已保存","ok");aliasPage=0;loadAliases();};
+
+  var recipePage=0, recipePageSize=20, recipeTotal=0;
+  async function loadRecipes(){if(!requireToken())return;var params=new URLSearchParams({page:String(recipePage),size:String(recipePageSize)});var keyword=document.getElementById("searchRecipes").value.trim();if(keyword)params.set("q",keyword);var res=await api("/annotation-taxonomy/training-recipes?"+params.toString());if(!res.ok)return;var rows=(res.json&&res.json.data)||[];recipeTotal=Number((res.json&&res.json.meta_data&&res.json.meta_data.total)||0);var tb=document.querySelector("#tblRecipes tbody");tb.innerHTML="";rows.forEach(function(x){var tr=document.createElement("tr");tr.innerHTML='<td>'+techTag(x.recipe_key)+'</td><td>v'+x.version+'</td><td>'+esc(x.name)+'</td><td>'+techTag(x.job_type)+'</td><td>'+esc(x.model_family)+'</td><td>'+esc(x.annotation_kind)+'</td><td>'+statusChip(x.status)+'</td>';tb.appendChild(tr);});if(!rows.length)tb.innerHTML='<tr><td colspan="7" class="muted" style="text-align:center;">无匹配数据</td></tr>';var pages=Math.max(1,Math.ceil(recipeTotal/recipePageSize));document.getElementById("recipePageSummary").textContent="共 "+recipeTotal+" 条";document.getElementById("recipePageIndex").textContent="第 "+(recipePage+1)+" / "+pages+" 页";document.getElementById("btnRecipePrev").disabled=recipePage<=0;document.getElementById("btnRecipeNext").disabled=recipePage+1>=pages;}
+  var runtimeTemplateCache=[], runtimeEnvironmentCache=[], runtimeActiveEnvironmentId="", editingRuntime=null, runtimeAutoOpenHandled=false;
+  function runtimeEnvironmentById(id){return runtimeEnvironmentCache.find(function(x){return x.id===id;})||null;}
+  function runtimeEnvironmentName(id){var row=runtimeEnvironmentById(id);return row?(row.name||row.id):(id==="default"?"通用环境":id);}
+  function runtimeMissingLabel(field){return {base_url:"后台地址",username:"用户名",password:"密码"}[field]||field;}
+  function renderRuntimeEnvironmentState(){
+    var selected=document.getElementById("runtimeEnvironment").value;
+    var lookupId=selected==="default"?runtimeActiveEnvironmentId:selected;
+    var env=runtimeEnvironmentById(lookupId);
+    var box=document.getElementById("runtimeEnvironmentState");
+    if(!env){box.className="runtime-env-state warn";box.innerHTML='当前没有可用发布环境，请先<a href="/aicm-publish-environments">配置发布环境</a>。';return false;}
+    if(!env.ready_to_publish){var missing=(env.missing_fields||[]).map(runtimeMissingLabel).join("、");box.className="runtime-env-state warn";box.innerHTML='环境“'+esc(env.name||env.id)+'”缺少'+esc(missing||"必要配置")+'，<a href="/aicm-publish-environments">去补全</a>。';return false;}
+    box.className="runtime-env-state ready";box.textContent="环境已就绪 · "+(env.name||env.id)+" · "+(env.base_url||"");return true;
+  }
+  async function loadRuntimeEnvironments(){
+    var res=await api("/yolo-aicm-publish/environments");
+    if(!res.ok){runtimeEnvironmentCache=[];runtimeActiveEnvironmentId="";renderRuntimeEnvironmentState();return false;}
+    var bundle=(res.json&&res.json.data)||{};runtimeEnvironmentCache=bundle.environments||[];runtimeActiveEnvironmentId=bundle.active_environment_id||"";
+    var select=document.getElementById("runtimeEnvironment");var selected=(editingRuntime&&editingRuntime.environment_id)||runtimeActiveEnvironmentId||(runtimeEnvironmentCache[0]&&runtimeEnvironmentCache[0].id)||"";
+    var options=runtimeEnvironmentCache.map(function(x){return '<option value="'+esc(x.id)+'">'+esc(x.name||x.id)+(x.is_active?'（当前）':'')+'</option>';});
+    if(editingRuntime&&editingRuntime.environment_id==="default")options.unshift('<option value="default">通用环境（使用当前发布环境查询）</option>');
+    select.innerHTML=options.join("");if(selected)select.value=selected;if(!select.value&&select.options.length)select.selectedIndex=0;renderRuntimeEnvironmentState();return true;
+  }
+  function renderRuntimeCandidateOptions(rows,selectedId){
+    var select=document.getElementById("runtimeModelSetId");var normalized=String(selectedId||"");var found=false;var html=(rows||[]).map(function(x){var id=String(x.model_set_id);if(id===normalized)found=true;var detail=["#"+id,x.name||"未命名",x.model_alg_type||""].filter(Boolean).join(" · ");return '<option value="'+esc(id)+'" '+(id===normalized?'selected':'')+'>'+esc(detail)+'</option>';});
+    if(normalized&&!found)html.unshift('<option value="'+esc(normalized)+'" selected>#'+esc(normalized)+' · 当前已绑定模型集</option>');
+    select.innerHTML=html.join("");
+  }
+  async function loadRuntimeCandidates(){
+    var selectedEnv=document.getElementById("runtimeEnvironment").value;var envId=selectedEnv==="default"?runtimeActiveEnvironmentId:selectedEnv;var summary=document.getElementById("runtimeCandidateSummary");var current=document.getElementById("runtimeModelSetId").value||((editingRuntime&&editingRuntime.aicm_model_set_id)||"");
+    if(!renderRuntimeEnvironmentState()||!envId){renderRuntimeCandidateOptions([],current);summary.textContent="发布环境未就绪，暂时无法查询模型集";return;}
+    summary.textContent="正在从 AICM 查询模型集…";var params=new URLSearchParams({environment_id:envId,q:document.getElementById("runtimeCandidateSearch").value.trim(),page:"1",size:"100"});var res=await api("/yolo-aicm-publish/runtime-template-candidates?"+params.toString());
+    if(!res.ok){renderRuntimeCandidateOptions([],current);summary.textContent="查询失败："+errMsg(res);showToast("查询 AICM 模型集失败："+errMsg(res),"err");return;}
+    var rows=(res.json&&res.json.data)||[];renderRuntimeCandidateOptions(rows,current);summary.textContent=rows.length?"已加载 "+rows.length+" 个模型集，请选择发布包来源":"没有找到匹配的模型集";
+  }
+  async function openRuntimeEditor(id){
+    editingRuntime=runtimeTemplateCache.find(function(x){return x.id===id;})||null;document.getElementById("modalRuntimeTitle").textContent=editingRuntime?"编辑运行模板 #"+editingRuntime.id:"新建运行模板";
+    document.getElementById("runtimeName").value=editingRuntime?editingRuntime.name:"";document.getElementById("runtimeTemplateKey").value=editingRuntime?editingRuntime.template_key:"yolov11_detection";document.getElementById("runtimeTemplateKey").readOnly=!!editingRuntime;document.getElementById("runtimeProfile").value=editingRuntime?editingRuntime.runtime_profile:"yolov11_detection";document.getElementById("runtimeInterfaceVersion").value=editingRuntime?editingRuntime.interface_version:1;document.getElementById("runtimeExpectedAlg").value=editingRuntime?(editingRuntime.expected_model_alg_type||"yoloV11"):"yoloV11";
+    var contract=(editingRuntime&&editingRuntime.capability_contract)||{};document.getElementById("runtimeMaxClasses").value=contract.max_classes||"";document.getElementById("runtimeJobTypes").value=(contract.supported_job_types||["yolo_detection"]).join(", ");document.getElementById("runtimeSha256").value=editingRuntime?(editingRuntime.template_sha256||""):"";document.getElementById("runtimeIsDefault").checked=!!(editingRuntime&&editingRuntime.is_default);document.getElementById("runtimeStatus").value=editingRuntime?editingRuntime.status:"active";document.getElementById("runtimeCandidateSearch").value="";renderRuntimeCandidateOptions([],editingRuntime&&editingRuntime.aicm_model_set_id);document.getElementById("btnDisableRuntime").style.display=editingRuntime&&editingRuntime.status==="active"?"":"none";openModal("modalRuntime");await loadRuntimeEnvironments();await loadRuntimeCandidates();
+  }
+  var runtimePage=0, runtimePageSize=20, runtimeTotalCount=0;
+  async function loadRuntimeTemplates(){
+    if(!requireToken())return;var tb=document.querySelector("#tblRuntime tbody");tb.innerHTML='<tr><td colspan="8" class="runtime-empty">正在加载运行模板…</td></tr>';var params=new URLSearchParams({page:String(runtimePage),size:String(runtimePageSize)});var keyword=document.getElementById("searchRuntime").value.trim();if(keyword)params.set("q",keyword);var res=await api("/annotation-taxonomy/runtime-templates?"+params.toString());if(!res.ok){tb.innerHTML='<tr><td colspan="8" class="runtime-empty">加载失败：'+esc(errMsg(res))+'</td></tr>';return;}
+    runtimeTemplateCache=(res.json&&res.json.data)||[];runtimeTotalCount=Number((res.json&&res.json.meta_data&&res.json.meta_data.total)||0);tb.innerHTML="";var ready=runtimeTemplateCache.filter(function(x){return x.status==="active"&&/^\d+$/.test(String(x.aicm_model_set_id||""));}).length;document.getElementById("runtimeTotal").textContent=runtimeTotalCount;document.getElementById("runtimeReady").textContent=ready;document.getElementById("runtimeIncomplete").textContent=Math.max(0,runtimeTotalCount-ready);
+    runtimeTemplateCache.forEach(function(x){var tr=document.createElement("tr");var contract=x.capability_contract||{};var types=(contract.supported_job_types||[]).join(", ")||"未限制";var model=x.aicm_model_set_id?'<span class="runtime-model-id">#'+esc(x.aicm_model_set_id)+'</span><div class="muted">'+esc(x.expected_model_alg_type||"算法未指定")+'</div>':'<span class="status-chip status-disabled">未绑定</span>';tr.innerHTML='<td class="runtime-template-name"><strong>'+esc(x.name)+'</strong>'+techTag(x.template_key)+'</td><td><strong>'+esc(runtimeEnvironmentName(x.environment_id))+'</strong><div class="muted">'+esc(x.environment_id)+'</div></td><td>'+model+'</td><td>'+techTag(x.runtime_profile)+'<div class="muted">接口 v'+x.interface_version+' · '+esc(types)+'</div></td><td>'+(x.is_default?'是':'否')+'</td><td>'+statusChip(x.status)+'</td><td>v'+x.version+'</td><td><button type="button" class="btn btn-sm edit-runtime" data-id="'+x.id+'">编辑</button></td>';tb.appendChild(tr);});
+    if(!runtimeTemplateCache.length)tb.innerHTML='<tr><td colspan="8" class="runtime-empty">暂无匹配运行模板，请调整关键词或先新建模板</td></tr>';tb.querySelectorAll(".edit-runtime").forEach(function(btn){btn.onclick=function(){openRuntimeEditor(+btn.dataset.id);};});
+    var pages=Math.max(1,Math.ceil(runtimeTotalCount/runtimePageSize));document.getElementById("runtimePageSummary").textContent="共 "+runtimeTotalCount+" 条";document.getElementById("runtimePageIndex").textContent="第 "+(runtimePage+1)+" / "+pages+" 页";document.getElementById("btnRuntimePrev").disabled=runtimePage<=0;document.getElementById("btnRuntimeNext").disabled=runtimePage+1>=pages;if(!runtimeAutoOpenHandled){runtimeAutoOpenHandled=true;var params=new URLSearchParams(location.search);var key=params.get("template_key");if(key){var target=runtimeTemplateCache.find(function(x){return x.template_key===key||x.runtime_profile===key;});if(target)openRuntimeEditor(target.id);}}
+  }
+  document.getElementById("btnReloadRecipes").onclick=loadRecipes;document.getElementById("btnResetRecipes").onclick=function(){document.getElementById("searchRecipes").value="";recipePage=0;loadRecipes();};document.getElementById("searchRecipes").oninput=function(){clearTimeout(window.__recipeSearchTimer);recipePage=0;window.__recipeSearchTimer=setTimeout(loadRecipes,250);};document.getElementById("recipePageSize").onchange=function(){recipePageSize=+this.value;recipePage=0;loadRecipes();};document.getElementById("btnRecipePrev").onclick=function(){if(recipePage>0){recipePage--;loadRecipes();}};document.getElementById("btnRecipeNext").onclick=function(){if((recipePage+1)*recipePageSize<recipeTotal){recipePage++;loadRecipes();}};document.getElementById("btnReloadRuntime").onclick=async function(){await loadRuntimeEnvironments();runtimePage=0;loadRuntimeTemplates();};document.getElementById("btnResetRuntime").onclick=function(){document.getElementById("searchRuntime").value="";runtimePage=0;loadRuntimeTemplates();};document.getElementById("searchRuntime").oninput=function(){clearTimeout(window.__runtimeSearchTimer);runtimePage=0;window.__runtimeSearchTimer=setTimeout(loadRuntimeTemplates,250);};document.getElementById("runtimePageSize").onchange=function(){runtimePageSize=+this.value;runtimePage=0;loadRuntimeTemplates();};document.getElementById("btnRuntimePrev").onclick=function(){if(runtimePage>0){runtimePage--;loadRuntimeTemplates();}};document.getElementById("btnRuntimeNext").onclick=function(){if((runtimePage+1)*runtimePageSize<runtimeTotalCount){runtimePage++;loadRuntimeTemplates();}};document.getElementById("btnNewRuntime").onclick=function(){openRuntimeEditor(null);};document.getElementById("btnSearchRuntimeCandidates").onclick=loadRuntimeCandidates;document.getElementById("runtimeEnvironment").onchange=loadRuntimeCandidates;
+  document.getElementById("btnSaveRuntime").onclick=async function(){
+    var name=document.getElementById("runtimeName").value.trim(),key=document.getElementById("runtimeTemplateKey").value.trim(),profile=document.getElementById("runtimeProfile").value.trim(),modelSetId=document.getElementById("runtimeModelSetId").value,statusValue=document.getElementById("runtimeStatus").value;if(!name||!key||!profile){showToast("请填写模板名称、模板键和运行类型","err");return;}if(!/^[A-Za-z][A-Za-z0-9_]*$/.test(key)||!/^[A-Za-z][A-Za-z0-9_]*$/.test(profile)){showToast("模板键和运行类型必须是英文标识","err");return;}if(statusValue==="active"&&!modelSetId){showToast("启用模板前必须选择 AICM 模型集","err");return;}
+    var contract=Object.assign({},(editingRuntime&&editingRuntime.capability_contract)||{});var jobTypes=document.getElementById("runtimeJobTypes").value.split(",").map(function(x){return x.trim();}).filter(Boolean);if(jobTypes.length)contract.supported_job_types=jobTypes;else delete contract.supported_job_types;var maxClasses=+document.getElementById("runtimeMaxClasses").value;if(maxClasses>0)contract.max_classes=maxClasses;else delete contract.max_classes;
+    var body={template_key:key,name:name,environment_id:document.getElementById("runtimeEnvironment").value,runtime_profile:profile,interface_version:+document.getElementById("runtimeInterfaceVersion").value||1,aicm_model_set_id:modelSetId||null,expected_model_alg_type:document.getElementById("runtimeExpectedAlg").value.trim()||null,capability_contract:contract,template_sha256:document.getElementById("runtimeSha256").value.trim()||null,is_default:document.getElementById("runtimeIsDefault").checked,status:statusValue};var path="/annotation-taxonomy/runtime-templates",method="POST";if(editingRuntime){path+="/"+editingRuntime.id;method="PATCH";body.version=editingRuntime.version;}var btn=this;btn.disabled=true;var res=await api(path,{method:method,body:JSON.stringify(body)});btn.disabled=false;if(!res.ok){showToast("保存运行模板失败："+errMsg(res),"err");return;}closeModal("modalRuntime");showToast("运行模板已保存","ok");await loadRuntimeEnvironments();loadRuntimeTemplates();
+  };
+  document.getElementById("btnDisableRuntime").onclick=function(){if(!editingRuntime)return;askConfirm("确认停用运行模板“"+editingRuntime.name+"”？",async function(){var res=await api("/annotation-taxonomy/runtime-templates/"+editingRuntime.id+"?version="+editingRuntime.version,{method:"DELETE"});if(!res.ok){showToast("停用运行模板失败："+errMsg(res),"err");return;}closeModal("modalRuntime");showToast("运行模板已停用","ok");loadRuntimeTemplates();},"停用运行模板");};
+
+  /* ---------- Presets ---------- */
+  var editingPresetId = null;
+  var presetListCache = [];
+  var presetSelectedLabelIds = [];
+  function renderPresetLabelPicker(){var host=document.getElementById("presetLabelPicker");if(!host)return;host.innerHTML="";systemLabelCatalogCache.filter(function(x){return x.status==="active"||presetSelectedLabelIds.indexOf(x.id)>=0;}).forEach(function(x){var row=document.createElement("label");row.className="label-picker-row";row.innerHTML='<input type="checkbox" value="'+x.id+'" '+(presetSelectedLabelIds.indexOf(x.id)>=0?'checked':'')+' /><span class="color-swatch" style="background:'+esc(x.color)+'"></span><span>'+esc(x.label_key)+'</span><code>'+esc(x.label_value)+'</code>';row.querySelector("input").onchange=function(ev){var id=+ev.target.value;if(ev.target.checked){if(presetSelectedLabelIds.indexOf(id)<0)presetSelectedLabelIds.push(id);}else presetSelectedLabelIds=presetSelectedLabelIds.filter(function(v){return v!==id;});renderPresetLabelPicker();};host.appendChild(row);});}
+
+  function renderPresetRows(list) {
+    var q = filterQuery(document.getElementById("searchPresets").value);
+    var tb = document.querySelector("#tblPresets tbody");
+    tb.innerHTML = "";
+    var shown = list.filter(function (p) {
+      if (!q) return true;
+      var hay =
+        String(p.id) +
+        " " +
+        (p.slug || "") +
+        " " +
+        (p.name || "") +
+        " " +
+        (p.description || "") +
+        " " +
+        (p.training_profile || "") +
+        " " +
+        (p.items || [])
+          .map(function (item) {
+            return (item.label_key || "") + " " + (item.label_value || "");
+          })
+          .join(" ");
+      return hay.toLowerCase().indexOf(q) >= 0;
+    });
+    shown.forEach(function (p) {
+      var tr = document.createElement("tr");
+      var nItems = p.items ? p.items.length : 0;
+      tr.innerHTML =
+        "<td>" +
+        p.id +
+        "</td><td>" +
+        techTag(p.slug, "slug: " + (p.slug || "")) +
+        "</td><td>" +
+        esc(p.name) +
+        "</td><td>" +
+        (p.sort_order != null ? p.sort_order : 0) +
+        "</td><td>" +
+        countTag(nItems, nItems + " 条标签") +
+        '</td><td><button type="button" class="btn btn-sm btn-edit-p" data-id="' +
+        p.id +
+        '">编辑</button> <button type="button" class="btn btn-sm btn-danger btn-del-p" data-id="' +
+        p.id +
+        '">删除</button></td>';
+      tb.appendChild(tr);
+    });
+    if (!shown.length) {
+      var empty = document.createElement("tr");
+      empty.innerHTML = '<td colspan="6" class="muted" style="text-align:center;">无匹配数据</td>';
+      tb.appendChild(empty);
+    }
+    tb.querySelectorAll(".btn-edit-p").forEach(function (b) {
+      b.onclick = function () {
+        openPresetEdit(+b.getAttribute("data-id"));
+      };
+    });
+    tb.querySelectorAll(".btn-del-p").forEach(function (b) {
+      b.onclick = function () {
+        delPreset(+b.getAttribute("data-id"));
+      };
+    });
+  }
+
+  async function loadPresets() {
+    if (!requireToken()) return;
+    var params = new URLSearchParams({ page: "0", size: "100" });
+    var keyword = document.getElementById("searchPresets").value.trim();
+    if (keyword) params.set("q", keyword);
+    var res = await api("/annotation-taxonomy/label-presets?" + params.toString());
+    if (!res.ok) {
+      showToast("加载预设失败：" + errMsg(res), "err");
+      return;
+    }
+    presetListCache = (res.json && res.json.data) || [];
+    renderPresetRows(presetListCache);
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  async function openPresetEdit(id) {
+    editingPresetId = id;
+    var res = await api("/annotation-taxonomy/label-presets/" + id);
+    if (!res.ok) {
+      showToast("读取预设失败：" + errMsg(res), "err");
+      return;
+    }
+    var p = res.json.data;
+    document.getElementById("modalPresetTitle").textContent = "编辑预设 #" + p.id;
+    document.getElementById("rowPresetSlug").style.display = "none";
+    document.getElementById("presetSlug").value = p.slug || "";
+    document.getElementById("presetName").value = p.name || "";
+    document.getElementById("presetDesc").value = p.description || "";
+    document.getElementById("presetSort").value = p.sort_order != null ? p.sort_order : 0;
+    presetSelectedLabelIds = (p.label_ids || (p.items||[]).map(function(x){return x.label_id;}).filter(Boolean)).slice();
+    renderPresetLabelPicker();
+    fillPresetItemsTable(p.items || []);
+    openModal("modalPreset");
+  }
+
+  function openPresetCreate() {
+    editingPresetId = null;
+    document.getElementById("modalPresetTitle").textContent = "新建预设";
+    document.getElementById("rowPresetSlug").style.display = "block";
+    document.getElementById("presetSlug").value = "";
+    document.getElementById("presetName").value = "";
+    document.getElementById("presetDesc").value = "";
+    document.getElementById("presetSort").value = "0";
+    presetSelectedLabelIds = [];
+    renderPresetLabelPicker();
+    fillPresetItemsTable([]);
+    openModal("modalPreset");
+  }
+
+  /** 新增标签行时按序取色，避免多行同色 */
+  var PRESET_LABEL_COLORS = [
+    "#1677ff",
+    "#52c41a",
+    "#fa8c16",
+    "#eb2f96",
+    "#722ed1",
+    "#13c2c2",
+    "#f5222d",
+    "#2f54eb",
+    "#a0d911",
+    "#fa541c",
+    "#1890ff",
+    "#389e0d",
+    "#d46b08",
+    "#cf1322",
+    "#531dab",
+    "#08979c",
+  ];
+
+  function hslToHex(h, s, l) {
+    s /= 100;
+    l /= 100;
+    var c = (1 - Math.abs(2 * l - 1)) * s;
+    var x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    var m = l - c / 2;
+    var r = 0;
+    var g = 0;
+    var b = 0;
+    if (h < 60) {
+      r = c;
+      g = x;
+    } else if (h < 120) {
+      r = x;
+      g = c;
+    } else if (h < 180) {
+      g = c;
+      b = x;
+    } else if (h < 240) {
+      g = x;
+      b = c;
+    } else if (h < 300) {
+      r = x;
+      b = c;
+    } else {
+      r = c;
+      b = x;
+    }
+    r = Math.round((r + m) * 255);
+    g = Math.round((g + m) * 255);
+    b = Math.round((b + m) * 255);
+    return (
+      "#" +
+      [r, g, b]
+        .map(function (v) {
+          return v.toString(16).padStart(2, "0");
+        })
+        .join("")
+    );
+  }
+
+  function presetColorByIndex(index) {
+    if (index < PRESET_LABEL_COLORS.length) return PRESET_LABEL_COLORS[index];
+    return hslToHex((index * 47) % 360, 70, 45);
+  }
+
+  function usedPresetColorsSet() {
+    var used = {};
+    document.querySelectorAll("#tblPresetItems tbody tr .pi-color").forEach(function (inp) {
+      used[normalizeColor(inp.value).toLowerCase()] = true;
+    });
+    return used;
+  }
+
+  function nextPresetItemColor() {
+    var used = usedPresetColorsSet();
+    var start = document.querySelectorAll("#tblPresetItems tbody tr").length;
+    for (var i = 0; i < 48; i++) {
+      var c = presetColorByIndex(start + i);
+      if (!used[c.toLowerCase()]) return c;
+    }
+    return presetColorByIndex(start);
+  }
+
+  function resolvePresetRowColor(it) {
+    if (it && it.color != null && String(it.color).trim() !== "") {
+      return normalizeColor(it.color);
+    }
+    return nextPresetItemColor();
+  }
+
+  function fillPresetItemsTable(items) {
+    var tb = document.querySelector("#tblPresetItems tbody");
+    tb.innerHTML = "";
+    if (!items.length) {
+      addPresetItemRow({ label_key: "", label_value: "", sort_order: 0 });
+      return;
+    }
+    items.forEach(function (it, idx) {
+      addPresetItemRow({
+        label_key: it.label_key,
+        label_value: it.label_value,
+        color: it.color || presetColorByIndex(idx),
+        sort_order: it.sort_order != null ? it.sort_order : 0,
+      });
+    });
+  }
+
+  function addPresetItemRow(it) {
+    it = it || {};
+    var tb = document.querySelector("#tblPresetItems tbody");
+    var tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td><input type="text" class="pi-key" maxlength="128" /></td>' +
+      '<td><input type="text" class="pi-val" maxlength="128" /></td>' +
+      '<td><input type="color" class="pi-color" /></td>' +
+      '<td><input type="number" class="pi-sort" step="1" /></td>' +
+      '<td><button type="button" class="btn btn-sm btn-del-row">删</button></td>';
+    tr.querySelector(".pi-key").value = it.label_key || "";
+    tr.querySelector(".pi-val").value = it.label_value || "";
+    tr.querySelector(".pi-color").value = resolvePresetRowColor(it);
+    tr.querySelector(".pi-sort").value = it.sort_order != null ? it.sort_order : 0;
+    tr.querySelector(".btn-del-row").onclick = function () {
+      tr.remove();
+      if (!document.querySelector("#tblPresetItems tbody").children.length) {
+        addPresetItemRow({ sort_order: 0 });
+      }
+    };
+    tb.appendChild(tr);
+  }
+
+  function normalizeColor(c) {
+    if (!c || typeof c !== "string") return "#1677ff";
+    var s = c.trim();
+    if (/^#[0-9A-Fa-f]{6}$/.test(s)) return s.toLowerCase();
+    if (/^#[0-9A-Fa-f]{3}$/.test(s)) return s.toLowerCase();
+    return "#1677ff";
+  }
+
+  function collectPresetItems() {
+    var rows = document.querySelectorAll("#tblPresetItems tbody tr");
+    var items = [];
+    rows.forEach(function (tr, idx) {
+      var key = tr.querySelector(".pi-key").value.trim();
+      var val = tr.querySelector(".pi-val").value.trim();
+      var color = normalizeColor(tr.querySelector(".pi-color").value);
+      var so = parseInt(tr.querySelector(".pi-sort").value, 10);
+      if (!key && !val) return;
+      if (!key || !val) return;
+      items.push({
+        label_key: key,
+        label_value: val,
+        color: color,
+        sort_order: isNaN(so) ? idx : so,
+      });
+    });
+    return items;
+  }
+
+  document.getElementById("btnNewPreset").onclick = openPresetCreate;
+  document.getElementById("btnReloadPresets").onclick = loadPresets;
+  document.getElementById("searchPresets").oninput = function () {
+    renderPresetRows(presetListCache);
+    clearTimeout(window.__presetSearchTimer);
+    window.__presetSearchTimer = setTimeout(loadPresets, 250);
+  };
+  document.getElementById("btnResetPresets").onclick = function () {
+    document.getElementById("searchPresets").value = "";
+    loadPresets();
+  };
+  document.getElementById("btnAddPresetItem").onclick = function () {
+    addPresetItemRow({ sort_order: document.querySelectorAll("#tblPresetItems tbody tr").length });
+  };
+
+  document.getElementById("btnSavePreset").onclick = async function () {
+    if (!validatePresetForm(!editingPresetId)) return;
+    if (editingPresetId) {
+      var body = {
+        name: document.getElementById("presetName").value.trim(),
+        description: document.getElementById("presetDesc").value.trim() || null,
+        sort_order: parseInt(document.getElementById("presetSort").value, 10) || 0,
+        label_ids: presetSelectedLabelIds,
+      };
+      var res = await api("/annotation-taxonomy/label-presets/" + editingPresetId, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        showToast("保存失败：" + errMsg(res), "err");
+        return;
+      }
+      showToast("已保存", "ok");
+      closeModal("modalPreset");
+      loadPresets();
+    } else {
+      var slug = document.getElementById("presetSlug").value.trim();
+      if (!slug) {
+        showToast("请填写 slug", "err");
+        return;
+      }
+      var body2 = {
+        slug: normalizePresetSlugInput(slug),
+        name: document.getElementById("presetName").value.trim(),
+        description: document.getElementById("presetDesc").value.trim() || null,
+        sort_order: parseInt(document.getElementById("presetSort").value, 10) || 0,
+        label_ids: presetSelectedLabelIds,
+      };
+      var res2 = await api("/annotation-taxonomy/label-presets", {
+        method: "POST",
+        body: JSON.stringify(body2),
+      });
+      if (!res2.ok) {
+        var em = errMsg(res2);
+        showToast("创建失败：" + em, "err");
+        if (/已存在|重复|库中已有/i.test(em)) {
+          document.getElementById("searchPresets").value = slug;
+          loadPresets();
+        }
+        return;
+      }
+      showToast("已创建", "ok");
+      closeModal("modalPreset");
+      loadPresets();
+    }
+  };
+
+  function delPreset(id) {
+    askConfirm("确定永久删除该预设？删除后数据库中的记录与子项将全部清除，且不可恢复。", async function () {
+      var res = await api("/annotation-taxonomy/label-presets/" + id, { method: "DELETE" });
+      if (!res.ok) {
+        showToast("删除失败：" + errMsg(res), "err");
+        return;
+      }
+      showToast("已删除", "ok");
+      loadPresets();
+    }, "删除标注预设");
+  }
+
+  /* ---------- Dimensions ---------- */
+  var editingDimId = null;
+  var dimListCache = [];
+
+  function renderDimRows(list) {
+    var q = filterQuery(document.getElementById("searchDims").value);
+    var tb = document.querySelector("#tblDims tbody");
+    tb.innerHTML = "";
+    var shown = list.filter(function (d) {
+      if (!q) return true;
+      var hay =
+        String(d.id) +
+        " " +
+        (d.field_key || "") +
+        " " +
+        (d.name_cn || "");
+      return hay.toLowerCase().indexOf(q) >= 0;
+    });
+    shown.forEach(function (d) {
+      var tr = document.createElement("tr");
+      var nOpts = d.options ? d.options.length : 0;
+      tr.innerHTML =
+        "<td>" +
+        d.id +
+        "</td><td>" +
+        techTag(d.field_key, "field_key: " + (d.field_key || "")) +
+        "</td><td>" +
+        esc(d.name_cn) +
+        "</td><td>" +
+        (d.sort_order != null ? d.sort_order : 0) +
+        "</td><td>" +
+        countTag(nOpts, nOpts + " 个选项") +
+        '</td><td><button type="button" class="btn btn-sm btn-edit-d" data-id="' +
+        d.id +
+        '">编辑</button> <button type="button" class="btn btn-sm btn-danger btn-del-d" data-id="' +
+        d.id +
+        '">删除</button></td>';
+      tb.appendChild(tr);
+    });
+    if (!shown.length) {
+      var empty = document.createElement("tr");
+      empty.innerHTML = '<td colspan="6" class="muted" style="text-align:center;">无匹配数据</td>';
+      tb.appendChild(empty);
+    }
+    tb.querySelectorAll(".btn-edit-d").forEach(function (b) {
+      b.onclick = function () {
+        openDimEdit(+b.getAttribute("data-id"));
+      };
+    });
+    tb.querySelectorAll(".btn-del-d").forEach(function (b) {
+      b.onclick = function () {
+        delDim(+b.getAttribute("data-id"));
+      };
+    });
+  }
+
+  async function loadDimensions() {
+    if (!requireToken()) return;
+    var res = await apiListAll("/annotation-taxonomy/global-tag-dimensions");
+    if (!res.ok) {
+      showToast("加载维度失败：" + errMsg(res), "err");
+      return;
+    }
+    dimListCache = (res.json && res.json.data) || [];
+    renderDimRows(dimListCache);
+  }
+
+  async function openDimEdit(id) {
+    editingDimId = id;
+    var res = await api("/annotation-taxonomy/global-tag-dimensions/" + id);
+    if (!res.ok) {
+      showToast("读取维度失败：" + errMsg(res), "err");
+      return;
+    }
+    var d = res.json.data;
+    document.getElementById("modalDimTitle").textContent = "编辑维度 #" + d.id;
+    document.getElementById("rowDimKey").innerHTML =
+      '<label>field_key（不可改）</label><input type="text" id="dimFieldKeyRo" readonly style="background:#f5f5f5" />';
+    document.getElementById("dimFieldKeyRo").value = d.field_key || "";
+    document.getElementById("dimNameCn").value = d.name_cn || "";
+    document.getElementById("dimSort").value = d.sort_order != null ? d.sort_order : 0;
+    fillDimOptsTable(d.options || []);
+    openModal("modalDim");
+  }
+
+  function openDimCreate() {
+    editingDimId = null;
+    document.getElementById("modalDimTitle").textContent = "新建维度";
+    document.getElementById("rowDimKey").innerHTML =
+      '<label>field_key（创建后不可改）</label><input type="text" id="dimFieldKey" maxlength="64" placeholder="如 sceneType" />';
+    document.getElementById("dimNameCn").value = "";
+    document.getElementById("dimSort").value = "0";
+    fillDimOptsTable([]);
+    openModal("modalDim");
+  }
+
+  function fillDimOptsTable(opts) {
+    var tb = document.querySelector("#tblDimOpts tbody");
+    tb.innerHTML = "";
+    if (!opts.length) addDimOptRow({ name_cn: "", value_en: "", sort_order: 0 });
+    opts.forEach(function (o) {
+      addDimOptRow({
+        name_cn: o.name_cn,
+        value_en: o.value_en,
+        sort_order: o.sort_order != null ? o.sort_order : 0,
+      });
+    });
+  }
+
+  function addDimOptRow(o) {
+    var tb = document.querySelector("#tblDimOpts tbody");
+    var tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td><input type="text" class="do-cn" maxlength="128" /></td>' +
+      '<td><input type="text" class="do-en" maxlength="128" /></td>' +
+      '<td><input type="number" class="do-sort" step="1" /></td>' +
+      '<td><button type="button" class="btn btn-sm btn-del-or">删</button></td>';
+    tr.querySelector(".do-cn").value = o.name_cn || "";
+    tr.querySelector(".do-en").value = o.value_en || "";
+    tr.querySelector(".do-sort").value = o.sort_order != null ? o.sort_order : 0;
+    tr.querySelector(".btn-del-or").onclick = function () {
+      tr.remove();
+      if (!document.querySelector("#tblDimOpts tbody").children.length) addDimOptRow({});
+    };
+    tb.appendChild(tr);
+  }
+
+  function collectDimOpts() {
+    var rows = document.querySelectorAll("#tblDimOpts tbody tr");
+    var opts = [];
+    rows.forEach(function (tr, idx) {
+      var cn = tr.querySelector(".do-cn").value.trim();
+      var en = tr.querySelector(".do-en").value.trim();
+      var so = parseInt(tr.querySelector(".do-sort").value, 10);
+      if (!cn && !en) return;
+      opts.push({
+        name_cn: cn,
+        value_en: en,
+        sort_order: isNaN(so) ? idx : so,
+      });
+    });
+    return opts;
+  }
+
+  document.getElementById("btnNewDim").onclick = openDimCreate;
+  document.getElementById("btnReloadDims").onclick = loadDimensions;
+  document.getElementById("searchDims").oninput = function () {
+    renderDimRows(dimListCache);
+  };
+  document.getElementById("btnResetDims").onclick = function () {
+    document.getElementById("searchDims").value = "";
+    loadDimensions();
+  };
+  document.getElementById("btnResetImport").onclick = function () {
+    document.getElementById("jsonImportArea").value = "";
+    document.getElementById("importPreview").innerHTML = "";
+    document.getElementById("chkOverwrite").checked = true;
+  };
+  document.getElementById("btnAddDimOpt").onclick = function () {
+    addDimOptRow({ sort_order: document.querySelectorAll("#tblDimOpts tbody tr").length });
+  };
+
+  document.getElementById("btnSaveDim").onclick = async function () {
+    var opts = collectDimOpts();
+    if (!opts.length) {
+      showToast("维度至少需要一个选项", "err");
+      return;
+    }
+    if (editingDimId) {
+      var body = {
+        name_cn: document.getElementById("dimNameCn").value.trim(),
+        sort_order: parseInt(document.getElementById("dimSort").value, 10) || 0,
+        options: opts,
+      };
+      var res = await api("/annotation-taxonomy/global-tag-dimensions/" + editingDimId, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        showToast("保存失败：" + errMsg(res), "err");
+        return;
+      }
+      showToast("已保存", "ok");
+      closeModal("modalDim");
+      loadDimensions();
+    } else {
+      var fkEl = document.getElementById("dimFieldKey");
+      var fk = fkEl ? fkEl.value.trim() : "";
+      if (!fk) {
+        showToast("请填写 field_key", "err");
+        return;
+      }
+      var body2 = {
+        field_key: fk,
+        name_cn: document.getElementById("dimNameCn").value.trim(),
+        sort_order: parseInt(document.getElementById("dimSort").value, 10) || 0,
+        options: opts,
+      };
+      var res2 = await api("/annotation-taxonomy/global-tag-dimensions", {
+        method: "POST",
+        body: JSON.stringify(body2),
+      });
+      if (!res2.ok) {
+        showToast("创建失败：" + errMsg(res2), "err");
+        return;
+      }
+      showToast("已创建", "ok");
+      closeModal("modalDim");
+      loadDimensions();
+    }
+  };
+
+  function delDim(id) {
+    askConfirm("确定永久删除该维度？删除后数据库中的记录与选项将全部清除，且不可恢复。", async function () {
+      var res = await api("/annotation-taxonomy/global-tag-dimensions/" + id, { method: "DELETE" });
+      if (!res.ok) {
+        showToast("删除失败：" + errMsg(res), "err");
+        return;
+      }
+      showToast("已删除", "ok");
+      loadDimensions();
+    }, "删除全局维度");
+  }
+
+  /* ---------- JSON 导入（粘贴 / 上传文件） ---------- */
+  var IMPORT_SAMPLE = {
+    label_presets: [
+      {
+        slug: "demoFromJson",
+        name: "JSON 导入示例预设",
+        description: "可删掉或改名",
+        sort_order: 0,
+        items: [{ label_key: "示例标签", label_value: "demo_label", color: "#1677ff", sort_order: 0 }],
+      },
+    ],
+    global_dimensions: [
+      {
+        field_key: "demoJsonDim",
+        name_cn: "示例维度",
+        sort_order: 0,
+        options: [{ name_cn: "选项甲", value_en: "opt_a", sort_order: 0 }],
+      },
+    ],
+  };
+
+  function parseImportRoot(text) {
+    var raw;
+    try {
+      raw = JSON.parse(text);
+    } catch (e) {
+      throw new Error("JSON 解析失败：" + (e.message || String(e)) + "。请检查逗号、括号与引号是否配对。");
+    }
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+      throw new Error("根节点必须是 JSON 对象 {...}，不能直接是数组。");
+    }
+    var presets = [];
+    if (Array.isArray(raw.label_presets)) presets = raw.label_presets;
+    else if (Array.isArray(raw.presets)) presets = raw.presets;
+    else if (raw.label_preset && typeof raw.label_preset === "object") presets = [raw.label_preset];
+
+    var dimensions = [];
+    if (Array.isArray(raw.global_dimensions)) dimensions = raw.global_dimensions;
+    else if (Array.isArray(raw.dimensions)) dimensions = raw.dimensions;
+    else if (raw.global_dimension && typeof raw.global_dimension === "object") dimensions = [raw.global_dimension];
+
+    if (!presets.length && !dimensions.length) {
+      throw new Error("未找到数据：请提供 label_presets / presets 或 global_dimensions / dimensions，且至少包含一条记录。");
+    }
+    return { presets: presets, dimensions: dimensions };
+  }
+
+  function numOr(v, fallback) {
+    var n = parseInt(v, 10);
+    return isNaN(n) ? fallback : n;
+  }
+
+  function normalizePresetForApi(p) {
+    var items = Array.isArray(p.items) ? p.items : [];
+    return {
+      slug: String(p.slug == null ? "" : p.slug).trim(),
+      name: String(p.name == null ? "" : p.name).trim(),
+      description:
+        p.description != null && String(p.description).trim() ? String(p.description).trim() : null,
+      sort_order: numOr(p.sort_order, 0),
+      items: items.map(function (it, idx) {
+        return {
+          label_key: String(it.label_key == null ? "" : it.label_key).trim(),
+          label_value: String(it.label_value == null ? "" : it.label_value).trim(),
+          color: normalizeColor(it.color),
+          sort_order: numOr(it.sort_order, idx),
+        };
+      }),
+    };
+  }
+
+  function normalizeDimForApi(d) {
+    var opts = Array.isArray(d.options) ? d.options : [];
+    return {
+      field_key: String(d.field_key == null ? "" : d.field_key).trim(),
+      name_cn: String(d.name_cn == null ? "" : d.name_cn).trim(),
+      sort_order: numOr(d.sort_order, 0),
+      options: opts.map(function (o, idx) {
+        return {
+          name_cn: String(o.name_cn == null ? "" : o.name_cn).trim(),
+          value_en: String(o.value_en == null ? "" : o.value_en).trim(),
+          sort_order: numOr(o.sort_order, idx),
+        };
+      }),
+    };
+  }
+
+  function validateImportPayload(payload) {
+    var errors = [];
+    var warnings = [];
+    payload.presets.forEach(function (p, idx) {
+      var prefix = "预设[" + idx + "]";
+      if (!p || typeof p !== "object") {
+        errors.push(prefix + " 不是对象");
+        return;
+      }
+      var np = normalizePresetForApi(p);
+      if (!np.slug) errors.push(prefix + " 缺少 slug（英文键）");
+      if (!np.name) errors.push(prefix + " 缺少 name（名称）");
+      if (!Array.isArray(p.items)) errors.push(prefix + " 的 items 必须是数组");
+      if (np.items.length === 0) warnings.push(prefix + "（slug=" + np.slug + "）没有标签行，导入后预设为空");
+      np.items.forEach(function (it, j) {
+        if (!it.label_key || !it.label_value) {
+          errors.push(prefix + ".items[" + j + "] 需同时填写 label_key（中文展示）与 label_value（英文键）");
+        }
+      });
+    });
+    payload.dimensions.forEach(function (d, idx) {
+      var prefix = "维度[" + idx + "]";
+      if (!d || typeof d !== "object") {
+        errors.push(prefix + " 不是对象");
+        return;
+      }
+      var nd = normalizeDimForApi(d);
+      if (!nd.field_key) errors.push(prefix + " 缺少 field_key");
+      if (!nd.name_cn) errors.push(prefix + " 缺少 name_cn");
+      if (!Array.isArray(d.options)) errors.push(prefix + " 的 options 必须是数组");
+      else if (nd.options.length === 0) errors.push(prefix + " 至少需要一个选项");
+      nd.options.forEach(function (o, j) {
+        if (!o.name_cn || !o.value_en) {
+          errors.push(prefix + ".options[" + j + "] 需同时填写 name_cn 与 value_en");
+        }
+      });
+    });
+    return { errors: errors, warnings: warnings };
+  }
+
+  function renderImportPreview(payload, errors, warnings) {
+    var el = document.getElementById("importPreview");
+    if (errors.length) {
+      el.innerHTML =
+        '<div class="err-line"><strong>校验未通过：</strong></div><ul>' +
+        errors
+          .map(function (e) {
+            return '<li class="err-line">' + esc(e) + "</li>";
+          })
+          .join("") +
+        "</ul>";
+      return;
+    }
+    var html = "<div><strong>校验通过。</strong>将导入：</div><ul>";
+    payload.presets.forEach(function (p) {
+      var n = normalizePresetForApi(p);
+      html +=
+        "<li>预设 <code>" +
+        esc(n.slug) +
+        "</code> — " +
+        esc(n.name) +
+        "，<strong>" +
+        n.items.length +
+        "</strong> 条标签</li>";
+    });
+    payload.dimensions.forEach(function (d) {
+      var n = normalizeDimForApi(d);
+      html +=
+        "<li>维度 <code>" +
+        esc(n.field_key) +
+        "</code> — " +
+        esc(n.name_cn) +
+        "，<strong>" +
+        n.options.length +
+        "</strong> 个选项</li>";
+    });
+    html += "</ul>";
+    if (warnings.length) {
+      html +=
+        '<div class="warn"><strong>提示：</strong><ul>' +
+        warnings
+          .map(function (w) {
+            return "<li>" + esc(w) + "</li>";
+          })
+          .join("") +
+        "</ul></div>";
+    }
+    el.innerHTML = html;
+  }
+
+  async function buildSlugToPresetId() {
+    var res = await api("/annotation-taxonomy/label-presets?page=0&size=500");
+    if (!res.ok) throw new Error(errMsg(res));
+    var map = {};
+    ((res.json && res.json.data) || []).forEach(function (p) {
+      map[p.slug] = p.id;
+    });
+    return map;
+  }
+
+  async function buildFieldKeyToDimId() {
+    var res = await api("/annotation-taxonomy/global-tag-dimensions?page=0&size=500");
+    if (!res.ok) throw new Error(errMsg(res));
+    var map = {};
+    ((res.json && res.json.data) || []).forEach(function (d) {
+      map[d.field_key] = d.id;
+    });
+    return map;
+  }
+
+  document.getElementById("jsonFileInput").onchange = function (ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      document.getElementById("jsonImportArea").value = String(reader.result || "");
+      showToast("已读取文件：" + f.name, "ok");
+    };
+    reader.onerror = function () {
+      showToast("读取文件失败，请确认编码为 UTF-8", "err");
+    };
+    reader.readAsText(f, "UTF-8");
+    ev.target.value = "";
+  };
+
+  document.getElementById("btnFillSample").onclick = function () {
+    document.getElementById("jsonImportArea").value = JSON.stringify(IMPORT_SAMPLE, null, 2);
+    showToast("已填入示例，可修改后再校验", "ok");
+  };
+
+  document.getElementById("btnJsonValidate").onclick = function () {
+    if (!getToken()) {
+      showToast("请先登录或粘贴 Token", "err");
+      return;
+    }
+    var text = document.getElementById("jsonImportArea").value.trim();
+    if (!text) {
+      document.getElementById("importPreview").innerHTML =
+        '<span class="err-line">请先粘贴 JSON 或上传文件。</span>';
+      return;
+    }
+    try {
+      var payload = parseImportRoot(text);
+      var v = validateImportPayload(payload);
+      renderImportPreview(payload, v.errors, v.warnings);
+      if (!v.errors.length) showToast("校验通过", "ok");
+    } catch (e) {
+      document.getElementById("importPreview").innerHTML =
+        '<div class="err-line">' + esc(String(e.message || e)) + "</div>";
+      showToast("校验失败", "err");
+    }
+  };
+
+  document.getElementById("btnJsonImport").onclick = async function () {
+    if (!getToken()) {
+      showToast("请先登录或粘贴 Token", "err");
+      return;
+    }
+    var text = document.getElementById("jsonImportArea").value.trim();
+    if (!text) {
+      showToast("文本框为空", "err");
+      return;
+    }
+    var payload;
+    try {
+      payload = parseImportRoot(text);
+    } catch (e) {
+      showToast(String(e.message || e), "err");
+      return;
+    }
+    var v = validateImportPayload(payload);
+    if (v.errors.length) {
+      renderImportPreview(payload, v.errors, v.warnings);
+      showToast("请先修正校验错误再导入", "err");
+      return;
+    }
+    var overwrite = document.getElementById("chkOverwrite").checked;
+    askConfirm("确定向数据库写入 " + payload.presets.length + " 个预设与 " + payload.dimensions.length + " 个维度？", async function () {
+      try {
+      var slugToId = await buildSlugToPresetId();
+      var keyToDimId = await buildFieldKeyToDimId();
+      var ok = 0;
+      var skip = 0;
+      var fail = [];
+
+      for (var i = 0; i < payload.presets.length; i++) {
+        var np = normalizePresetForApi(payload.presets[i]);
+        var pid = slugToId[np.slug];
+        if (pid) {
+          if (!overwrite) {
+            skip++;
+            continue;
+          }
+          var resP = await api("/annotation-taxonomy/label-presets/" + pid, {
+            method: "PATCH",
+            body: JSON.stringify({
+              name: np.name,
+              description: np.description,
+              sort_order: np.sort_order,
+              items: np.items,
+            }),
+          });
+          if (!resP.ok) fail.push("预设 " + np.slug + "：" + errMsg(resP));
+          else ok++;
+        } else {
+          var resC = await api("/annotation-taxonomy/label-presets", {
+            method: "POST",
+            body: JSON.stringify({
+              slug: np.slug,
+              name: np.name,
+              description: np.description,
+              sort_order: np.sort_order,
+              items: np.items,
+            }),
+          });
+          if (!resC.ok) fail.push("预设 " + np.slug + "：" + errMsg(resC));
+          else {
+            ok++;
+            if (resC.json && resC.json.data && resC.json.data.id) slugToId[np.slug] = resC.json.data.id;
+          }
+        }
+      }
+
+      for (var j = 0; j < payload.dimensions.length; j++) {
+        var nd = normalizeDimForApi(payload.dimensions[j]);
+        var did = keyToDimId[nd.field_key];
+        if (did) {
+          if (!overwrite) {
+            skip++;
+            continue;
+          }
+          var resD = await api("/annotation-taxonomy/global-tag-dimensions/" + did, {
+            method: "PATCH",
+            body: JSON.stringify({
+              name_cn: nd.name_cn,
+              sort_order: nd.sort_order,
+              options: nd.options,
+            }),
+          });
+          if (!resD.ok) fail.push("维度 " + nd.field_key + "：" + errMsg(resD));
+          else ok++;
+        } else {
+          var resDc = await api("/annotation-taxonomy/global-tag-dimensions", {
+            method: "POST",
+            body: JSON.stringify({
+              field_key: nd.field_key,
+              name_cn: nd.name_cn,
+              sort_order: nd.sort_order,
+              options: nd.options,
+            }),
+          });
+          if (!resDc.ok) fail.push("维度 " + nd.field_key + "：" + errMsg(resDc));
+          else {
+            ok++;
+            if (resDc.json && resDc.json.data && resDc.json.data.id) keyToDimId[nd.field_key] = resDc.json.data.id;
+          }
+        }
+      }
+
+      loadPresets();
+      loadDimensions();
+      var summary = "导入结束：成功 " + ok + " 项";
+      if (skip) summary += "，跳过（已存在且未勾选覆盖）" + skip + " 项";
+      if (fail.length) summary += "；失败 " + fail.length + " 项";
+      showToast(summary, fail.length ? "err" : "ok");
+      document.getElementById("importPreview").innerHTML =
+        "<div>" +
+        esc(summary) +
+        "</div>" +
+        (fail.length
+          ? '<ul class="err-line">' +
+            fail
+              .map(function (x) {
+                return "<li>" + esc(x) + "</li>";
+              })
+              .join("") +
+            "</ul>"
+          : "");
+      } catch (e) {
+        showToast("导入中断：" + String(e.message || e), "err");
+      }
+    }, "确认导入标注设置");
+  };
+
+  function init() {
+    document.getElementById("importSampleJson").textContent = JSON.stringify(IMPORT_SAMPLE, null, 2);
+    document.getElementById("tokenInput").value = getToken();
+    var initialTab = new URLSearchParams(location.search).get("tab");
+    if (initialTab) activateTab(initialTab);
+    checkAuth();
+    if (getToken()) {
+      loadPresets();
+      loadDimensions();
+      loadSystemLabels();
+      loadSystemLabelCatalog();
+      loadCategories();
+      loadAliases();
+      loadRecipes();
+      loadRuntimeEnvironments().then(loadRuntimeTemplates);
+    }
+  }
+
+  init();
+})();
+  </script>
+</body>
+</html>

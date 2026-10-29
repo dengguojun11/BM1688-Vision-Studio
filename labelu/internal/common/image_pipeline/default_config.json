@@ -1,0 +1,15 @@
+{
+  "clustering": {
+    "num_clusters": null,
+    "auto_cluster": true
+  },
+  "outliers": {
+    "ratio": 0.1
+  },
+  "subscenes": {
+    "similarity_threshold": 0.85,
+    "method": "hist"
+  },
+  "import_steps": ["cluster", "remove_outliers", "subscenes"],
+  "import_outlier_action": "tag"
+}

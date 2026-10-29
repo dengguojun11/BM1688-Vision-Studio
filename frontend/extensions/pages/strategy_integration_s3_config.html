@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>专家回流 S3 配置</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root { --bg:#f4f7f8; --panel:#fff; --line:#dce4e8; --text:#17212b; --muted:#667482; --brand:#0c6a5b; --brand-soft:#e8f5f1; --danger:#b42335; }
+    * { box-sizing:border-box; }
+    body.labelu-shell { margin:0; min-height:100vh; background:var(--bg); color:var(--text); }
+    .page-main { max-width:1360px; margin:0 auto; padding:20px 18px 32px; }
+    .page-head { display:flex; justify-content:space-between; align-items:flex-end; gap:16px; margin-bottom:18px; }
+    .page-head h1 { margin:0 0 6px; font-size:24px; letter-spacing:0; }
+    .page-head p { margin:0; color:var(--muted); font-size:13px; }
+    .actions { display:flex; gap:8px; flex-wrap:wrap; }
+    .btn { border:1px solid var(--line); border-radius:8px; padding:9px 14px; background:#fff; color:var(--text); font-size:13px; cursor:pointer; }
+    .btn:hover { border-color:#8fc8bd; }
+    .btn.primary { border-color:var(--brand); background:var(--brand); color:#fff; }
+    .btn.danger { color:var(--danger); border-color:#efb8c0; }
+    .btn:disabled { opacity:.5; cursor:not-allowed; }
+    .summary { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
+    .summary-item { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:14px 16px; }
+    .summary-label { color:var(--muted); font-size:12px; }
+    .summary-value { margin-top:5px; font-size:20px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .workspace { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(340px,.65fr); gap:16px; align-items:start; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+    .panel-head { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:15px 16px; border-bottom:1px solid var(--line); }
+    .panel-head h2 { margin:0; font-size:16px; }
+    .panel-head p { margin:4px 0 0; color:var(--muted); font-size:12px; }
+    .panel-body { padding:0; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:13px 14px; border-bottom:1px solid #edf1f3; text-align:left; font-size:13px; vertical-align:middle; }
+    th { color:var(--muted); background:#fafcfc; font-size:12px; font-weight:600; }
+    tbody tr { cursor:pointer; }
+    tbody tr:hover, tbody tr.selected { background:#f5fbf9; }
+    tbody tr.active { box-shadow:inset 3px 0 0 var(--brand); }
+    .name-cell { font-weight:650; }
+    .endpoint { color:#43515d; font-family:ui-monospace,Consolas,monospace; word-break:break-all; }
+    .muted { color:var(--muted); }
+    .status { display:inline-flex; align-items:center; padding:4px 8px; border:1px solid #a0d4ca; border-radius:999px; color:var(--brand); background:var(--brand-soft); font-size:11px; white-space:nowrap; }
+    .empty { padding:46px 20px; text-align:center; color:var(--muted); }
+    .editor { padding:16px; }
+    .editor-title { margin:0 0 4px; font-size:17px; }
+    .editor-note { margin:0 0 18px; color:var(--muted); font-size:12px; line-height:1.6; }
+    .field { margin-bottom:15px; }
+    .field label { display:block; margin-bottom:6px; color:#45535f; font-size:12px; font-weight:650; }
+    .field input, .field textarea { width:100%; border:1px solid var(--line); border-radius:7px; padding:10px 11px; color:var(--text); background:#fff; font:inherit; font-size:13px; }
+    .field textarea { min-height:82px; resize:vertical; }
+    .field input:focus, .field textarea:focus { outline:2px solid rgba(12,106,91,.14); border-color:var(--brand); }
+    .field small { display:block; margin-top:6px; color:var(--muted); font-size:11px; }
+    .detail { border-top:1px solid var(--line); margin:18px -16px 0; padding:15px 16px 0; }
+    .detail h3 { margin:0 0 10px; font-size:13px; }
+    .detail-row { display:flex; justify-content:space-between; gap:14px; padding:7px 0; font-size:12px; border-bottom:1px solid #edf1f3; }
+    .detail-row span:first-child { color:var(--muted); }
+    .detail-row span:last-child { text-align:right; word-break:break-all; }
+    .editor-actions { display:flex; justify-content:space-between; gap:8px; margin-top:20px; }
+    .editor-actions .left, .editor-actions .right { display:flex; gap:8px; }
+    .auth-box { margin:0 18px; padding:12px 14px; border:1px solid #f0d594; border-radius:8px; background:#fff8e7; color:#6b4b00; font-size:13px; }
+    .auth-box a { color:inherit; }
+    .toast { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); display:none; max-width:88vw; padding:11px 15px; border-radius:7px; background:#17212b; color:#fff; font-size:13px; z-index:20; }
+    .toast.ok { background:#0e8a44; }
+    .toast.err { background:var(--danger); }
+    .confirm-backdrop { display:none; position:fixed; inset:0; z-index:1000; align-items:center; justify-content:center; padding:16px; background:rgba(0,0,0,.35); }
+    .confirm-backdrop.show { display:flex; }
+    .confirm-box { width:min(440px,calc(100vw - 32px)); background:#fff; border-radius:8px; padding:20px; box-shadow:0 16px 44px rgba(23,33,43,.2); }
+    .confirm-box h2 { margin:0 0 10px; font-size:16px; }
+    .confirm-box p { margin:0; color:var(--muted); font-size:13px; line-height:1.6; white-space:pre-wrap; }
+    .confirm-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+    @media (max-width:900px) { .workspace { grid-template-columns:1fr; } .panel-right { order:-1; } }
+    @media (max-width:620px) { .page-head { align-items:flex-start; flex-direction:column; } .summary { grid-template-columns:1fr; } .summary-item { padding:11px 13px; } th:nth-child(3), td:nth-child(3) { display:none; } .page-main { padding:14px 12px 28px; } }
+  </style>
+</head>
+<body class="labelu-shell">
+  <header class="labelu-shell-header">
+    <div class="labelu-shell-brand">7GAI进化平台 / 专家回流 S3 配置</div>
+    <nav class="labelu-shell-nav"></nav>
+  </header>
+  <div id="luPageHero"></div>
+  <div class="auth-box" id="authBox" style="display:none;">
+    当前未登录，请先前往<a data-lu-login-link href="/login">登录</a>。
+  </div>
+  <main class="page-main">
+    <div class="page-head">
+      <div>
+        <h1>专家回流 S3 服务地址</h1>
+        <p>维护专家回流数据集导入和策略任务联动使用的服务地址。</p>
+      </div>
+      <div class="actions">
+        <button class="btn" id="btnRefresh" type="button">刷新</button>
+        <button class="btn primary" id="btnCreate" type="button">新增配置</button>
+      </div>
+    </div>
+    <section class="summary" aria-label="配置摘要">
+      <div class="summary-item"><div class="summary-label">当前启用</div><div class="summary-value" id="summaryActive">未配置</div></div>
+      <div class="summary-item"><div class="summary-label">服务地址</div><div class="summary-value endpoint" id="summaryEndpoint">-</div></div>
+      <div class="summary-item"><div class="summary-label">配置数量</div><div class="summary-value" id="summaryCount">0</div></div>
+    </section>
+    <div class="workspace">
+      <section class="panel">
+        <div class="panel-head"><div><h2>地址列表</h2><p>启用的地址会用于后续专家回流任务。</p></div></div>
+        <div class="panel-body" id="listRoot"></div>
+      </section>
+      <section class="panel panel-right">
+        <div class="editor">
+          <h2 class="editor-title" id="editorTitle">新增配置</h2>
+          <p class="editor-note">只需填写名称和完整服务地址，例如 <code>http://192.168.54.190:29100</code>。</p>
+          <div class="field"><label for="fieldName">配置名称</label><input id="fieldName" maxlength="64" placeholder="生产 MinIO" /></div>
+          <div class="field"><label for="fieldEndpoint">服务地址</label><input id="fieldEndpoint" maxlength="500" placeholder="http://192.168.54.190:29100" /><small>地址需要包含协议和端口；填写 IP 时会自动补充 http://。</small></div>
+          <div class="field"><label for="fieldRemark">备注（可选）</label><textarea id="fieldRemark" maxlength="200" placeholder="例如：专家回流生产对象存储"></textarea></div>
+          <div class="detail" id="detailRoot" hidden>
+            <h3>配置详情</h3>
+            <div class="detail-row"><span>状态</span><span id="detailStatus">-</span></div>
+            <div class="detail-row"><span>创建时间</span><span id="detailCreated">-</span></div>
+            <div class="detail-row"><span>更新时间</span><span id="detailUpdated">-</span></div>
+          </div>
+          <div class="editor-actions">
+            <div class="left"><button class="btn danger" id="btnDelete" type="button" disabled>删除</button></div>
+            <div class="right"><button class="btn" id="btnReset" type="button">重置</button><button class="btn" id="btnActive" type="button" disabled>设为启用</button><button class="btn primary" id="btnSave" type="button">保存</button></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div class="confirm-backdrop" id="confirmBackdrop" aria-hidden="true">
+    <div class="confirm-box" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <h2 id="confirmTitle">确认删除配置</h2>
+      <p id="confirmMessage"></p>
+      <div class="confirm-actions"><button class="btn" id="confirmCancel" type="button">取消</button><button class="btn danger" id="confirmOk" type="button">删除</button></div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script>
+  (function () {
+    var state = { connections: [], activeId: "", selectedId: "", pendingDelete: null };
+    function token() { return window.LabeluPortal && window.LabeluPortal.getAuthToken ? window.LabeluPortal.getAuthToken() : ""; }
+    function syncAuth() {
+      if (window.LabeluPortal && window.LabeluPortal.syncAuthBox) return !!window.LabeluPortal.syncAuthBox();
+      var box = document.getElementById("authBox"); if (box) box.style.display = token() ? "none" : ""; return !!token();
+    }
+    function esc(value) { return String(value == null ? "" : value).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+    function toast(message, kind) { var el = document.getElementById("toast"); el.textContent = message || ""; el.className = "toast" + (kind ? " " + kind : ""); el.style.display = "block"; clearTimeout(el._timer); el._timer = setTimeout(function () { el.style.display = "none"; }, 2400); }
+    async function api(path, options) {
+      var opts = options || {}; var headers = opts.headers || {}; headers["Content-Type"] = "application/json"; if (token()) headers.Authorization = token();
+      var resp = await fetch("/api/v1" + path, { method: opts.method || "GET", headers: headers, body: opts.body, credentials: "same-origin" });
+      var text = await resp.text(); var data = text ? JSON.parse(text) : {};
+      if (resp.status === 401 || resp.status === 403) { if (window.LabeluPortal && window.LabeluPortal.setAuthToken) window.LabeluPortal.setAuthToken(""); syncAuth(); throw new Error("未登录或没有管理员权限"); }
+      if (!resp.ok) throw new Error((data && (data.msg || data.detail)) || ("HTTP " + resp.status));
+      return data.data;
+    }
+    function selected() { return state.connections.find(function (item) { return item.id === state.selectedId; }) || null; }
+    function renderSummary() {
+      var active = state.connections.find(function (item) { return item.id === state.activeId || item.is_active; }) || null;
+      document.getElementById("summaryActive").textContent = active ? active.name : "未配置";
+      document.getElementById("summaryEndpoint").textContent = active ? active.endpoint : "-";
+      document.getElementById("summaryCount").textContent = String(state.connections.length || 0);
+    }
+    function renderList() {
+      var root = document.getElementById("listRoot");
+      if (!state.connections.length) { root.innerHTML = '<div class="empty">暂无配置，请点击“新增配置”。</div>'; return; }
+      root.innerHTML = '<table><thead><tr><th>状态</th><th>配置名称</th><th>服务地址</th><th>备注</th></tr></thead><tbody>' + state.connections.map(function (item) {
+        var active = item.id === state.activeId || item.is_active;
+        return '<tr class="' + (active ? 'active ' : '') + (item.id === state.selectedId ? 'selected' : '') + '" data-id="' + esc(item.id) + '">' +
+          '<td>' + (active ? '<span class="status">启用中</span>' : '<span class="muted">未启用</span>') + '</td>' +
+          '<td class="name-cell">' + esc(item.name) + '</td><td class="endpoint">' + esc(item.endpoint) + '</td><td class="muted">' + esc(item.remark || '-') + '</td></tr>';
+      }).join("") + '</tbody></table>';
+      root.querySelectorAll("[data-id]").forEach(function (row) { row.onclick = function () { select(row.getAttribute("data-id")); }; });
+    }
+    function fillForm(item) {
+      document.getElementById("editorTitle").textContent = item ? "编辑配置" : "新增配置";
+      document.getElementById("fieldName").value = item ? item.name : "";
+      document.getElementById("fieldEndpoint").value = item ? item.endpoint : "";
+      document.getElementById("fieldRemark").value = item ? (item.remark || "") : "";
+      document.getElementById("btnDelete").disabled = !item;
+      document.getElementById("btnActive").disabled = !item || item.id === state.activeId || item.is_active;
+      var detail = document.getElementById("detailRoot"); detail.hidden = !item;
+      if (item) { document.getElementById("detailStatus").textContent = item.id === state.activeId || item.is_active ? "启用中" : "未启用"; document.getElementById("detailCreated").textContent = item.created_at || "-"; document.getElementById("detailUpdated").textContent = item.updated_at || "-"; }
+    }
+    function select(id) { state.selectedId = id || ""; fillForm(selected()); renderList(); }
+    function reset() { state.selectedId = ""; fillForm(null); renderList(); }
+    async function load() { if (!syncAuth()) return; var data = await api("/strategy-integration-s3-config"); state.connections = data.connections || []; state.activeId = data.active_connection_id || ""; if (!state.selectedId && state.connections.length) state.selectedId = state.activeId || state.connections[0].id; renderSummary(); renderList(); fillForm(selected()); }
+    function payload() { return { name: document.getElementById("fieldName").value.trim(), endpoint: document.getElementById("fieldEndpoint").value.trim(), remark: document.getElementById("fieldRemark").value.trim() }; }
+    async function save() { if (!syncAuth()) return; var body = payload(); if (!body.name || !body.endpoint) { toast("请填写配置名称和服务地址", "err"); return; } if (state.selectedId) { await api("/strategy-integration-s3-config/connections/" + encodeURIComponent(state.selectedId), { method:"PATCH", body:JSON.stringify(body) }); toast("配置已保存", "ok"); } else { var created = await api("/strategy-integration-s3-config/connections", { method:"POST", body:JSON.stringify(body) }); state.selectedId = created.id; toast("配置已保存并启用", "ok"); } await load(); }
+    async function setActive() { if (!state.selectedId) return; await api("/strategy-integration-s3-config/connections/active", { method:"PUT", body:JSON.stringify({ connection_id: state.selectedId }) }); toast("已切换启用地址", "ok"); await load(); }
+    function closeConfirm() { var bg = document.getElementById("confirmBackdrop"); bg.classList.remove("show"); bg.setAttribute("aria-hidden", "true"); state.pendingDelete = null; }
+    function askDelete(item) { state.pendingDelete = item; document.getElementById("confirmMessage").textContent = "确认删除配置“" + item.name + "”吗？\n删除后该地址不能继续接收回流数据。"; var bg = document.getElementById("confirmBackdrop"); bg.classList.add("show"); bg.setAttribute("aria-hidden", "false"); document.getElementById("confirmCancel").focus(); }
+    async function remove() { var item = selected(); if (!item) return; askDelete(item); }
+    document.getElementById("btnRefresh").onclick = function () { load().catch(function (e) { toast(e.message || e, "err"); }); };
+    document.getElementById("btnCreate").onclick = reset; document.getElementById("btnReset").onclick = reset;
+    document.getElementById("btnSave").onclick = function () { save().catch(function (e) { toast(e.message || e, "err"); }); };
+    document.getElementById("btnActive").onclick = function () { setActive().catch(function (e) { toast(e.message || e, "err"); }); };
+    document.getElementById("btnDelete").onclick = function () { remove().catch(function (e) { toast(e.message || e, "err"); }); };
+    document.getElementById("confirmCancel").onclick = closeConfirm;
+    document.getElementById("confirmBackdrop").onclick = function (event) { if (event.target.id === "confirmBackdrop") closeConfirm(); };
+    document.getElementById("confirmOk").onclick = async function () { var item = state.pendingDelete; if (!item) return; try { await api("/strategy-integration-s3-config/connections/" + encodeURIComponent(item.id), { method:"DELETE" }); state.selectedId = ""; closeConfirm(); toast("配置已删除", "ok"); await load(); } catch (e) { toast(e.message || e, "err"); } };
+    document.addEventListener("keydown", function (event) { if (event.key === "Escape" && document.getElementById("confirmBackdrop").classList.contains("show")) closeConfirm(); });
+    function boot() { syncAuth(); if (token()) load().catch(function (e) { toast(e.message || e, "err"); }); window.addEventListener("labelu-token-changed", function () { syncAuth(); if (token()) load(); }); }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot, { once:true }); else boot();
+  })();
+  </script>
+</body>
+</html>

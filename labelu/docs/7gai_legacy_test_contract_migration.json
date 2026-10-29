@@ -1,0 +1,205 @@
+{
+  "schema_version": 1,
+  "source_run": {
+    "command": "LABELU_TEST_DB_NAME=full-suite-continuation-20260918-fresh python -m pytest labelu/tests -q --disable-warnings --tb=short",
+    "result": {
+      "passed": 2303,
+      "failed": 60,
+      "skipped": 47
+    },
+    "log": ".tmp/full-suite-continuation-20260918-fresh.log",
+    "captured_at": "2026-09-18 Asia/Shanghai"
+  },
+  "allowed_categories": [
+    "retired_project_control_plane",
+    "phase_one_contract_to_migrate"
+  ],
+  "entries": [
+    {
+      "test_file": "labelu/tests/internal/adapter/routers/test_active_learning.py",
+      "tests": [
+        "test_active_learning_clusters_and_batch_quota",
+        "test_active_learning_accept_reuses_workflow",
+        "test_active_learning_accept_is_idempotent_after_commit",
+        "test_active_learning_freeze_advances_workflow_and_creates_idempotent_plan",
+        "test_active_learning_batch_exposes_four_dimension_scoring_snapshot",
+        "test_active_learning_accept_rejects_stale_review_snapshot",
+        "test_active_learning_batches_do_not_reselect_reserved_examples",
+        "test_active_learning_accept_marks_examples_consumed_for_future_batches",
+        "test_active_learning_clusters_exclude_rejected_and_consumed_examples"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R02/R04",
+      "reason": "测试先创建已取消的项目作为主动学习边界；一期主动学习应按数据版本、模型发布目录和任务关系关联，不再按项目隔离。",
+      "action": "改用无项目任务、数据版本和 AICM 模型编号构造测试；保留批次配额、冻结、幂等、保留样本和消费样本断言。"
+    },
+    {
+      "test_file": "labelu/tests/internal/adapter/routers/test_data_governance.py",
+      "tests": [
+        "test_dataset_version_validation_endpoint"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R02/R04",
+      "reason": "数据版本测试通过项目创建数据，当前数据版本接口已经改为任务、标签契约和冻结数据版本边界。",
+      "action": "迁移为无项目数据版本验证请求，并继续校验清单、摘要、标签顺序和不可变性。"
+    },
+    {
+      "test_file": "labelu/tests/internal/adapter/routers/test_edge_device_job.py",
+      "tests": [
+        "test_edge_device_job_lifecycle",
+        "test_edge_device_claim_empty_queue"
+      ],
+      "category": "retired_project_control_plane",
+      "owner_role": "R07",
+      "reason": "测试依赖 edge-device-jobs 创建和领取；一期只保留 BM1688 真机验证，不建设设备任务下发、Agent 或 OTA 控制面。",
+      "action": "删除或隔离旧设备任务写入测试；新增 BM1688 验证执行器的只读资源占用、加载、指标和租约测试，不恢复设备发布入口。"
+    },
+    {
+      "test_file": "labelu/tests/internal/adapter/routers/test_edge_feedback.py",
+      "tests": [
+        "test_edge_feedback_deduplicates_and_reviews_hard_examples",
+        "test_edge_feedback_rejects_event_key_reuse_and_member_review"
+      ],
+      "category": "retired_project_control_plane",
+      "owner_role": "R05/R07",
+      "reason": "测试将设备事件和项目成员作为问题样本来源；生产一期问题图片来源是第三方策略系统 S3，设备直连采样属于后置能力。",
+      "action": "迁移为 S3 数据包通知、AICM 模型编号对齐、对象去重和少量人工复核测试；不恢复设备回传或项目成员边界。"
+    },
+    {
+      "test_file": "labelu/tests/internal/adapter/routers/test_ingestion.py",
+      "tests": [
+        "test_ingestion_job_requires_idempotency_key",
+        "test_ingestion_job_is_idempotent_and_assets_are_deduplicated",
+        "test_ingestion_and_assets_enforce_project_isolation",
+        "test_ingestion_job_cancel_is_project_scoped_and_terminal",
+        "test_completed_upload_session_bridges_to_project_asset_once"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R05/R04",
+      "reason": "导入测试统一先创建项目并断言项目隔离；一期导入边界是第三方 S3/MinIO 数据包、媒体摘要和任务关系。",
+      "action": "改用外部任务编号、S3 对象前缀、metadata 和任务编号作为幂等范围；保留重复通知、媒体摘要去重、取消终态和分片上传桥接。"
+    },
+    {
+      "test_file": "labelu/tests/internal/adapter/routers/test_provider_job.py",
+      "tests": [
+        "test_provider_job_idempotency_prediction_set_and_cancel",
+        "test_provider_job_requires_idempotency_key",
+        "test_prediction_set_cannot_bypass_review_state_machine",
+        "test_prediction_set_accepts_inline_payload_without_uri",
+        "test_provider_job_rejects_unscanned_asset_and_enforces_project_isolation",
+        "test_prediction_set_rejects_sample_from_another_project",
+        "test_prediction_set_review_and_legacy_projection_is_idempotent_and_non_destructive",
+        "test_prediction_set_projection_requires_acceptance_and_inline_payload",
+        "test_prediction_set_review_is_project_isolated"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R02/R04",
+      "reason": "预标注 Provider 测试通过项目隔离样本，当前 Provider 边界应是任务、样本、标签契约和预标注作业。",
+      "action": "迁移为任务级权限和样本级来源校验；保留幂等键、扫描门禁、预测复核状态机、内联结果和非破坏投影。"
+    },
+    {
+      "test_file": "labelu/tests/internal/adapter/routers/test_provider_registry.py",
+      "tests": [
+        "test_provider_registry_checks_optional_project_access"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R04",
+      "reason": "Provider 注册测试仍以可选项目访问作为权限条件，一期连接配置由管理人员维护，调用权限按任务和标签契约校验。",
+      "action": "改为 Provider 能力、媒体类型、标注工具和标签顺序兼容性校验；保留管理人员配置和无权调用拒绝。"
+    },
+    {
+      "test_file": "labelu/tests/internal/application/service/test_auto_training_local_evaluator.py",
+      "tests": [
+        "test_local_evaluator_reaches_quality_gate_and_is_idempotent",
+        "test_local_evaluator_default_fixture_fails_quality_safely",
+        "test_local_evaluator_rejects_tampered_request_manifest"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R04/R06",
+      "reason": "历史评估夹具直接写入已关闭的自动训练计划；一期自动训练由冻结数据版本、系统事件和执行器产生，历史计划写入只读。",
+      "action": "用冻结数据版本和自动训练事件构造只读评估输入；保留质量门禁、幂等、清单篡改拒绝和失败安全终态。"
+    },
+    {
+      "test_file": "labelu/tests/internal/application/service/test_auto_training_persistence.py",
+      "tests": [
+        "test_active_round_reservation_uses_compare_and_swap"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R04",
+      "reason": "轮次夹具仍依赖旧计划写入入口，当前实现已将自动计划历史写入关闭并要求事件驱动物化。",
+      "action": "通过事件驱动的计划和轮次物化构造夹具，继续验证 compare-and-swap、唯一轮次和重复领取保护。"
+    },
+    {
+      "test_file": "labelu/tests/internal/application/service/test_auto_training_scheduler_policy.py",
+      "tests": [
+        "test_round_evaluation_event_creates_one_frozen_job_without_gpu_start",
+        "test_quality_reached_and_active_round_never_auto_create"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R04/R06",
+      "reason": "调度策略测试直接创建旧式计划写入数据，未走当前事件、租约和冻结快照入口。",
+      "action": "迁移到 task.training_ready 或回流数据版本事件，保留只创建一个冻结作业、质量达标不重复创建和不启动 GPU 的断言。"
+    },
+    {
+      "test_file": "labelu/tests/internal/application/service/test_project_scope_guards.py",
+      "tests": [
+        "test_edge_device_job_rejects_export_without_explicit_parent_task"
+      ],
+      "category": "retired_project_control_plane",
+      "owner_role": "R03/R07",
+      "reason": "测试验证旧 edge-device-job 导出和项目父对象约束；该写链已由一期 BM1688 验证适配器替代。",
+      "action": "移除旧设备导出控制面测试，补充模型中心编译/真机验证必须关联模型版本和训练数据版本的门禁测试。"
+    },
+    {
+      "test_file": "labelu/tests/internal/application/service/test_provider_worker.py",
+      "tests": [
+        "test_worker_persists_deterministic_media_lineage"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R05/R04",
+      "reason": "Worker 夹具仍向已去项目化的 ModelVersion 传入 project_id，属于旧模型血缘构造方式。",
+      "action": "改用模型版本、发布目录、AICM 模型编号和媒体摘要建立确定性血缘；继续验证重复消费不重复落库。"
+    },
+    {
+      "test_file": "labelu/tests/internal/application/service/test_rule_center.py",
+      "tests": [
+        "test_rule_center_validates_schema_and_isolates_projects",
+        "test_rule_center_active_replacement_audit_and_idempotent_replay",
+        "test_rule_version_has_no_update_endpoint_and_unbind_is_idempotent",
+        "test_rule_center_strict_schema_rejects_invalid_types_and_extra_fields",
+        "test_rule_center_schema_keeps_legacy_and_typed_forms_compatible",
+        "test_rule_publish_rejects_non_draft_state",
+        "test_rule_binding_rejects_missing_cross_project_and_inactive_devices",
+        "test_rule_publish_server_signature_contract_and_device_boundary",
+        "test_rule_publish_rejects_missing_or_invalid_required_signature",
+        "test_rule_binding_integrity_race_is_normalized_to_conflict",
+        "test_rule_binding_stale_active_cas_is_normalized_to_conflict",
+        "test_device_signature_ack_updates_binding_and_is_idempotent",
+        "test_device_ack_respects_key_lifecycle[{\"rule-key-1\":{\"secret\":\"rule-test-secret\",\"status\":\"REVOKED\"}}-REVOKED-REJECTED_KEY_REVOKED]",
+        "test_device_ack_respects_key_lifecycle[{\"rule-key-1\":{\"secret\":\"rule-test-secret\",\"status\":\"EXPIRED\"}}-EXPIRED-REJECTED_KEY_EXPIRED]",
+        "test_device_ack_respects_key_lifecycle[{\"rule-key-1\":{\"secret\":\"rule-test-secret\",\"status\":\"ROTATING\",\"rotation_grace_until\":\"2999-01-01T00:00:00Z\"}}-ROTATING-VERIFIED_ROTATING_KEY]",
+        "test_device_ack_respects_key_lifecycle[{\"rule-key-1\":{\"secret\":\"rule-test-secret\",\"status\":\"ROTATING\",\"rotation_grace_until\":\"2000-01-01T00:00:00Z\"}}-EXPIRED-REJECTED_KEY_EXPIRED]",
+        "test_device_signature_report_rejects_forgery_replay_and_sequence_gap",
+        "test_device_signature_report_enforces_project_and_append_only",
+        "test_device_signature_report_cas_conflict_is_rejected",
+        "test_device_signature_report_rejects_server_unverified_version",
+        "test_rule_publish_rejects_non_active_signing_key"
+      ],
+      "category": "retired_project_control_plane",
+      "owner_role": "R07",
+      "reason": "规则中心旧测试要求项目隔离、设备绑定、设备签名回报和密钥生命周期；一期不建设设备规则下发、签名回报或 OTA 控制面。",
+      "action": "保留历史代码和审计只读映射，删除或隔离旧写接口测试；新增模型质量门禁、发布包摘要和 AICM 发布审计测试，不恢复设备规则能力。"
+    },
+    {
+      "test_file": "labelu/tests/e2e/test_aicm_publish_environments_frontend.py",
+      "tests": [
+        "test_page_explains_missing_mysql_password_and_opens_detail_drawer",
+        "test_page_sends_create_update_activate_and_delete_requests"
+      ],
+      "category": "phase_one_contract_to_migrate",
+      "owner_role": "R08/R04",
+      "reason": "AICM环境页面已按一期交互契约将详情抽屉迁移为居中弹窗，E2E仍查询旧的detailDrawerBackdrop选择器。",
+      "action": "将测试选择器和行为断言迁移到detailModalBackdrop/modal-*契约，保留环境创建、编辑、启用、删除和密码缺失提示校验。"
+    }
+  ]
+}

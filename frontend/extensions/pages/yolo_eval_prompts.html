@@ -1,0 +1,648 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YOLO 训练 — AI 评估提示词</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --card: #fff;
+      --border: #d7d8dd;
+      --primary: #1677ff;
+      --link: #1677ff;
+      --success: #389e0d;
+      --warn: #d46b08;
+      --muted: rgba(18, 19, 22, 0.5);
+      --text: rgba(18, 19, 22, 0.88);
+    }
+    * { box-sizing: border-box; }
+    body.labelu-shell {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    a { color: var(--link); }
+    .page-main {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 16px 20px 40px;
+    }
+    .muted { color: var(--muted); font-size: 12px; line-height: 1.5; }
+    code {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11px;
+      background: #f5f5f5;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #eee;
+    }
+    .auth-box {
+      background: #fffbe6;
+      border: 1px solid #ffe58f;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    .auth-box input {
+      width: 100%;
+      max-width: 480px;
+      padding: 8px 10px;
+      margin-top: 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .card-block {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      margin-bottom: 16px;
+    }
+    .card-block .card-inner { padding: 16px 18px; }
+    .card-block h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    .hint-line { margin: 0 0 12px; }
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      background: #fafafa;
+      border-radius: 8px 8px 0 0;
+    }
+    .toolbar-left,
+    .toolbar-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .toolbar-right { margin-left: auto; }
+    .save-status {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: #f5f5f5;
+    }
+    .save-status.dirty {
+      color: var(--warn);
+      background: #fff7e6;
+      border: 1px solid #ffd591;
+    }
+    .save-status.synced {
+      color: var(--success);
+      background: #f6ffed;
+      border: 1px solid #b7eb8f;
+    }
+
+    .content-grid {
+      display: grid;
+      grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 960px) {
+      .content-grid { grid-template-columns: 1fr; }
+    }
+    .side-col {
+      position: sticky;
+      top: 12px;
+      max-height: calc(100vh - 80px);
+      overflow: auto;
+    }
+    @media (max-width: 960px) {
+      .side-col { position: static; max-height: none; }
+    }
+
+    .placeholder-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+    .placeholder-list li {
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 13px;
+    }
+    .placeholder-list li:last-child { border-bottom: none; padding-bottom: 0; }
+    .tag-ph {
+      display: inline-block;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 11px;
+      padding: 0 8px;
+      line-height: 20px;
+      border-radius: 4px;
+      background: #f5f5f5;
+      color: #595959;
+      border: 1px solid #d9d9d9;
+      margin-bottom: 4px;
+      cursor: help;
+    }
+    .tip-box {
+      margin-top: 12px;
+      padding: 10px 12px;
+      background: #f6ffed;
+      border: 1px solid #b7eb8f;
+      border-radius: 6px;
+      font-size: 12px;
+      color: var(--success);
+      line-height: 1.5;
+    }
+
+    .editor-card { margin-bottom: 0; overflow: hidden; }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border);
+      background: #fafafa;
+    }
+    .tab {
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      margin-bottom: -1px;
+    }
+    .tab:hover { color: var(--link); }
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      background: var(--card);
+      font-weight: 600;
+    }
+    .editor-pane { display: none; padding: 16px 18px; }
+    .editor-pane.active { display: block; }
+    .editor-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .tag-kind {
+      font-size: 11px;
+      padding: 0 8px;
+      line-height: 22px;
+      border-radius: 4px;
+      background: #e6f4ff;
+      color: #0958d9;
+      border: 1px solid #91caff;
+      font-weight: 600;
+    }
+    .char-count {
+      font-size: 11px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .prompt-editor {
+      width: 100%;
+      min-height: min(58vh, 520px);
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.6;
+      font-family: ui-monospace, Consolas, "Segoe UI Mono", monospace;
+      resize: vertical;
+    }
+    .prompt-editor:focus {
+      outline: none;
+      border-color: #91caff;
+      box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+    }
+
+    button.btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    button.btn:hover { border-color: #91caff; color: var(--link); }
+    button.btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    button.btn-primary:hover { filter: brightness(1.05); color: #fff; }
+    button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    a.btn-link {
+      display: inline-block;
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      font-size: 13px;
+      text-decoration: none;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    a.btn-link:hover { border-color: #91caff; color: var(--link); }
+
+    #toast {
+      position: fixed;
+      bottom: 22px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 11px 18px;
+      border-radius: 8px;
+      background: #333;
+      color: #fff;
+      display: none;
+      z-index: 10001;
+      font-size: 13px;
+      max-width: 92vw;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    #toast.ok { background: #237804; }
+    #toast.err { background: #a8071a; }
+    body.confirm-modal-open { overflow: hidden; }
+    .confirm-modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.35);
+    }
+    .confirm-modal-backdrop.show { display: flex; }
+    .confirm-modal-dialog {
+      width: min(480px, 100%);
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      padding: 20px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--card);
+      box-shadow: 0 16px 42px rgba(0, 0, 0, 0.18);
+    }
+    .confirm-modal-dialog h2 { margin: 0 0 10px; font-size: 16px; }
+    .confirm-modal-message { margin: 0; white-space: pre-wrap; line-height: 1.6; font-size: 13px; }
+    .confirm-modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .tab.dirty-dot::after {
+      content: " •";
+      color: var(--warn);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="yolo-eval-prompts">
+  <div class="labelu-shell-header" role="banner">
+    <div class="labelu-shell-brand">
+      <a class="labelu-shell-logo" href="/">7GAI进化平台</a>
+      <span class="labelu-shell-page-title">YOLO 评估提示词</span>
+    </div>
+    <nav class="labelu-shell-nav" aria-label="7GAI进化平台工具导航"></nav>
+  </div>
+
+  <main class="page-main" data-lu-toolkit-main>
+    <div id="luPageHero"></div>
+
+    <div class="auth-box" id="authBox" data-lu-auth-panel>
+      <div id="authNeedLogin">未检测到登录。请先 <a href="/login">在主站登录</a>，成功后返回本页将自动鉴权。</div>
+      <details class="auth-manual" style="margin-top:10px;">
+        <summary class="muted" style="cursor:pointer;font-size:12px;">无法自动登录？手动粘贴 Token</summary>
+        <input type="text" id="tokenInput" placeholder="Bearer eyJhbGciOi…" autocomplete="off" style="margin-top:8px;" />
+        <div style="margin-top:10px;"><button type="button" class="btn btn-primary" id="btnSaveToken">保存令牌</button></div>
+      </details>
+    </div>
+
+    <div class="card-block editor-card">
+      <div class="toolbar-row">
+        <div class="toolbar-left">
+          <button type="button" class="btn btn-primary" id="btnSave" disabled>保存提示词</button>
+          <span class="save-status synced" id="saveHint">已与服务器同步</span>
+        </div>
+        <div class="toolbar-right">
+          <input type="search" class="search-input" id="searchPlaceholder" placeholder="搜索占位符说明" autocomplete="off" style="width:min(180px,32vw);padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;" />
+          <button type="button" class="btn" id="btnReload">重新加载</button>
+          <a href="/yolo-training" class="btn-link">去 YOLO 训练</a>
+        </div>
+      </div>
+
+      <div class="content-grid">
+        <aside class="side-col">
+          <div class="card-block" style="margin-bottom:0;">
+            <div class="card-inner">
+              <h2>占位符说明</h2>
+              <p class="muted hint-line" id="storageHint">提交评估时由服务端替换，主读写来源为 MySQL 治理表；JSON 仅兼容同步。</p>
+              <ul class="placeholder-list" id="placeholderList">
+                <li data-ph="{{ARGS_YAML}}">
+                  <span class="tag-ph" title="{{ARGS_YAML}}">{{ARGS_YAML}}</span>
+                  训练目录下的 <code>args.yaml</code> 内容
+                </li>
+                <li data-ph="{{RESULTS_TAIL}}">
+                  <span class="tag-ph" title="{{RESULTS_TAIL}}">{{RESULTS_TAIL}}</span>
+                  <code>results.csv</code> 末尾若干行
+                </li>
+                <li data-ph="{{WEIGHTS_PATH}}">
+                  <span class="tag-ph" title="{{WEIGHTS_PATH}}">{{WEIGHTS_PATH}}</span>
+                  <code>best.pt</code> 绝对路径
+                </li>
+                <li data-ph="{{METRICS_SUMMARY}}">
+                  <span class="tag-ph" title="{{METRICS_SUMMARY}}">{{METRICS_SUMMARY}}</span>
+                  作业内指标摘要文本
+                </li>
+                <li data-ph="{{PRIOR_REPORTS}}">
+                  <span class="tag-ph" title="{{PRIOR_REPORTS}}">{{PRIOR_REPORTS}}</span>
+                  仅「下一轮迭代」：此前 full_analysis 报告摘录
+                </li>
+              </ul>
+              <div class="tip-box">
+                评估会对<strong>每个已启用且已配置 Key</strong> 的视觉模型各调用一次。
+                默认提示词要求报告正文使用<strong>简体中文</strong>；若生成结果仍为英文，请检查提示词是否含「语言：中文」约束，并重新发起评估。
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <section>
+          <div class="tabs" role="tablist">
+            <button type="button" class="tab active" id="tabFull" data-pane="paneFull" role="tab" aria-selected="true">
+              全维度分析
+            </button>
+            <button type="button" class="tab" id="tabNext" data-pane="paneNext" role="tab" aria-selected="false">
+              下一轮迭代
+            </button>
+          </div>
+
+          <div class="editor-pane active" id="paneFull" role="tabpanel">
+            <div class="editor-meta">
+              <span class="tag-kind">report_kind = full_analysis</span>
+              <span class="char-count" id="countFull">0 字</span>
+            </div>
+            <textarea id="taFull" class="prompt-editor" placeholder="输入全维度分析报告的系统提示词…" spellcheck="false"></textarea>
+          </div>
+
+          <div class="editor-pane" id="paneNext" role="tabpanel">
+            <div class="editor-meta">
+              <span class="tag-kind">report_kind = next_iteration</span>
+              <span class="char-count" id="countNext">0 字</span>
+            </div>
+            <textarea id="taNext" class="prompt-editor" placeholder="输入下一轮迭代建议的系统提示词…" spellcheck="false"></textarea>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <div id="toast"></div>
+
+  <div class="confirm-modal-backdrop" id="confirmActionModal" aria-hidden="true">
+    <div class="confirm-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmActionTitle">
+      <h2 id="confirmActionTitle">确认操作</h2>
+      <p class="confirm-modal-message" id="confirmActionMessage"></p>
+      <div class="confirm-modal-actions">
+        <button type="button" class="btn" id="confirmActionCancel">取消</button>
+        <button type="button" class="btn btn-primary" id="confirmActionOk">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+(function () {
+  var API = "/api/v1";
+  var loadedSnapshot = { full: "", next: "" };
+  var dirty = false;
+  var pendingConfirmAction = null;
+
+  function normalizeBearer(t) {
+    var v = (t || "").trim();
+    if (!v) return "";
+    if (/^bearer\s+/i.test(v)) return v;
+    if (/^eyJ/.test(v)) return "Bearer " + v;
+    return v;
+  }
+  function getToken() {
+    return normalizeBearer(localStorage.getItem("token") || "");
+  }
+  function setToken(t) {
+    var v = normalizeBearer(t);
+    if (v) localStorage.setItem("token", v);
+    else localStorage.removeItem("token");
+  }
+  function toast(msg, kind) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.className = kind || "";
+    el.style.display = "block";
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.style.display = "none"; }, 3200);
+  }
+
+  function closeConfirmModal() {
+    var modal = document.getElementById("confirmActionModal");
+    if (!modal) return;
+    modal.classList.remove("show");
+    modal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("confirm-modal-open");
+    pendingConfirmAction = null;
+  }
+
+  function openConfirmModal(message, action) {
+    var modal = document.getElementById("confirmActionModal");
+    if (!modal) return;
+    pendingConfirmAction = typeof action === "function" ? action : null;
+    document.getElementById("confirmActionMessage").textContent = message || "确定继续吗？";
+    modal.classList.add("show");
+    modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("confirm-modal-open");
+    document.getElementById("confirmActionOk").focus();
+  }
+
+  document.getElementById("confirmActionCancel").onclick = closeConfirmModal;
+  document.getElementById("confirmActionOk").onclick = function () {
+    var action = pendingConfirmAction;
+    closeConfirmModal();
+    if (action) action();
+  };
+  document.getElementById("confirmActionModal").onclick = function (event) {
+    if (event.target === event.currentTarget) closeConfirmModal();
+  };
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape" && document.getElementById("confirmActionModal").classList.contains("show")) {
+      closeConfirmModal();
+    }
+  });
+
+  function filterPlaceholders() {
+    var q = (document.getElementById("searchPlaceholder").value || "").trim().toLowerCase();
+    document.querySelectorAll("#placeholderList li").forEach(function (li) {
+      var hay = (li.getAttribute("data-ph") || "") + " " + li.textContent;
+      li.style.display = !q || hay.toLowerCase().indexOf(q) >= 0 ? "" : "none";
+    });
+  }
+
+  function updateCounts() {
+    var full = document.getElementById("taFull").value;
+    var next = document.getElementById("taNext").value;
+    document.getElementById("countFull").textContent = full.length + " 字";
+    document.getElementById("countNext").textContent = next.length + " 字";
+    dirty = full !== loadedSnapshot.full || next !== loadedSnapshot.next;
+    document.getElementById("btnSave").disabled = !dirty;
+    document.getElementById("tabFull").classList.toggle("dirty-dot", full !== loadedSnapshot.full);
+    document.getElementById("tabNext").classList.toggle("dirty-dot", next !== loadedSnapshot.next);
+    var hint = document.getElementById("saveHint");
+    hint.textContent = dirty ? "有未保存的修改" : "已与服务器同步";
+    hint.className = "save-status " + (dirty ? "dirty" : "synced");
+  }
+
+  function switchTab(paneId, tabBtn) {
+    document.querySelectorAll(".editor-pane").forEach(function (p) {
+      p.classList.remove("active");
+    });
+    document.querySelectorAll(".tab").forEach(function (t) {
+      t.classList.remove("active");
+      t.setAttribute("aria-selected", "false");
+    });
+    document.getElementById(paneId).classList.add("active");
+    tabBtn.classList.add("active");
+    tabBtn.setAttribute("aria-selected", "true");
+  }
+
+  document.querySelectorAll(".tab").forEach(function (tab) {
+    tab.onclick = function () {
+      switchTab(tab.getAttribute("data-pane"), tab);
+    };
+  });
+
+  async function api(path, opts) {
+    var headers = Object.assign({}, (opts && opts.headers) || {});
+    if (getToken()) headers.Authorization = getToken();
+    if (!headers["Content-Type"] && opts && opts.body) {
+      headers["Content-Type"] = "application/json";
+    }
+    var r = await fetch(API + path, Object.assign({}, opts, { headers: headers, cache: "no-store" }));
+    var text = await r.text();
+    var json = null;
+    try { json = text ? JSON.parse(text) : null; } catch (e) {}
+    return { ok: r.ok, status: r.status, json: json, text: text };
+  }
+
+  function checkAuth() {
+    if (window.LabeluPortal && LabeluPortal.syncAuthBox) return LabeluPortal.syncAuthBox();
+    var box = document.getElementById("authBox");
+    if (box) box.style.display = getToken() ? "none" : "block";
+    return !!getToken();
+  }
+
+  async function loadPrompts(showToastMsg) {
+    if (!getToken()) {
+      if (showToastMsg) toast("请先登录主站", "err");
+      return;
+    }
+    var res = await api("/yolo-eval-prompts", { method: "GET" });
+    if (!res.ok) {
+      var msg = (res.json && (res.json.msg || res.json.message)) || res.text || "加载失败";
+      toast(String(msg).slice(0, 200), "err");
+      return;
+    }
+    var d = (res.json && res.json.data) || {};
+    document.getElementById("taFull").value = d.full_analysis || "";
+    document.getElementById("taNext").value = d.next_iteration || "";
+    var storageHint = document.getElementById("storageHint");
+    if (storageHint) {
+      storageHint.textContent =
+        "提交评估时由服务端替换，配置主存为 " +
+        (d.config_backend_label || "MySQL 治理表（system_config_*）") +
+        "；兼容同步文件：" + (d.prompts_file || "无");
+    }
+    loadedSnapshot.full = document.getElementById("taFull").value;
+    loadedSnapshot.next = document.getElementById("taNext").value;
+    updateCounts();
+    if (showToastMsg) toast("已重新加载", "ok");
+  }
+
+  async function savePrompts() {
+    if (!getToken()) {
+      toast("请先登录主站", "err");
+      return;
+    }
+    var body = {
+      full_analysis: document.getElementById("taFull").value,
+      next_iteration: document.getElementById("taNext").value,
+    };
+    var res = await api("/yolo-eval-prompts", {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      var msg = (res.json && (res.json.msg || res.json.message)) || res.text || "保存失败";
+      toast(String(msg).slice(0, 200), "err");
+      return;
+    }
+    loadedSnapshot.full = body.full_analysis;
+    loadedSnapshot.next = body.next_iteration;
+    updateCounts();
+    toast("已保存", "ok");
+  }
+
+  document.getElementById("taFull").addEventListener("input", updateCounts);
+  document.getElementById("taNext").addEventListener("input", updateCounts);
+  document.getElementById("searchPlaceholder").addEventListener("input", filterPlaceholders);
+
+  document.getElementById("btnSaveToken").onclick = function () {
+    setToken(document.getElementById("tokenInput").value || "");
+    checkAuth();
+    toast(getToken() ? "令牌已保存" : "已清除", "ok");
+    loadPrompts(false);
+  };
+  document.getElementById("btnReload").onclick = function () {
+    if (!dirty) {
+      loadPrompts(true);
+      return;
+    }
+    openConfirmModal("有未保存的修改，重新加载将丢弃本地编辑，是否继续？", function () {
+      loadPrompts(true);
+    });
+  };
+  document.getElementById("btnSave").onclick = savePrompts;
+
+  document.getElementById("tokenInput").value = getToken();
+  checkAuth();
+  updateCounts();
+  window.addEventListener("labelu-token-changed", function () {
+    checkAuth();
+    loadPrompts(false);
+  });
+  if (getToken()) loadPrompts(false);
+})();
+  </script>
+</body>
+</html>

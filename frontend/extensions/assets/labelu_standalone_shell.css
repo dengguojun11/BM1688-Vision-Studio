@@ -1,0 +1,627 @@
+/**
+ * 独立工具页与主站 LabelU（Ant Design 主题）视觉对齐：顶栏 + 灰底内容区。
+ * 主应用 bundle 内 :root 含 --color-primary: #0d53de 等，此处沿用相同 token。
+ */
+:root {
+  --lu-primary: #0d53de;
+  --lu-link: #1677ff;
+  --lu-bg-layout: #f5f5f5;
+  --lu-text: rgba(18, 19, 22, 0.88);
+  --lu-text-secondary: rgba(18, 19, 22, 0.5);
+  --lu-border: #d7d8dd;
+  --lu-header-h: 48px;
+  --lu-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
+    Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
+}
+
+.labelu-shell {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--lu-font);
+  background: var(--lu-bg-layout);
+  color: var(--lu-text);
+}
+
+.labelu-shell-header {
+  height: var(--lu-header-h);
+  min-height: var(--lu-header-h);
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  background: #fff;
+  border-bottom: 1px solid var(--lu-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.labelu-shell-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.labelu-shell-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--lu-text);
+  text-decoration: none;
+  letter-spacing: -0.02em;
+}
+.labelu-shell-logo img {
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
+}
+.labelu-shell-logo:hover {
+  color: var(--lu-link);
+}
+
+.labelu-shell-page-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lu-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.labelu-shell-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 4px;
+  margin-left: auto;
+}
+
+.labelu-shell-nav a {
+  font-size: 14px;
+  color: var(--lu-text-secondary);
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.labelu-shell-nav a:hover {
+  color: var(--lu-link);
+  background: rgba(22, 119, 255, 0.06);
+}
+.labelu-shell-nav a.lu-active {
+  color: var(--lu-primary);
+  font-weight: 600;
+  background: rgba(13, 83, 222, 0.08);
+}
+
+.labelu-shell .ai-layout.layout {
+  min-height: calc(100vh - var(--lu-header-h));
+}
+
+/* ai_labeling_settings：侧栏改为主站浅色侧栏（与 YOLO 训练页一致） */
+.labelu-shell .ai-layout .sidebar {
+  background: #fff;
+  color: var(--lu-text);
+  border-right: 1px solid var(--lu-border);
+  box-shadow: none;
+}
+.labelu-shell .ai-layout .sidebar h2 {
+  color: var(--lu-text-secondary);
+}
+.labelu-shell .ai-layout .nav-item {
+  color: var(--lu-text);
+  border-left-color: transparent;
+}
+.labelu-shell .ai-layout .nav-item:hover {
+  color: var(--lu-text);
+  background: #f5f5f5;
+}
+.labelu-shell .ai-layout .nav-item.active {
+  color: var(--lu-primary);
+  background: #e6f4ff;
+  border-left-color: var(--lu-link);
+}
+.labelu-shell .ai-layout .sidebar-foot {
+  border-top-color: var(--lu-border);
+  color: var(--lu-text-secondary);
+}
+.labelu-shell .ai-layout .sidebar-foot a {
+  color: var(--lu-link);
+}
+
+/* —— 顶栏分组导航 —— */
+.labelu-shell-nav {
+  gap: 2px 8px !important;
+  max-width: 72vw;
+  justify-content: flex-end;
+}
+.lu-nav-group-label {
+  font-size: 11px;
+  color: var(--lu-text-secondary);
+  padding: 4px 8px 0;
+  flex-basis: 100%;
+  text-align: right;
+  line-height: 1.2;
+}
+@media (min-width: 900px) {
+  .lu-nav-group-label {
+    flex-basis: auto;
+    padding: 0 4px 0 12px;
+    border-left: 1px solid var(--lu-border);
+    margin-left: 4px;
+  }
+  .lu-nav-group-label:first-of-type {
+    border-left: none;
+    margin-left: 0;
+    padding-left: 0;
+  }
+}
+.labelu-shell-nav .lu-nav-item {
+  font-size: 13px;
+}
+
+@media (max-width: 48rem) {
+  .labelu-shell-header {
+    padding: 0 12px;
+    flex-wrap: nowrap;
+    overflow: hidden;
+  }
+
+  .labelu-shell-brand {
+    flex: 0 0 auto;
+    max-width: 45vw;
+  }
+
+  .labelu-shell-nav {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+    margin-left: 0;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .lu-nav-group-label {
+    flex: 0 0 auto;
+    padding: 0 4px;
+    white-space: nowrap;
+  }
+
+  .labelu-shell-nav .lu-nav-item {
+    flex: 0 0 auto;
+  }
+}
+
+/* —— 页面工作流 Hero —— */
+.lu-page-hero {
+  background: linear-gradient(135deg, #f0f5ff 0%, #fff 60%);
+  border: 1px solid #d6e4ff;
+  border-radius: 12px;
+  padding: 18px 22px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+.lu-page-hero h1 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.lu-page-hero-desc {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--lu-text-secondary);
+  line-height: 1.55;
+  max-width: 52rem;
+}
+.lu-flow-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+@media (min-width: 720px) {
+  .lu-flow-list {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.lu-flow-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--lu-text);
+}
+.lu-flow-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--lu-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.lu-view-hero {
+  background: #fafafa;
+  border: 1px solid var(--lu-border);
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin-bottom: 18px;
+}
+.lu-view-hero h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.lu-view-hero .muted {
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.lu-view-cta {
+  margin: 0;
+  font-size: 13px;
+  padding: 10px 12px;
+  background: #e6f4ff;
+  border-radius: 8px;
+  border-left: 3px solid var(--lu-link);
+  line-height: 1.5;
+}
+
+/* —— YOLO 训练：侧栏步骤 + 双栏布局 —— */
+.lu-yolo-sider .lu-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: #f0f0f0;
+  font-size: 11px;
+  font-weight: 700;
+  color: #666;
+  vertical-align: middle;
+}
+.lu-yolo-sider .nav-item.active .lu-step {
+  background: var(--lu-link);
+  color: #fff;
+}
+.lu-sider-flow,
+.lu-sider-more {
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--lu-border);
+}
+.lu-sider-more .nav-item.nav-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+.lu-next-hint {
+  margin: 12px 16px 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lu-text-secondary);
+  background: #fffbe6;
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
+}
+.lu-train-layout {
+  display: block;
+  min-width: 0;
+}
+.lu-train-main-col {
+  min-width: 0;
+}
+.lu-section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--lu-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 16px 0 8px;
+}
+.lu-section-label:first-child {
+  margin-top: 0;
+}
+
+/* —— YOLO 工具链：训练页以外的扩展页共用左侧导航 —— */
+body.labelu-shell.lu-has-toolkit-sider {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+.lu-toolkit-shell.shell {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  align-items: stretch;
+}
+.lu-toolkit-shell .sider {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--lu-card, #fff);
+  border-right: 1px solid var(--lu-border);
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+.lu-toolkit-shell .main.lu-toolkit-main {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 16px 20px 32px;
+  max-width: none;
+  width: 100%;
+}
+.lu-toolkit-shell .sider-title {
+  padding: 0 16px 12px;
+  font-size: 11px;
+  color: var(--lu-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.lu-toolkit-shell .lu-sider-subtitle {
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--lu-border);
+}
+.lu-toolkit-shell .nav-item {
+  padding: 11px 18px 11px 16px;
+  margin: 0 8px;
+  border-radius: 8px;
+  font-size: 14px;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+.lu-toolkit-shell .nav-item:hover {
+  background: #fafafa;
+}
+.lu-toolkit-shell .nav-item.active {
+  background: #e6f4ff;
+  border-left-color: var(--lu-link);
+  color: var(--lu-link);
+  font-weight: 600;
+}
+.lu-toolkit-shell .nav-item.nav-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+.lu-toolkit-shell .nav-item.nav-link.lu-link-primary {
+  font-weight: 600;
+  color: var(--lu-link);
+}
+/* 嵌入主站 /training 等 iframe：去掉重复顶栏与左侧工具链 */
+body.labelu-embedded .labelu-shell-header {
+  display: none !important;
+}
+body.labelu-embedded.lu-has-toolkit-sider .lu-toolkit-shell .sider {
+  display: none !important;
+}
+body.labelu-embedded.lu-has-toolkit-sider .lu-toolkit-shell .main.lu-toolkit-main {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 0px);
+  background: #eef1f6;
+}
+body.labelu-embedded #luTrainingSubNavMount {
+  flex-shrink: 0;
+  padding: 0 14px;
+}
+.lu-training-subnav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 12px;
+  margin: 0 0 0;
+  border-bottom: none;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid #e8edf4;
+  flex-shrink: 0;
+}
+.lu-training-subnav .lu-hub-tab {
+  padding: 8px 14px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  color: #475569;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+.lu-training-subnav .lu-hub-tab:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.lu-training-subnav .lu-hub-tab.active {
+  background: #1677ff;
+  border-color: #1677ff;
+  color: #fff;
+  box-shadow: none;
+}
+.lu-training-subnav-config {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.lu-hub-config-link {
+  color: #64748b;
+  text-decoration: none;
+}
+.lu-hub-config-link:hover {
+  color: #1677ff;
+}
+body.labelu-shell .train-hub-banner.lu-compact-banner {
+  margin-bottom: 8px;
+  padding: 0;
+}
+body.labelu-shell .train-hub-banner.lu-compact-banner .train-hub-banner-inner {
+  padding: 10px 14px;
+}
+body.labelu-shell .train-hub-banner.lu-compact-banner .train-hub-title {
+  font-size: 16px;
+  margin: 0;
+}
+body.labelu-shell .train-list-section-hint:empty,
+body.labelu-shell .train-hub-sub {
+  display: none !important;
+}
+.lu-training-hub-more-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.lu-training-hub-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 50;
+  min-width: 220px;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid var(--lu-border, #e8edf4);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+.lu-training-hub-more-menu[hidden] {
+  display: none !important;
+}
+.lu-training-hub-more-note {
+  padding: 2px 6px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+}
+.lu-training-hub-more-group + .lu-training-hub-more-group {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #eef2f7;
+}
+.lu-training-hub-more-group-title {
+  padding: 0 6px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+.lu-training-hub-more-item {
+  display: block;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: #334155;
+  text-decoration: none;
+  border-radius: 8px;
+}
+.lu-training-hub-more-button {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.lu-training-hub-more-item:hover {
+  background: #f5f7fb;
+}
+@media (max-width: 48rem) {
+  .lu-training-hub-more-menu {
+    left: 0;
+    right: auto;
+    width: min(320px, calc(100vw - 24px));
+    min-width: 0;
+    max-height: calc(100vh - 140px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+body.labelu-embedded .page-main {
+  padding: 0 !important;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+body.labelu-embedded #siderNextHint,
+body.labelu-embedded .lu-next-hint#siderNextHint {
+  display: none !important;
+}
+body.labelu-embedded .train-page-tabs {
+  display: none !important;
+}
+body.labelu-embedded[data-lu-page="yolo-bm1688"] .page-main,
+body.labelu-embedded[data-lu-page="yolo-bm1688"] .page.bm-page,
+body.labelu-embedded[data-lu-page="yolo-model-publish"] .page-main {
+  padding: 0 !important;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+body.labelu-embedded[data-lu-page="yolo-bm1688"] .bm-page,
+body.labelu-embedded[data-lu-page="yolo-model-publish"] .page-main > .card,
+body.labelu-embedded[data-lu-page="yolo-model-publish"] .page-toolbar {
+  flex-shrink: 0;
+}
+body.labelu-embedded[data-lu-page="yolo-bm1688"] #luTrainingSubNavMount,
+body.labelu-embedded[data-lu-page="yolo-model-publish"] #luTrainingSubNavMount {
+  padding: 0 4px;
+}
+
+@media (max-width: 840px) {
+  .lu-toolkit-shell.shell {
+    flex-direction: column;
+  }
+  .lu-toolkit-shell .sider {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--lu-border);
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: 10px 12px;
+  }
+.lu-toolkit-shell .sider-title {
+  display: none;
+}
+  .lu-toolkit-shell .nav-item {
+    margin: 0;
+    padding: 8px 14px;
+    border-left: none;
+    border-bottom: 2px solid transparent;
+  }
+  .lu-toolkit-shell .nav-item.active {
+    border-bottom-color: var(--lu-link);
+  }
+  .lu-toolkit-shell .lu-next-hint {
+    flex-basis: 100%;
+    margin: 8px 0 0;
+  }
+}

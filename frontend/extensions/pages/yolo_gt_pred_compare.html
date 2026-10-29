@@ -1,0 +1,1300 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>标注与预测对比</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script src="/assets/labelu_pager.js"></script>
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --card: #fff;
+      --border: #d7d8dd;
+      --primary: #1677ff;
+      --muted: rgba(18, 19, 22, 0.5);
+      --text: rgba(18, 19, 22, 0.88);
+      --ok: #389e0d;
+      --warn: #d48806;
+      --err: #cf1322;
+      --fn: #d48806;
+      --fp: #cf1322;
+      --tp: #389e0d;
+    }
+    body.labelu-shell { margin: 0; background: var(--bg); color: var(--text); }
+    .page-main { padding: 10px 14px 24px; max-width: 1680px; margin: 0 auto; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .btn {
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      font-size: 13px;
+      text-decoration: none;
+      color: inherit;
+      display: inline-block;
+    }
+    .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+    .toolbar label { font-size: 12px; display: block; margin-bottom: 4px; }
+    .toolbar select {
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      min-width: 110px;
+    }
+    .legend { font-size: 12px; line-height: 1.6; margin: 0 0 10px; }
+    .legend .tp { color: var(--tp); }
+    .legend .fp { color: var(--fp); }
+    .legend .fn { color: var(--fn); }
+    .layout {
+      display: grid;
+      grid-template-columns: minmax(200px, 260px) 1fr;
+      gap: 12px;
+      min-height: min(78vh, 820px);
+    }
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; }
+      .side-list { max-height: 220px !important; }
+    }
+    .side-list {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: auto;
+      max-height: min(78vh, 820px);
+    }
+    .list-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: none;
+      border-bottom: 1px solid #eee;
+      background: transparent;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .list-item:hover { background: #f0f5ff; }
+    .list-item.active {
+      background: #e6f4ff;
+      border-left: 3px solid var(--primary);
+    }
+    .list-item .nm { font-weight: 600; word-break: break-all; }
+    .list-item .st { color: var(--muted); margin-top: 3px; font-size: 11px; }
+    .main-panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 400px;
+    }
+    .img-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 720px) {
+      .img-grid { grid-template-columns: 1fr; }
+    }
+    .img-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+      background: #fafafa;
+    }
+    .img-card h4 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      text-align: center;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .img-zoom-wrap {
+      position: relative;
+      background: #111;
+      border-radius: 6px;
+      overflow: hidden;
+      cursor: zoom-in;
+      min-height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .img-zoom-wrap img {
+      max-width: 100%;
+      max-height: 52vh;
+      object-fit: contain;
+      display: block;
+      user-select: none;
+    }
+    .img-zoom-hint {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      font-size: 11px;
+      color: rgba(255,255,255,0.75);
+      background: rgba(0,0,0,0.45);
+      padding: 2px 8px;
+      border-radius: 4px;
+      pointer-events: none;
+    }
+    .issue-box {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      background: #fffbe6;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+    .issue-box.ok { background: #f6ffed; border-color: #b7eb8f; }
+    .issue-box.warn { background: #fffbe6; border-color: #ffe58f; }
+    .issue-box.error { background: #fff1f0; border-color: #ffa39e; }
+    .issue-box h3 { margin: 0 0 8px; font-size: 14px; }
+    .issue-detail {
+      margin: 8px 0 0;
+      padding-left: 0;
+      list-style: none;
+    }
+    .issue-detail li {
+      margin: 6px 0;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.7);
+      border-left: 3px solid var(--warn);
+    }
+    .issue-detail li.fp { border-left-color: var(--fp); }
+    .issue-detail li.fn { border-left-color: var(--fn); }
+    .issue-suggest {
+      margin-top: 10px;
+      padding-top: 8px;
+      border-top: 1px dashed var(--border);
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .pager { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      font-size: 12px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      background: #f0f0f0;
+    }
+    .badge.tp { background: #f6ffed; color: var(--tp); }
+    .badge.fp { background: #fff1f0; color: var(--fp); }
+    .badge.fn { background: #fffbe6; color: var(--fn); }
+    .box-count-bar {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 10px;
+      align-items: stretch;
+      margin-bottom: 4px;
+    }
+    .box-count-cell {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-align: center;
+      background: #fafafa;
+    }
+    .box-count-cell.gt { border-color: #91caff; background: #e6f4ff; }
+    .box-count-cell.pred { border-color: #ffccc7; background: #fff1f0; }
+    .box-count-cell .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .box-count-cell .num { font-size: 28px; font-weight: 700; line-height: 1.1; }
+    .box-count-cell.gt .num { color: #0958d9; }
+    .box-count-cell.pred .num { color: #cf1322; }
+    .box-count-cell .unit { font-size: 13px; font-weight: 500; margin-left: 2px; }
+    .box-count-cell .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .box-count-vs {
+      display: flex;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .img-card h4 .box-num {
+      display: inline-block;
+      margin-left: 6px;
+      padding: 1px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 600;
+      vertical-align: middle;
+    }
+    .img-card h4 .box-num.gt-num { background: #e6f4ff; color: #0958d9; }
+    .img-card h4 .box-num.pred-num { background: #fff1f0; color: #cf1322; }
+    #lightbox {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      background: rgba(0,0,0,0.92);
+      flex-direction: column;
+    }
+    #lightbox.open { display: flex; }
+    .lb-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      padding: 10px 14px;
+      color: #fff;
+      background: rgba(0,0,0,0.5);
+      font-size: 13px;
+    }
+    .lb-toolbar .btn { color: #fff; border-color: rgba(255,255,255,0.35); background: rgba(255,255,255,0.08); }
+    .lb-stage {
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      cursor: grab;
+    }
+    .lb-stage.dragging { cursor: grabbing; }
+    .lb-inner {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      transform-origin: center center;
+      will-change: transform;
+    }
+    .lb-inner img {
+      max-width: none;
+      max-height: none;
+      display: block;
+      user-select: none;
+      pointer-events: none;
+    }
+    #toast {
+      position: fixed; bottom: 20px; right: 20px;
+      padding: 10px 16px; border-radius: 8px;
+      background: #333; color: #fff; font-size: 13px;
+      display: none; z-index: 10001;
+    }
+    #toast.err { background: var(--err); }
+    #toast.ok { background: var(--ok); }
+    #toast.warn { background: var(--warn); }
+    .guide-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fafafa;
+      font-size: 12px;
+      line-height: 1.65;
+    }
+    .guide-card summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--primary);
+      user-select: none;
+    }
+    .guide-card ul { margin: 8px 0 0; padding-left: 18px; }
+    .guide-card li { margin: 4px 0; }
+    .img-card .cap {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: center;
+      margin: 0 0 6px;
+      line-height: 1.5;
+    }
+    .issue-weak {
+      margin: 8px 0 0;
+      padding: 8px 10px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.75);
+      font-size: 12px;
+      color: var(--muted);
+      border-left: 3px solid var(--primary);
+    }
+    .match-hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 6px;
+      line-height: 1.55;
+    }
+    .stats-dashboard {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+      gap: 10px;
+    }
+    .stats-section { margin-bottom: 14px; }
+    .stats-section:last-child { margin-bottom: 0; }
+    .stats-section-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+    .stats-section-note {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 0 0 8px;
+      line-height: 1.5;
+    }
+    .stats-checkline {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 8px;
+      padding: 8px 10px;
+      background: #f9f9f9;
+      border-radius: 6px;
+      line-height: 1.55;
+    }
+    .stat-tile {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fafafa;
+    }
+    .stat-tile .n { font-size: 22px; font-weight: 700; line-height: 1.2; }
+    .stat-tile .l { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.35; }
+    .stat-tile.ok .n { color: var(--ok); }
+    .stat-tile.fn .n { color: var(--fn); }
+    .stat-tile.fp .n { color: var(--fp); }
+    .stat-tile.tp .n { color: var(--tp); }
+    .class-breakdown {
+      font-size: 12px;
+      margin-top: 10px;
+      line-height: 1.65;
+      color: var(--muted);
+      padding-top: 8px;
+      border-top: 1px dashed var(--border);
+    }
+    .action-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 6px;
+    }
+    .action-bar .meta-row { flex: 1; min-width: 180px; margin: 0; }
+    .btn.annotate {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .issue-detail li.hint {
+      border-left-color: #91caff;
+      background: #f0f7ff;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .panel-section-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0 0 8px;
+      color: var(--text);
+    }
+    .compare-section { margin-top: 2px; }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="yolo-gt-pred-compare">
+  <nav class="labelu-shell-nav" aria-label="7GAI进化平台工具导航"></nav>
+  <main class="page-main" data-lu-toolkit-main>
+    <div id="luPageHero"></div>
+    <div class="card">
+      <h1 id="pageTitle" style="margin:0 0 6px;font-size:18px;">标注与预测对比</h1>
+      <p class="legend muted" style="margin:0 0 10px;">
+        用训练完成的模型，逐张对比<strong>您的人工标注</strong>与<strong>模型预测</strong>，快速发现「该检出没检出」「不该报却报了」。
+        统计的是<strong>模型表现</strong>，不是评判标注对错；标注框多，通常表示图里目标多或标得较细。
+      </p>
+      <details class="guide-card">
+        <summary>看图说明（颜色含义 · 指标怎么读）</summary>
+        <ul>
+          <li><strong>左图 · 标注视图</strong>：<span class="tp">绿框</span>=已与预测配对的标注；<span class="fn">黄框</span>=漏检（您标了，模型没对上）。</li>
+          <li><strong>右图 · 预测视图</strong>：<span class="tp">绿框</span>=检对（TP）；<span class="fp">红框</span>=误检（模型报了，标注无对应）；<span class="fn">黄虚线</span>=漏检位置提示（对应左图黄框）。</li>
+          <li><strong>检对 TP</strong>：一个预测框与一个标注框类别相同且重叠足够（IoU≥阈值），算 1 次检对。</li>
+          <li><strong>漏检 FN</strong>：标注里有框，但没有预测框与之配对。一个预测框最多配一个标注框；若您标得很碎、模型只报大块，会出现 FN 偏多。</li>
+          <li><strong>误检 FP</strong>：模型报了框，附近没有可配对的标注。可能是背景误识别，也可能是标注遗漏。</li>
+          <li><strong>模型薄弱类别</strong>：本图漏检/误检最集中的类别，表示模型对该类学得不好，<em>不是</em>说您该类标错了。</li>
+          <li>点击图片可放大；滚轮缩放、拖拽平移；Esc 关闭。</li>
+        </ul>
+      </details>
+    </div>
+    <div class="card toolbar">
+      <div>
+        <label for="selSplit">数据划分</label>
+        <select id="selSplit">
+          <option value="val">验证集 val</option>
+          <option value="test">测试集 test</option>
+          <option value="">全部</option>
+        </select>
+      </div>
+      <div>
+        <label for="selIssue">筛选结果</label>
+        <select id="selIssue">
+          <option value="all">全部图片</option>
+          <option value="fn">有漏检（模型没检出）</option>
+          <option value="fp">有误检（模型多报了）</option>
+          <option value="ok">严格一致（无漏无误且逐框达到 IoU 标准）</option>
+        </select>
+      </div>
+      <div>
+        <label for="selClass" title="按模型薄弱类别筛选">模型薄弱类别</label>
+        <select id="selClass">
+          <option value="">全部类别</option>
+        </select>
+      </div>
+      <button type="button" class="btn" id="btnRefresh">刷新</button>
+      <button type="button" class="btn primary" id="btnGenerate">生成/重跑对比</button>
+      <a href="/yolo-training" class="btn">返回训练页</a>
+      <span class="muted" id="statusText"></span>
+    </div>
+    <div class="card" id="jobStatsCard" style="display:none;">
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:10px;">
+        <h2 style="margin:0;font-size:15px;font-weight:600;">本作业对比概览</h2>
+        <span class="muted" id="jobStatsHint" style="font-size:12px;">—</span>
+      </div>
+      <div class="stats-section" id="statsImagesSection">
+        <h3 class="stats-section-title">一、按图片（单位：张）</h3>
+        <p class="stats-section-note" id="compareScopeNote" style="display:none;"></p>
+        <p class="stats-section-note" id="jobStatsImagesNote">每张图单独判断：是否严格一致、是否有漏检/误检。</p>
+        <div class="stats-dashboard" id="jobStatsImages"></div>
+      </div>
+      <div class="stats-section" id="statsBoxesSection">
+        <h3 class="stats-section-title">二、按检测框（单位：个，全部图片合计）</h3>
+        <p class="stats-section-note">TP / FN / FP 统计的是<strong>框的个数</strong>，不是图片张数。一张图里可以有多个框。</p>
+        <div class="stats-dashboard" id="jobStatsBoxes"></div>
+        <div class="stats-checkline" id="jobStatsCheckline"></div>
+      </div>
+      <div class="class-breakdown" id="jobClassBreakdown" style="display:none;"></div>
+    </div>
+    <div class="card" id="consistentPoolPanel" style="padding:12px 16px;margin-bottom:12px;">
+      <h4 style="margin:0 0 6px;font-size:14px;">训练筛选一致</h4>
+      <p class="muted" style="font-size:12px;margin:0 0 8px;line-height:1.5;">对比完成后，仅收录人工标注框与模型检测框类别、位置都匹配且没有漏检和误检的图片。同一标签集合只保留一个训练一致数据集，后续按图片文件名去重追加，仅 admin 管理员可见和用于训练。</p>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+        <span class="muted" id="consistentPoolStatus" style="font-size:12px;">—</span>
+        <a class="btn" id="consistentPoolTaskLink" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;padding:4px 10px;">打开筛选任务</a>
+      </div>
+    </div>
+    <div id="emptyBox" class="card muted" style="display:none;"></div>
+    <div class="layout" id="mainLayout" style="display:none;">
+      <aside class="side-list" id="itemList" aria-label="图片列表"></aside>
+      <section class="main-panel">
+        <div class="action-bar">
+          <div class="meta-row" id="metaRow"></div>
+          <a class="btn annotate" id="btnAnnotate" href="#" target="_blank" rel="noopener" style="display:none;" title="跳转到原任务修改标注">去任务里改标注</a>
+        </div>
+        <div class="box-count-bar" id="boxCountBar" style="display:none;">
+          <div class="box-count-cell gt">
+            <div class="label">您标注的目标数</div>
+            <div><span class="num" id="boxCountGt">0</span><span class="unit">个</span></div>
+            <div class="sub" id="boxCountGtHint">人工标注框总数</div>
+          </div>
+          <div class="box-count-vs">对比</div>
+          <div class="box-count-cell pred">
+            <div class="label">模型报出的目标数</div>
+            <div><span class="num" id="boxCountPred">0</span><span class="unit">个</span></div>
+            <div class="sub" id="boxCountPredHint">推理输出框总数</div>
+          </div>
+        </div>
+        <p class="match-hint" id="matchHint">配对规则：同类且框重叠 IoU 达阈值算「检对」；一个预测框最多配一个标注框。</p>
+        <div class="img-grid">
+          <div class="img-card">
+            <h4 id="gtCardTitle">左 · 标注视图<span class="box-num gt-num" id="gtCardBoxNum"></span></h4>
+            <p class="cap">绿框=已检对 · 黄框=漏检（标了但模型没对上）</p>
+            <div class="img-zoom-wrap" id="wrapGt" data-side="gt" title="点击放大">
+              <img id="imgGt" alt="标注叠加图" />
+              <span class="img-zoom-hint">点击放大 · 标注 <span id="gtImgBoxNum">0</span> 框</span>
+            </div>
+          </div>
+          <div class="img-card">
+            <h4 id="predCardTitle">右 · 预测视图<span class="box-num pred-num" id="predCardBoxNum"></span></h4>
+            <p class="cap">绿框=检对 · 红框=误检 · 黄虚线=漏检位置</p>
+            <div class="img-zoom-wrap" id="wrapPred" data-side="pred" title="点击放大">
+              <img id="imgPred" alt="预测叠加图" />
+              <span class="img-zoom-hint">点击放大 · 预测 <span id="predImgBoxNum">0</span> 框</span>
+            </div>
+          </div>
+        </div>
+        <div class="issue-box" id="issueBox">
+          <h3 class="panel-section-title">本图诊断</h3>
+          <p id="issueSummary">请从左侧列表选择一张图片。</p>
+          <p class="issue-weak" id="issueWeak" style="display:none;"></p>
+          <ul class="issue-detail" id="issueDetails"></ul>
+          <div class="issue-suggest" id="issueSuggest" style="display:none;"></div>
+        </div>
+        <div class="pager" id="pagerCompare">
+          <span class="muted" id="pagerText"></span>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div id="lightbox" role="dialog" aria-modal="true" aria-label="图片放大查看">
+    <div class="lb-toolbar">
+      <span id="lbTitle">放大查看</span>
+      <button type="button" class="btn" id="lbZoomIn">放大 +</button>
+      <button type="button" class="btn" id="lbZoomOut">缩小 −</button>
+      <button type="button" class="btn" id="lbReset">重置</button>
+      <button type="button" class="btn" id="lbClose" style="margin-left:auto;">关闭 Esc</button>
+    </div>
+    <div class="lb-stage" id="lbStage">
+      <div class="lb-inner" id="lbInner">
+        <img id="lbImg" alt="" />
+      </div>
+    </div>
+  </div>
+  <div id="toast"></div>
+  <script>
+(function () {
+  var API = "/api/v1";
+  var state = {
+    jobId: 0,
+    page: 0,
+    size: 20,
+    data: null,
+    selectedId: null,
+    pollTimer: null,
+    poolPollTimer: null,
+    jobCategory: "",
+    poolReport: null,
+    imgBlobUrls: [],
+    itemIdFromUrl: "",
+    pagerCtrl: null
+  };
+
+  function qs(name) {
+    var m = new RegExp("[?&]" + name + "=([^&]*)").exec(location.search);
+    return m ? decodeURIComponent(m[1].replace(/\+/g, " ")) : "";
+  }
+  function updateUrlParams(extra) {
+    var url = new URL(window.location.href);
+    Object.keys(extra || {}).forEach(function (key) {
+      var value = extra[key];
+      if (value === "" || value == null) url.searchParams.delete(key);
+      else url.searchParams.set(key, String(value));
+    });
+    history.replaceState(null, "", url.pathname + "?" + url.searchParams.toString());
+  }
+  function normalizeBearer(t) {
+    var v = (t || "").trim();
+    if (!v) return "";
+    if (/^bearer\s+/i.test(v)) return v;
+    if (/^eyJ/.test(v)) return v;
+    return "Bearer " + v;
+  }
+  function getToken() {
+    if (window.LabeluPortal && LabeluPortal.getAuthToken) return LabeluPortal.getAuthToken();
+    return normalizeBearer(localStorage.getItem("token") || "");
+  }
+  function requireToken() {
+    if (!getToken()) {
+      toast("请先登录", "err");
+      location.href = "/";
+      return false;
+    }
+    return true;
+  }
+  function toast(msg, kind) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.className = kind || "";
+    el.style.display = "block";
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.style.display = "none"; }, 4200);
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  }
+  async function api(path, opts) {
+    opts = opts || {};
+    var headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    var tok = getToken();
+    if (tok) headers.Authorization = tok;
+    var res = await fetch(API + path, Object.assign({}, opts, { headers: headers }));
+    var json = null;
+    try { json = await res.json(); } catch (e) {}
+    return { ok: res.ok, status: res.status, json: json };
+  }
+  function errMsg(res) {
+    return (res.json && (res.json.msg || res.json.message)) || ("HTTP " + res.status);
+  }
+
+  function revokeBlobUrls() {
+    (state.imgBlobUrls || []).forEach(function (u) {
+      try { URL.revokeObjectURL(u); } catch (e) {}
+    });
+    state.imgBlobUrls = [];
+  }
+  async function fetchAuthImage(apiPath) {
+    var r = await fetch(API + apiPath, {
+      headers: { Authorization: getToken() },
+      cache: "no-store"
+    });
+    if (!r.ok) return null;
+    var blob = await r.blob();
+    var url = URL.createObjectURL(blob);
+    state.imgBlobUrls.push(url);
+    return url;
+  }
+
+  function fillClassOptions(names) {
+    var sel = document.getElementById("selClass");
+    if (!sel) return;
+    var cur = sel.value;
+    sel.innerHTML = "<option value=\"\">全部类别</option>";
+    (names || []).forEach(function (n) {
+      var o = document.createElement("option");
+      o.value = n;
+      o.textContent = n;
+      sel.appendChild(o);
+    });
+    if (cur) sel.value = cur;
+  }
+
+  function ensurePager(payload) {
+    var total = payload ? (payload.total || 0) : 0;
+    var page = payload ? (payload.page || 0) : 0;
+    var size = payload ? (payload.size || state.size || 20) : (state.size || 20);
+    state.size = size;
+    if (!window.LuPager) return;
+    if (!state.pagerCtrl) {
+      state.pagerCtrl = LuPager.mount("pagerCompare", {
+        page: page,
+        size: size,
+        total: total,
+        showSize: true,
+        showJump: true,
+        sizeOptions: [10, 20, 50, 100],
+        onChange: function (next) {
+          state.page = next.page;
+          state.size = next.size;
+          updateUrlParams({
+            page: state.page + 1,
+            size: state.size
+          });
+          loadCompare(state.page);
+        }
+      });
+      return;
+    }
+    state.pagerCtrl.update({
+      page: page,
+      size: size,
+      total: total
+    });
+  }
+
+  function renderIssueBox(item) {
+    var box = document.getElementById("issueBox");
+    var summary = document.getElementById("issueSummary");
+    var weak = document.getElementById("issueWeak");
+    var details = document.getElementById("issueDetails");
+    var suggest = document.getElementById("issueSuggest");
+    if (!box || !summary || !details) return;
+    var level = item.issue_level || (item.fn || item.fp ? "warn" : "ok");
+    box.className = "issue-box " + level;
+    summary.textContent = item.issue_summary_cn || "暂无文字诊断，请结合左右图查看。";
+    if (weak) {
+      var wn = item.weak_class_note_cn || "";
+      if (!wn && item.worst_class) {
+        wn = "模型薄弱类别：「" + item.worst_class + "」。表示漏检/误检多属于该类，不是指标注有误。";
+      }
+      if (wn) {
+        weak.style.display = "";
+        weak.textContent = wn;
+      } else {
+        weak.style.display = "none";
+        weak.textContent = "";
+      }
+    }
+    details.innerHTML = "";
+    (item.issue_details_cn || []).forEach(function (d) {
+      var li = document.createElement("li");
+      li.className = d.type || "";
+      li.textContent = d.text || "";
+      details.appendChild(li);
+    });
+    var sugs = item.issue_suggestions_cn || [];
+    if (sugs.length && suggest) {
+      suggest.style.display = "";
+      suggest.innerHTML = "<strong>可尝试：</strong>" + sugs.map(function (s) {
+        return esc(s);
+      }).join("；");
+    } else if (suggest) {
+      suggest.style.display = "none";
+      suggest.innerHTML = "";
+    }
+  }
+
+  function renderStatTiles(container, defs) {
+    if (!container) return;
+    container.innerHTML = defs.map(function (d) {
+      return (
+        '<div class="stat-tile ' + esc(d.cls || "") + '">' +
+        '<div class="n">' + d.n + '</div>' +
+        '<div class="l">' + esc(d.l) + '</div></div>'
+      );
+    }).join("");
+  }
+
+  function renderJobStats(summary) {
+    var card = document.getElementById("jobStatsCard");
+    var imgTiles = document.getElementById("jobStatsImages");
+    var boxTiles = document.getElementById("jobStatsBoxes");
+    var hint = document.getElementById("jobStatsHint");
+    var imgNote = document.getElementById("jobStatsImagesNote");
+    var checkline = document.getElementById("jobStatsCheckline");
+    var br = document.getElementById("jobClassBreakdown");
+    if (!card || !imgTiles || !boxTiles) return;
+    var js = (summary && summary.job_stats) || null;
+    if (!js || !js.total_images) {
+      card.style.display = "none";
+      return;
+    }
+    card.style.display = "";
+    var poolN = js.images_pool_eligible != null ? js.images_pool_eligible : js.images_ok_with_boxes;
+    var emptyN = js.images_ok_empty || 0;
+    var sumImages = (js.images_ok_with_boxes || 0) + emptyN + (js.images_problem || 0);
+    var scopeNote = document.getElementById("compareScopeNote");
+    var scopeText = formatCompareScopeNote(summary);
+    if (scopeNote) {
+      if (scopeText) {
+        scopeNote.style.display = "";
+        scopeNote.innerHTML = scopeText;
+      } else {
+        scopeNote.style.display = "none";
+        scopeNote.innerHTML = "";
+      }
+    }
+    if (hint) {
+      var splitHint = (summary && summary.compare_splits && summary.compare_splits.length)
+        ? summary.compare_splits.join(" + ")
+        : "train + val + test";
+      hint.textContent = "本作业对比 " + js.total_images + " 张（" + splitHint + "）";
+    }
+    if (imgNote) {
+      var note =
+        (js.images_ok_with_boxes || 0) + " 张本作业严格一致 + " + (js.images_problem || 0) + " 张有问题" +
+        (emptyN ? " + " + emptyN + " 张无框" : "") +
+        " = " + sumImages + " 张";
+      if (poolN != null) {
+        note += "；其中可入筛选任务 " + poolN + " 张";
+      }
+      imgNote.innerHTML = note + "。";
+    }
+    var imgDefs = [
+      { n: js.total_images, l: "对比图片（全任务）", cls: "" },
+      { n: js.images_ok_with_boxes, l: "本作业严格一致（张）", cls: "ok" },
+      { n: js.images_problem, l: "有问题（张）", cls: "fp" },
+      { n: js.images_with_fn, l: "其中：仅漏检", cls: "fn" },
+      { n: js.images_with_fp, l: "其中：仅误检", cls: "fp" },
+      { n: js.images_with_both, l: "其中：漏检+误检", cls: "fp" }
+    ];
+    renderStatTiles(imgTiles, imgDefs);
+    var gtBoxes = js.total_gt_boxes != null ? js.total_gt_boxes : (js.total_tp + js.total_fn);
+    var predBoxes = js.total_pred_boxes != null ? js.total_pred_boxes : (js.total_tp + js.total_fp);
+    renderStatTiles(boxTiles, [
+      { n: gtBoxes, l: "人工标注框（个）", cls: "" },
+      { n: predBoxes, l: "模型预测框（个）", cls: "" },
+      { n: js.total_tp, l: "检对 TP（个）", cls: "tp" },
+      { n: js.total_fn, l: "漏检 FN（个）", cls: "fn" },
+      { n: js.total_fp, l: "误检 FP（个）", cls: "fp" }
+    ]);
+    if (checkline) {
+      checkline.innerHTML =
+        "校验：<strong>标注框 " + gtBoxes + " = 检对 " + js.total_tp + " + 漏检 " + js.total_fn +
+        "</strong>；<strong>预测框 " + predBoxes + " = 检对 " + js.total_tp + " + 误检 " + js.total_fp +
+        "</strong>。例：某图标了 23 框、模型报 9 框，只算 1 张「有问题」，但会贡献多个 FN/FP 框。";
+    }
+    if (br) {
+      var fnKeys = Object.keys(js.class_fn || {});
+      var fpKeys = Object.keys(js.class_fp || {});
+      var lines = [];
+      if (fnKeys.length) {
+        lines.push(
+          "<strong>漏检框按类别（个）：</strong>" +
+          fnKeys.slice(0, 5).map(function (k) {
+            return esc(k) + " " + js.class_fn[k];
+          }).join(" · ")
+        );
+      }
+      if (fpKeys.length) {
+        lines.push(
+          "<strong>误检框按类别（个）：</strong>" +
+          fpKeys.slice(0, 5).map(function (k) {
+            return esc(k) + " " + js.class_fp[k];
+          }).join(" · ")
+        );
+      }
+      br.innerHTML = lines.join("<br/>");
+      br.style.display = lines.length ? "" : "none";
+    }
+  }
+
+  function boxCountText(n) {
+    var x = parseInt(n, 10);
+    return isFinite(x) && x >= 0 ? x : 0;
+  }
+
+  function boxCountDeltaHint(gt, pred) {
+    var g = boxCountText(gt);
+    var p = boxCountText(pred);
+    var d = p - g;
+    if (d === 0) return "数量一致";
+    if (d > 0) return "模型多报了 " + d + " 个";
+    return "模型少报了 " + (-d) + " 个（常见：漏检多）";
+  }
+
+  function renderBoxCounts(item) {
+    var gt = boxCountText(item.gt);
+    var pred = boxCountText(item.pred);
+    var bar = document.getElementById("boxCountBar");
+    if (bar) bar.style.display = "";
+    var set = function (id, v) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = String(v);
+    };
+    set("boxCountGt", gt);
+    set("boxCountPred", pred);
+    set("gtImgBoxNum", gt);
+    set("predImgBoxNum", pred);
+    set("gtCardBoxNum", gt + " 框");
+    set("predCardBoxNum", pred + " 框");
+    var gtHint = document.getElementById("boxCountGtHint");
+    var predHint = document.getElementById("boxCountPredHint");
+    var delta = boxCountDeltaHint(gt, pred);
+    if (gtHint) gtHint.textContent = "您在这张图里一共标了 " + gt + " 个目标";
+    if (predHint) predHint.textContent = "模型一共报了 " + pred + " 个目标 · " + delta;
+  }
+
+  function renderMeta(item) {
+    var el = document.getElementById("metaRow");
+    if (!el) return;
+    var gt = boxCountText(item.gt);
+    var pred = boxCountText(item.pred);
+    var splitLabel = item.split === "val" ? "验证集" : (item.split === "test" ? "测试集" : item.split);
+    el.innerHTML =
+      "<strong>" + esc(item.filename) + "</strong>" +
+      "<span class=\"badge\">" + esc(splitLabel) + "</span>" +
+      "<span class=\"badge\">您标注 " + gt + " 个</span>" +
+      "<span class=\"badge\">模型预测 " + pred + " 个</span>" +
+      "<span class=\"badge\">" + esc(boxCountDeltaHint(gt, pred)) + "</span>" +
+      "<span class=\"badge tp\">检对 " + item.tp + "</span>" +
+      "<span class=\"badge fn\">漏检 " + item.fn + "</span>" +
+      "<span class=\"badge fp\">误检 " + item.fp + "</span>" +
+      (item.worst_class ? "<span class=\"badge\" title=\"漏检/误检多属于该类，非标注错误\">薄弱类别：" + esc(item.worst_class) + "</span>" : "");
+  }
+
+  async function selectItem(item) {
+    if (!item) return;
+    state.selectedId = item.id;
+    updateUrlParams({ item_id: item.id });
+    revokeBlobUrls();
+    var gtUrl = await fetchAuthImage(item.gt_url.replace(/^\/api\/v1/, ""));
+    var predUrl = await fetchAuthImage(item.pred_url.replace(/^\/api\/v1/, ""));
+    var imgGt = document.getElementById("imgGt");
+    var imgPred = document.getElementById("imgPred");
+    if (imgGt) imgGt.src = gtUrl || "";
+    if (imgPred) imgPred.src = predUrl || "";
+    renderBoxCounts(item);
+    renderMeta(item);
+    renderIssueBox(item);
+    var ann = document.getElementById("btnAnnotate");
+    if (ann) {
+      if (item.annotate_url) {
+        ann.style.display = "";
+        ann.href = item.annotate_url;
+      } else {
+        ann.style.display = "none";
+        ann.href = "#";
+      }
+    }
+    document.querySelectorAll(".list-item").forEach(function (btn) {
+      btn.classList.toggle("active", btn.getAttribute("data-id") === item.id);
+    });
+  }
+
+  function renderList(payload) {
+    var list = document.getElementById("itemList");
+    var layout = document.getElementById("mainLayout");
+    var empty = document.getElementById("emptyBox");
+    var pager = document.getElementById("pagerText");
+    var items = (payload && payload.items) || [];
+    var total = payload ? payload.total : 0;
+    if (!items.length) {
+      if (layout) layout.style.display = "none";
+      if (empty) {
+        empty.style.display = "block";
+        empty.textContent = (payload && payload.status && payload.status.status === "running")
+          ? "正在逐张生成对比图，请稍候再点「刷新」…"
+          : "还没有对比数据。训练完成后会自动生成；也可点「生成/重跑对比」手动触发。";
+      }
+      if (pager) pager.textContent = "";
+      ensurePager(payload);
+      return;
+    }
+    if (empty) empty.style.display = "none";
+    if (layout) layout.style.display = "";
+    if (!list) return;
+    list.innerHTML = "";
+    items.forEach(function (it) {
+      var btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "list-item" + (state.selectedId === it.id ? " active" : "");
+      btn.setAttribute("data-id", it.id);
+      var issueHint = it.fn ? ("漏" + it.fn) : "";
+      if (it.fp) issueHint += (issueHint ? " · " : "") + ("误" + it.fp);
+      if (!issueHint) issueHint = "严格一致";
+      btn.innerHTML =
+        "<div class=\"nm\">" + esc(it.filename) + "</div>" +
+        "<div class=\"st\">标 " + boxCountText(it.gt) + " · 测 " + boxCountText(it.pred) + " · " + esc(issueHint) + "</div>";
+      btn.onclick = function () { selectItem(it); };
+      list.appendChild(btn);
+    });
+    var page = payload.page || 0;
+    var size = payload.size || 20;
+    if (pager) {
+      var totalPages = Math.max(1, Math.ceil(total / Math.max(1, size)));
+      pager.textContent = "第 " + (page + 1) + " / " + totalPages + " 页 · 本页 " + items.length + " / 共 " + total + " 张";
+    }
+    ensurePager(payload);
+    var pick = items.find(function (x) {
+      return x.id === state.selectedId || x.id === state.itemIdFromUrl;
+    }) || items[0];
+    state.itemIdFromUrl = "";
+    selectItem(pick);
+  }
+
+  function stopPoll() {
+    if (state.pollTimer) {
+      clearInterval(state.pollTimer);
+      state.pollTimer = null;
+    }
+  }
+  function startPoll() {
+    stopPoll();
+    state.pollTimer = setInterval(function () {
+      loadCompare(state.page, true);
+    }, 5000);
+  }
+
+  function stopPoolPoll() {
+    if (state.poolPollTimer) {
+      clearInterval(state.poolPollTimer);
+      state.poolPollTimer = null;
+    }
+  }
+  function startPoolPoll() {
+    stopPoolPoll();
+    state.poolPollTimer = setInterval(function () { refreshConsistentPoolStatus(true); }, 4000);
+  }
+  function formatCompareScopeNote(summary) {
+    var dc = (summary && summary.dataset_image_counts) || {};
+    var splits = (summary && summary.compare_splits) || [];
+    var compared = (summary && summary.job_stats && summary.job_stats.total_images) || 0;
+    var total = dc.total || 0;
+    if (!total && !compared) return "";
+    var splitLabel = splits.length ? splits.join(" + ") : "val + test";
+    var scopeCount = summary.compare_scope_image_count != null
+      ? summary.compare_scope_image_count
+      : compared;
+    var train = dc.train || 0;
+    var parts = [];
+    if (total) {
+      parts.push(
+        "训练导出共 " + total + " 张（train " + (dc.train || 0) +
+        " · val " + (dc.val || 0) + " · test " + (dc.test || 0) + "）"
+      );
+    }
+    if (scopeCount || compared) {
+      var coversAll = total && (scopeCount || compared) >= total;
+      parts.push(
+        "标注对比覆盖 <strong>" + splitLabel + "</strong> 共 " + (scopeCount || compared) + " 张" +
+        (coversAll ? "（= 任务训练导出全量）" : "")
+      );
+    }
+    if (summary && summary.source_task_sample_count != null) {
+      parts.push("来源任务共 " + summary.source_task_sample_count + " 张样本");
+    }
+    return parts.join("；") + "。";
+  }
+
+  function formatConsistentPoolSyncLine(report) {
+    if (!report || report.status === "idle") return "尚未同步（对比完成后自动执行）";
+    if (report.status === "skipped") return report.message || "已跳过";
+    if (report.status === "failed") return "同步失败：" + (report.message || "未知错误");
+    if (report.status !== "completed") return report.message || report.status || "处理中…";
+    var parts = [];
+    if (report.matched_ok_with_boxes != null) {
+      parts.push("本作业对比一致 " + report.matched_ok_with_boxes + " 张");
+    }
+    if (report.added != null && report.added > 0) {
+      parts.push("本次新写入 " + report.added + " 张");
+    } else if (report.skipped_duplicate != null && report.skipped_duplicate > 0) {
+      parts.push("本次未新增（" + report.skipped_duplicate + " 张已在筛选任务中）");
+    }
+    if (report.pool_task_sample_count != null && report.pool_task_name) {
+      parts.push(
+        "筛选任务累计 " + report.pool_task_sample_count + " 张（任务列表「" +
+        report.pool_task_name + "」，含历史作业）"
+      );
+    }
+    if (report.finished_at) {
+      parts.push(String(report.finished_at).replace("T", " ").slice(0, 19));
+    }
+    return parts.join(" · ");
+  }
+
+  function consistentPoolLinkLabel(report) {
+    var name = (report && report.pool_task_name) || "筛选任务";
+    if (report && report.pool_task_sample_count != null) {
+      return "打开「" + name + "」（累计 " + report.pool_task_sample_count + " 张）";
+    }
+    return "打开「" + name + "」";
+  }
+  async function refreshConsistentPoolStatus(silent) {
+    if (!state.jobId || !requireToken()) return;
+    var catHint = document.getElementById("consistentPoolCategoryHint");
+    if (catHint) catHint.textContent = state.jobCategory || "分类";
+    var res = await api("/yolo-train-jobs/" + state.jobId + "/consistent-pool/sync", { method: "GET" });
+    if (!res.ok) {
+      if (!silent) toast(errMsg(res), "err");
+      return;
+    }
+    var report = res.json.data || {};
+    state.poolReport = report;
+    var stEl = document.getElementById("consistentPoolStatus");
+    if (stEl) stEl.textContent = formatConsistentPoolSyncLine(report);
+    var link = document.getElementById("consistentPoolTaskLink");
+    if (link) {
+      if (report.pool_task_id) {
+        link.href = "/tasks/" + encodeURIComponent(report.pool_task_id);
+        link.style.display = "";
+        link.textContent = consistentPoolLinkLabel(report);
+      } else {
+        link.style.display = "none";
+      }
+    }
+    if (state.data && state.data.summary) renderJobStats(state.data.summary);
+    if (report.status === "running") startPoolPoll();
+    else stopPoolPoll();
+  }
+  async function loadJobMeta() {
+    if (!state.jobId || !requireToken()) return;
+    var res = await api("/yolo-train-jobs/" + state.jobId, { method: "GET" });
+    if (res.ok && res.json.data) {
+      state.jobCategory = res.json.data.category || "";
+    }
+  }
+
+  async function loadCompare(page, silent) {
+    if (!state.jobId || !requireToken()) return;
+    state.page = Math.max(0, parseInt(page, 10) || 0);
+    var split = document.getElementById("selSplit").value;
+    var issue = document.getElementById("selIssue").value;
+    var className = document.getElementById("selClass").value;
+    var q = "?page=" + state.page + "&size=" + encodeURIComponent(state.size || 20);
+    if (split) q += "&split=" + encodeURIComponent(split);
+    if (issue && issue !== "all") q += "&issue=" + encodeURIComponent(issue);
+    if (className) q += "&class_name=" + encodeURIComponent(className);
+    var res = await api("/yolo-train-jobs/" + state.jobId + "/gt-pred-compare" + q, { method: "GET" });
+    if (!res.ok) {
+      if (!silent) toast(errMsg(res), "err");
+      return;
+    }
+    var data = res.json.data || {};
+    state.data = data;
+    var st = document.getElementById("statusText");
+    if (st) {
+      var status = data.status || {};
+      var sum = data.summary || {};
+      st.textContent = (status.message || status.status || "") +
+        (sum.generated_at ? " · 生成于 " + String(sum.generated_at).replace("T", " ").slice(0, 19) : "");
+    }
+    if (data.summary && data.summary.class_names) {
+      fillClassOptions(data.summary.class_names);
+    }
+    state.size = data.size || state.size || 20;
+    updateUrlParams({
+      page: state.page + 1,
+      size: state.size,
+      split: split || "",
+      issue: issue && issue !== "all" ? issue : "",
+      class_name: className || ""
+    });
+    renderJobStats(data.summary || {});
+    renderList(data);
+    if ((data.status || {}).status === "running") startPoll();
+    else {
+      stopPoll();
+      if ((data.status || {}).status === "completed") refreshConsistentPoolStatus(true);
+    }
+  }
+
+  async function triggerGenerate() {
+    if (!state.jobId || !requireToken()) return;
+    var res = await api("/yolo-train-jobs/" + state.jobId + "/gt-pred-compare/generate", { method: "POST" });
+    if (!res.ok) {
+      toast(errMsg(res), "err");
+      return;
+    }
+    toast((res.json.data && res.json.data.message) || "已开始生成", "ok");
+    startPoll();
+    loadCompare(0, true);
+  }
+
+  /* ---- 图片放大 lightbox ---- */
+  var lb = {
+    scale: 1,
+    tx: 0,
+    ty: 0,
+    dragging: false,
+    lastX: 0,
+    lastY: 0,
+    title: ""
+  };
+  function applyLbTransform() {
+    var inner = document.getElementById("lbInner");
+    if (!inner) return;
+    inner.style.transform = "translate(calc(-50% + " + lb.tx + "px), calc(-50% + " + lb.ty + "px)) scale(" + lb.scale + ")";
+  }
+  function openLightbox(src, title) {
+    var box = document.getElementById("lightbox");
+    var img = document.getElementById("lbImg");
+    var t = document.getElementById("lbTitle");
+    if (!box || !img) return;
+    lb.scale = 1;
+    lb.tx = 0;
+    lb.ty = 0;
+    lb.title = title || "放大查看";
+    img.src = src;
+    if (t) t.textContent = lb.title;
+    applyLbTransform();
+    box.classList.add("open");
+    document.body.style.overflow = "hidden";
+  }
+  function closeLightbox() {
+    var box = document.getElementById("lightbox");
+    if (box) box.classList.remove("open");
+    document.body.style.overflow = "";
+  }
+  function lbZoom(delta) {
+    lb.scale = Math.min(8, Math.max(0.2, lb.scale + delta));
+    applyLbTransform();
+  }
+  function lbReset() {
+    lb.scale = 1;
+    lb.tx = 0;
+    lb.ty = 0;
+    applyLbTransform();
+  }
+
+  document.getElementById("wrapGt").onclick = function () {
+    var src = document.getElementById("imgGt").src;
+    var n = document.getElementById("boxCountGt");
+    var title = "标注视图（绿=检对，黄=漏检）" + (n ? " · 您标了 " + n.textContent + " 个" : "");
+    if (src) openLightbox(src, title);
+  };
+  document.getElementById("wrapPred").onclick = function () {
+    var src = document.getElementById("imgPred").src;
+    var n = document.getElementById("boxCountPred");
+    var title = "预测视图（绿=检对，红=误检）" + (n ? " · 模型报了 " + n.textContent + " 个" : "");
+    if (src) openLightbox(src, title);
+  };
+  document.getElementById("lbClose").onclick = closeLightbox;
+  document.getElementById("lbZoomIn").onclick = function () { lbZoom(0.25); };
+  document.getElementById("lbZoomOut").onclick = function () { lbZoom(-0.25); };
+  document.getElementById("lbReset").onclick = lbReset;
+  document.getElementById("lightbox").onclick = function (e) {
+    if (e.target.id === "lightbox") closeLightbox();
+  };
+  document.getElementById("lbStage").addEventListener("wheel", function (e) {
+    e.preventDefault();
+    lbZoom(e.deltaY < 0 ? 0.15 : -0.15);
+  }, { passive: false });
+  document.getElementById("lbStage").addEventListener("mousedown", function (e) {
+    lb.dragging = true;
+    lb.lastX = e.clientX;
+    lb.lastY = e.clientY;
+    document.getElementById("lbStage").classList.add("dragging");
+  });
+  window.addEventListener("mousemove", function (e) {
+    if (!lb.dragging) return;
+    lb.tx += e.clientX - lb.lastX;
+    lb.ty += e.clientY - lb.lastY;
+    lb.lastX = e.clientX;
+    lb.lastY = e.clientY;
+    applyLbTransform();
+  });
+  window.addEventListener("mouseup", function () {
+    lb.dragging = false;
+    var st = document.getElementById("lbStage");
+    if (st) st.classList.remove("dragging");
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") closeLightbox();
+  });
+
+  document.getElementById("btnRefresh").onclick = function () { loadCompare(state.page); };
+  document.getElementById("btnGenerate").onclick = triggerGenerate;
+  ["selSplit", "selIssue", "selClass"].forEach(function (id) {
+    document.getElementById(id).onchange = function () {
+      state.selectedId = null;
+      state.itemIdFromUrl = "";
+      updateUrlParams({ item_id: "" });
+      loadCompare(0);
+    };
+  });
+
+  function init() {
+    state.jobId = parseInt(qs("job_id"), 10) || 0;
+    state.itemIdFromUrl = qs("item_id") || "";
+    state.page = Math.max(0, (parseInt(qs("page"), 10) || 1) - 1);
+    state.size = Math.max(1, parseInt(qs("size"), 10) || 20);
+    var split = qs("split");
+    var issue = qs("issue");
+    var className = qs("class_name");
+    var title = document.getElementById("pageTitle");
+    if (!state.jobId) {
+      if (title) title.textContent = "标注与预测对比";
+      document.getElementById("emptyBox").style.display = "block";
+      document.getElementById("emptyBox").textContent = "请在 URL 中指定 job_id，例如 /yolo-gt-pred-compare?job_id=98";
+      return;
+    }
+    if (title) title.textContent = "标注与预测对比 · 作业 #" + state.jobId;
+    if (!requireToken()) return;
+    if (split) document.getElementById("selSplit").value = split;
+    if (issue) document.getElementById("selIssue").value = issue;
+    if (className) document.getElementById("selClass").value = className;
+    loadJobMeta().then(function () { refreshConsistentPoolStatus(true); });
+    loadCompare(state.page);
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+})();
+  </script>
+</body>
+</html>

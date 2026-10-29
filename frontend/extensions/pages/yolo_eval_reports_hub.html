@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>模型评估报告中心</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --card: #fff;
+      --border: #d7d8dd;
+      --primary: #1677ff;
+      --muted: rgba(18, 19, 22, 0.5);
+      --text: rgba(18, 19, 22, 0.88);
+      --ok: #389e0d;
+      --warn: #d46b08;
+      --err: #cf1322;
+      --sidebar-w: 280px;
+    }
+    body.labelu-shell { margin: 0; background: var(--bg); color: var(--text); }
+    .page-main { padding: 10px 14px 24px; max-width: 1600px; margin: 0 auto; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .hub-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: flex-end;
+      margin-bottom: 12px;
+    }
+    .hub-toolbar label { font-size: 12px; display: block; margin-bottom: 4px; }
+    .hub-toolbar input, .hub-toolbar select {
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+      min-width: 100px;
+    }
+    .btn {
+      padding: 7px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #fff;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .btn.active { border-color: var(--primary); color: var(--primary); background: #e6f4ff; }
+    .hub-layout {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr;
+      gap: 12px;
+      min-height: min(72vh, 720px);
+    }
+    @media (max-width: 900px) {
+      .hub-layout { grid-template-columns: 1fr; }
+      .hub-sidebar { max-height: 240px; overflow: auto; }
+    }
+    .hub-sidebar {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: auto;
+      padding: 8px 0;
+    }
+    .hub-group-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      padding: 10px 14px 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .hub-nav-item {
+      display: block;
+      width: 100%;
+      text-align: left;
+      border: none;
+      background: transparent;
+      padding: 8px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+    }
+    .hub-nav-item:hover { background: #fafafa; }
+    .hub-nav-item.active {
+      background: #e6f4ff;
+      border-left-color: var(--primary);
+      color: var(--primary);
+    }
+    .hub-nav-item .sub { font-size: 11px; color: var(--muted); display: block; margin-top: 2px; }
+    .status-dot {
+      display: inline-block;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .status-dot.ok { background: var(--ok); }
+    .status-dot.err { background: var(--err); }
+    .status-dot.pending { background: var(--warn); }
+    .status-dot.missing { background: #bfbfbf; }
+    .hub-main {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex;
+      flex-direction: column;
+      min-height: 400px;
+      overflow: hidden;
+    }
+    .hub-main-head {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .hub-main-head h2 { margin: 0; font-size: 16px; }
+    .hub-mode-tabs { display: flex; gap: 6px; }
+    .hub-content {
+      flex: 1;
+      overflow: auto;
+      padding: 16px 18px;
+    }
+    .md-body { font-size: 13px; line-height: 1.65; }
+    .md-body h1, .md-body h2, .md-body h3 { margin: 0.8em 0 0.4em; }
+    .md-body table { border-collapse: collapse; width: 100%; font-size: 12px; margin: 10px 0; }
+    .md-body th, .md-body td { border: 1px solid var(--border); padding: 6px 8px; }
+    pre.json-view {
+      margin: 0;
+      padding: 12px;
+      background: #fafafa;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 11px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 60vh;
+      overflow: auto;
+    }
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .metric-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #fafafa;
+    }
+    .metric-card .label { font-size: 11px; color: var(--muted); }
+    .metric-card .val { font-size: 18px; font-weight: 600; margin-top: 4px; }
+    .compare-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+    .compare-col {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      background: #fafafa;
+      max-height: 65vh;
+      overflow: auto;
+    }
+    .compare-col h4 { margin: 0 0 10px; font-size: 13px; color: var(--primary); }
+    .compare-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .compare-table th, .compare-table td { border: 1px solid var(--border); padding: 6px 8px; }
+    .compare-table th { background: #fafafa; }
+    .asset-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .asset-row img { max-width: 280px; border: 1px solid var(--border); border-radius: 6px; }
+    .compare-group-btn {
+      display: block;
+      width: calc(100% - 20px);
+      margin: 4px 10px 8px;
+      text-align: left;
+      padding: 8px 10px;
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      background: #fffbe6;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #toast {
+      position: fixed; bottom: 20px; right: 20px;
+      padding: 10px 16px; border-radius: 8px;
+      background: #333; color: #fff; font-size: 13px;
+      display: none; z-index: 9999;
+    }
+    #toast.err { background: #cf1322; }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="yolo-eval-hub">
+  <nav class="labelu-shell-nav" aria-label="7GAI进化平台工具导航"></nav>
+  <main class="page-main" data-lu-toolkit-main>
+    <div id="luPageHero"></div>
+    <div class="card">
+      <h1 style="margin:0 0 6px;font-size:18px;">模型评估报告中心</h1>
+      <p class="muted" style="margin:0;">
+        聚合训练作业全链路报告：Ultralytics 指标 · AI 大模型评估 · SOP PT/ONNX/bmodel · 边端验证 · 编译质量。
+        左侧切换阅读；「对比」模式并排查看多模型或多阶段数值。
+      </p>
+    </div>
+    <div class="hub-toolbar card">
+      <div>
+        <label for="inpTaskId">任务 ID</label>
+        <input type="number" id="inpTaskId" min="1" placeholder="task" />
+      </div>
+      <div>
+        <label for="inpJobId">训练作业 ID</label>
+        <input type="number" id="inpJobId" min="1" placeholder="job" />
+      </div>
+      <div>
+        <label for="inpExportId">编译导出 ID（可选）</label>
+        <input type="number" id="inpExportId" min="1" placeholder="export" />
+      </div>
+      <button type="button" class="btn primary" id="btnLoadHub">加载报告</button>
+      <a href="/yolo-training" class="btn">返回训练页</a>
+      <span class="muted" id="hubMeta"></span>
+    </div>
+    <div class="hub-layout">
+      <aside class="hub-sidebar" id="hubSidebar">
+        <p class="muted" style="padding:12px 14px;margin:0;">输入任务与作业 ID 后点「加载报告」</p>
+      </aside>
+      <section class="hub-main">
+        <div class="hub-main-head">
+          <div>
+            <h2 id="contentTitle">选择左侧报告</h2>
+            <p class="muted" id="contentDesc" style="margin:4px 0 0;"></p>
+          </div>
+          <div class="hub-mode-tabs">
+            <button type="button" class="btn active" id="btnModeRead" data-mode="read">阅读</button>
+            <button type="button" class="btn" id="btnModeCompare" data-mode="compare">对比</button>
+          </div>
+        </div>
+        <div class="hub-content" id="hubContent">
+          <p class="muted">加载后将在此展示完整报告正文、指标表或对比视图。</p>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div id="toast"></div>
+  <script>
+(function () {
+  var API = "/api/v1";
+  var hubData = null;
+  var reportMap = {};
+  var activeKey = null;
+  var viewMode = "read";
+  var contentCache = {};
+
+  var GROUP_LABELS = {
+    train: "训练指标",
+    ai: "AI 大模型评估",
+    sop: "SOP 模型评估",
+    edge: "边端验证",
+    quality: "编译质量"
+  };
+
+  function normalizeBearer(t) {
+    var v = (t || "").trim();
+    if (!v) return "";
+    if (/^bearer\s+/i.test(v)) return v;
+    if (/^eyJ/.test(v)) return "Bearer " + v;
+    return v;
+  }
+  function getToken() {
+    if (window.LabeluPortal && LabeluPortal.getAuthToken) return LabeluPortal.getAuthToken();
+    return normalizeBearer(localStorage.getItem("token") || "");
+  }
+  function toast(msg, kind) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.className = kind || "";
+    el.style.display = "block";
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.style.display = "none"; }, 4200);
+  }
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  }
+  async function api(path, opts) {
+    opts = opts || {};
+    var headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    var tok = getToken();
+    if (tok) headers.Authorization = tok;
+    var res = await fetch(API + path, Object.assign({}, opts, { headers: headers }));
+    var json = null;
+    try { json = await res.json(); } catch (e) {}
+    return { ok: res.ok, status: res.status, json: json };
+  }
+  var _markedOk = false;
+  function renderMarkdown(md) {
+    var text = String(md || "");
+    if (!text) return "<p class=\"muted\">（空）</p>";
+    if (typeof marked === "undefined" || typeof DOMPurify === "undefined") {
+      return "<pre class=\"json-view\">" + esc(text) + "</pre>";
+    }
+    if (!_markedOk) { marked.use({ gfm: true, breaks: true }); _markedOk = true; }
+    return DOMPurify.sanitize(marked.parse(text));
+  }
+  function normalizeSopMetrics(m) {
+    if (!m || typeof m !== "object") return {};
+    var out = Object.assign({}, m);
+    if (out.precision == null && out.overall_precision != null) out.precision = out.overall_precision;
+    if (out.recall == null && out.overall_recall != null) out.recall = out.overall_recall;
+    if (out.map50_95 == null && out.map5095 != null) out.map50_95 = out.map5095;
+    return out;
+  }
+  function fmt4(v) {
+    if (v == null || v === "") return "—";
+    var n = Number(v);
+    return isNaN(n) ? String(v) : n.toFixed(4);
+  }
+  function fmtMetricDisplay(v, field) {
+    if (v == null || v === "") return "—";
+    var n = Number(v);
+    if (isNaN(n)) return String(v);
+    var base = n.toFixed(4);
+    if ((field === "recall" || field === "precision") && n > 0 && n < 0.01) {
+      return base + " (" + (n * 100).toFixed(2) + "%)";
+    }
+    return base;
+  }
+  function renderSopSummaryReadable(sop) {
+    sop = sop || {};
+    var cmp = sop.comparison_pt_onnx || {};
+    var cmpBm = sop.comparison_pt_bmodel || {};
+    var ep = sop.eval_params || {};
+    var ptM = normalizeSopMetrics((sop.pt || {}).metrics);
+    var onnxM = normalizeSopMetrics((sop.onnx || {}).metrics);
+    var bmM = normalizeSopMetrics((sop.bmodel || {}).metrics);
+    var html = "<div class=\"sop-summary-readable\" style=\"font-size:13px;line-height:1.6;\">";
+    html += "<h4 style=\"margin:0 0 8px;color:var(--primary);\">评估结论</h4>";
+    html += "<p style=\"margin:0 0 12px;\">" + esc(
+      (sop.conversion_pt_onnx || {}).success ? "云端 ONNX 转化通过（≤3%）" : (cmp.detail || "见下表")
+    ) + "</p>";
+    html += "<table class=\"compare-table\"><thead><tr><th>阶段</th><th>mAP50</th><th>精确率</th><th>召回率</th><th>图片数</th></tr></thead><tbody>";
+    [["云端 PT", ptM], ["云端 ONNX", onnxM], ["边端 bmodel", bmM]].forEach(function (pair) {
+      var m = pair[1];
+      html += "<tr><td>" + pair[0] + "</td><td>" + fmtMetricDisplay(m.map50, "map50") +
+        "</td><td>" + fmtMetricDisplay(m.precision, "precision") + "</td><td>" +
+        fmtMetricDisplay(m.recall, "recall") + "</td><td>" + esc(String(m.images != null ? m.images : "—")) + "</td></tr>";
+    });
+    html += "</tbody></table>";
+    html += "<p class=\"muted\" style=\"margin:10px 0 0;font-size:11px;\">split=" + esc(sop.split || "test") +
+      " · conf=" + esc(String(ep.conf_thres != null ? ep.conf_thres : 0.35)) +
+      " · IoU=" + esc(String(ep.iou_thres != null ? ep.iou_thres : 0.5)) +
+      "。召回率极低表示漏检多，非展示错误。</p></div>";
+    return html;
+  }
+  async function hydrateMarkdownImages(host, exportId, sopKind) {
+    if (!host || !exportId || !sopKind) return;
+    var imgs = host.querySelectorAll("img");
+    await Promise.all(Array.prototype.map.call(imgs, async function (img) {
+      var src = (img.getAttribute("src") || "").trim();
+      if (!src || /^https?:/i.test(src) || /^blob:/i.test(src)) return;
+      var name = src.split("/").pop().split("\\").pop();
+      if (!name) return;
+      try {
+        var url = API + "/yolo-bm1688-exports/" + exportId + "/sop-eval-asset/" + sopKind + "/" + encodeURIComponent(name);
+        var res = await fetch(url, { headers: { Authorization: getToken() } });
+        if (!res.ok) return;
+        var blob = await res.blob();
+        img.src = URL.createObjectURL(blob);
+      } catch (e) {}
+    }));
+  }
+  function readUrlParams() {
+    try {
+      var u = new URL(window.location.href);
+      return {
+        taskId: u.searchParams.get("taskId"),
+        jobId: u.searchParams.get("jobId"),
+        exportId: u.searchParams.get("exportId")
+      };
+    } catch (e) { return { taskId: null, jobId: null, exportId: null }; }
+  }
+  function syncUrl(taskId, jobId) {
+    try {
+      var u = new URL(window.location.href);
+      if (taskId) u.searchParams.set("taskId", String(taskId));
+      else u.searchParams.delete("taskId");
+      if (jobId) u.searchParams.set("jobId", String(jobId));
+      else u.searchParams.delete("jobId");
+      window.history.replaceState({}, "", u.toString());
+    } catch (e) {}
+  }
+
+  function renderSidebar() {
+    var host = document.getElementById("hubSidebar");
+    if (!hubData || !hubData.reports || !hubData.reports.length) {
+      host.innerHTML = "<p class=\"muted\" style=\"padding:12px 14px;\">该作业暂无报告记录</p>";
+      return;
+    }
+    var groups = {};
+    hubData.reports.forEach(function (r) {
+      if (!groups[r.group]) groups[r.group] = [];
+      groups[r.group].push(r);
+    });
+    var html = "";
+    Object.keys(GROUP_LABELS).forEach(function (gk) {
+      var items = groups[gk];
+      if (!items || !items.length) return;
+      html += "<div class=\"hub-group-title\">" + esc(GROUP_LABELS[gk]) + "</div>";
+      items.forEach(function (r) {
+        var dotCls = r.status === "ok" ? "ok" : (r.status === "error" ? "err" : (r.status === "missing" ? "missing" : "pending"));
+        html += "<button type=\"button\" class=\"hub-nav-item" + (activeKey === r.key ? " active" : "") + "\" data-key=\"" + esc(r.key) + "\">" +
+          "<span class=\"status-dot " + dotCls + "\"></span>" + esc(r.title) +
+          (r.description ? "<span class=\"sub\">" + esc(r.description) + "</span>" : "") +
+          "</button>";
+      });
+    });
+    if (hubData.compare_groups && hubData.compare_groups.length) {
+      html += "<div class=\"hub-group-title\">对比视图</div>";
+      hubData.compare_groups.forEach(function (g) {
+        html += "<button type=\"button\" class=\"compare-group-btn\" data-compare=\"" + esc(g.id) + "\">" +
+          "⇄ " + esc(g.title) + "<br><span class=\"muted\">" + esc(g.description) + "</span></button>";
+      });
+    }
+    host.innerHTML = html;
+    host.querySelectorAll(".hub-nav-item").forEach(function (btn) {
+      btn.onclick = function () {
+        viewMode = "read";
+        setModeButtons();
+        selectReport(btn.getAttribute("data-key"));
+      };
+    });
+    host.querySelectorAll(".compare-group-btn").forEach(function (btn) {
+      btn.onclick = function () {
+        viewMode = "compare";
+        setModeButtons();
+        renderCompareGroup(btn.getAttribute("data-compare"));
+      };
+    });
+  }
+
+  function setModeButtons() {
+    document.getElementById("btnModeRead").classList.toggle("active", viewMode === "read");
+    document.getElementById("btnModeCompare").classList.toggle("active", viewMode === "compare");
+  }
+
+  function selectReport(key) {
+    activeKey = key;
+    renderSidebar();
+    var r = reportMap[key];
+    if (!r) return;
+    document.getElementById("contentTitle").textContent = r.title;
+    document.getElementById("contentDesc").textContent = r.description || "";
+    renderReportContent(r);
+  }
+
+  async function fetchReportBody(r) {
+    if (contentCache[r.key]) return contentCache[r.key];
+    if (r.ai_report_id) {
+      var res = await api("/yolo-eval-reports/" + r.ai_report_id);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var body = (res.json && res.json.data && res.json.data.body) || "";
+      contentCache[r.key] = { type: "md", body: body };
+      return contentCache[r.key];
+    }
+    if (r.fetch_url) {
+      var path = r.fetch_url.replace(/^\/api\/v1/, "");
+      var res2 = await fetch(API + path, { headers: { Authorization: getToken() } });
+      if (!res2.ok) throw new Error("HTTP " + res2.status);
+      var text = await res2.text();
+      contentCache[r.key] = { type: "md", body: text };
+      return contentCache[r.key];
+    }
+    if (r.metrics) {
+      contentCache[r.key] = { type: "json", body: r.metrics };
+      return contentCache[r.key];
+    }
+    contentCache[r.key] = { type: "empty", body: "" };
+    return contentCache[r.key];
+  }
+
+  async function renderReportContent(r) {
+    var host = document.getElementById("hubContent");
+    host.innerHTML = "<p class=\"muted\">加载中…</p>";
+    try {
+      if (r.format === "metrics" && r.metrics) {
+        host.innerHTML = renderTrainMetrics(r.metrics);
+        return;
+      }
+      if (r.format === "json" && r.metrics) {
+        if (r.key && String(r.key).indexOf("sop:summary:") === 0) {
+          host.innerHTML = renderSopSummaryReadable(r.metrics);
+        } else {
+          host.innerHTML = "<pre class=\"json-view\">" + esc(JSON.stringify(r.metrics, null, 2)) + "</pre>";
+        }
+        return;
+      }
+      if (r.status === "missing" || r.status === "skip") {
+        host.innerHTML = "<p class=\"muted\">报告尚未生成或已跳过（" + esc(r.status) + "）</p>";
+        return;
+      }
+      var cached = await fetchReportBody(r);
+      var html = "";
+      if (cached.type === "md") {
+        html = "<div class=\"md-body\">" + renderMarkdown(cached.body) + "</div>";
+      } else if (cached.type === "json") {
+        html = "<pre class=\"json-view\">" + esc(JSON.stringify(cached.body, null, 2)) + "</pre>";
+      }
+      if (r.metrics && Object.keys(r.metrics).length) {
+        html = renderSopMetricsBar(normalizeSopMetrics(r.metrics)) + html;
+      }
+      host.innerHTML = html || "<p class=\"muted\">无内容</p>";
+      if (cached.type === "md" && r.export_id && r.sop_kind) {
+        var mdHost = host.querySelector(".md-body");
+        if (mdHost) hydrateMarkdownImages(mdHost, r.export_id, r.sop_kind);
+      }
+      if (r.assets && r.assets.length && r.export_id && r.sop_kind) {
+        var assetRow = document.createElement("div");
+        assetRow.className = "asset-row";
+        host.appendChild(assetRow);
+        r.assets.forEach(function (name) {
+          var url = API + "/yolo-bm1688-exports/" + r.export_id + "/sop-eval-asset/" + r.sop_kind + "/" + encodeURIComponent(name);
+          fetch(url, { headers: { Authorization: getToken() } })
+            .then(function (res) { return res.ok ? res.blob() : null; })
+            .then(function (blob) {
+              if (!blob) return;
+              var img = document.createElement("img");
+              img.alt = name;
+              img.loading = "lazy";
+              img.src = URL.createObjectURL(blob);
+              assetRow.appendChild(img);
+            })
+            .catch(function () {});
+        });
+      }
+    } catch (e) {
+      host.innerHTML = "<p style=\"color:var(--err)\">加载失败：" + esc(e.message || e) + "</p>";
+    }
+  }
+
+  function renderTrainMetrics(m) {
+    var html = "";
+    ["val", "test"].forEach(function (split) {
+      var block = m[split];
+      if (!block) return;
+      html += "<h3 style=\"margin:0 0 8px;font-size:14px;\">" + (split === "val" ? "验证集 val" : "测试集 test") + "</h3>";
+      html += "<div class=\"metrics-grid\">";
+      [["mAP50", block.map50], ["mAP50-95", block.map50_95 || block.map5095], ["Precision", block.precision], ["Recall", block.recall]].forEach(function (pair) {
+        html += "<div class=\"metric-card\"><div class=\"label\">" + pair[0] + "</div><div class=\"val\">" + fmt4(pair[1]) + "</div></div>";
+      });
+      html += "</div>";
+    });
+    return html || "<p class=\"muted\">无指标数据</p>";
+  }
+
+  function renderSopMetricsBar(metrics) {
+    metrics = normalizeSopMetrics(metrics);
+    return "<div class=\"metrics-grid\" style=\"margin-bottom:14px;\">" +
+      ["map50", "map50_95", "precision", "recall", "images"].map(function (k) {
+        var label = { map50: "mAP50", map50_95: "mAP50-95", precision: "精确率", recall: "召回率", images: "图片数" }[k] || k;
+        var val = k === "images" ? String(metrics[k] != null ? metrics[k] : "—") : fmtMetricDisplay(metrics[k], k);
+        return "<div class=\"metric-card\"><div class=\"label\">" + label + "</div><div class=\"val\">" + esc(val) + "</div></div>";
+      }).join("") + "</div>";
+  }
+
+  async function renderCompareGroup(groupId) {
+    activeKey = null;
+    renderSidebar();
+    var group = (hubData.compare_groups || []).filter(function (g) { return g.id === groupId; })[0];
+    if (!group) return;
+    document.getElementById("contentTitle").textContent = group.title;
+    document.getElementById("contentDesc").textContent = group.description;
+    var host = document.getElementById("hubContent");
+    host.innerHTML = "<p class=\"muted\">加载对比内容…</p>";
+
+    if (group.layout === "table") {
+      var rows = group.report_keys.map(function (k) { return reportMap[k]; }).filter(Boolean);
+      var html = "<table class=\"compare-table\"><thead><tr><th>阶段</th><th>mAP50</th><th>mAP50-95</th><th>精确率</th><th>召回率</th><th>图片数</th></tr></thead><tbody>";
+      rows.forEach(function (r) {
+        var m = normalizeSopMetrics(r.metrics || {});
+        html += "<tr><td>" + esc(r.title) + "</td><td>" + fmtMetricDisplay(m.map50, "map50") + "</td><td>" + fmtMetricDisplay(m.map50_95, "map50_95") +
+          "</td><td>" + fmtMetricDisplay(m.precision, "precision") + "</td><td>" + fmtMetricDisplay(m.recall, "recall") +
+          "</td><td>" + esc(String(m.images != null ? m.images : "—")) + "</td></tr>";
+      });
+      html += "</tbody></table>";
+      host.innerHTML = html;
+      return;
+    }
+
+    var cols = await Promise.all(group.report_keys.map(async function (k) {
+      var r = reportMap[k];
+      if (!r) return { title: k, html: "<p class=\"muted\">缺失</p>" };
+      try {
+        var c = await fetchReportBody(r);
+        return { title: r.title, html: "<div class=\"md-body\">" + renderMarkdown(c.body || "") + "</div>" };
+      } catch (e) {
+        return { title: r.title, html: "<p style=\"color:var(--err)\">" + esc(e.message) + "</p>" };
+      }
+    }));
+    host.innerHTML = "<div class=\"compare-grid\">" + cols.map(function (c) {
+      return "<div class=\"compare-col\"><h4>" + esc(c.title) + "</h4>" + c.html + "</div>";
+    }).join("") + "</div>";
+  }
+
+  async function loadHub() {
+    if (!getToken()) { toast("请先登录", "err"); return; }
+    var taskId = parseInt(document.getElementById("inpTaskId").value, 10);
+    var jobId = parseInt(document.getElementById("inpJobId").value, 10);
+    if (!taskId || !jobId) { toast("请填写任务 ID 与作业 ID", "err"); return; }
+    syncUrl(taskId, jobId);
+    contentCache = {};
+    var exportId = parseInt(document.getElementById("inpExportId").value, 10);
+    var hubPath = "/tasks/" + taskId + "/yolo-train-jobs/" + jobId + "/evaluation-hub";
+    if (exportId) hubPath += "?export_id=" + encodeURIComponent(String(exportId));
+    var res = await api(hubPath);
+    if (!res.ok) {
+      toast("加载失败 HTTP " + res.status, "err");
+      return;
+    }
+    hubData = res.json && res.json.data;
+    reportMap = {};
+    (hubData.reports || []).forEach(function (r) { reportMap[r.key] = r; });
+    document.getElementById("hubMeta").textContent =
+      (hubData.task_name || "") + " · 作业 #" + hubData.job_id + " · 共 " + (hubData.reports || []).length + " 项报告";
+    renderSidebar();
+    if (hubData.reports && hubData.reports.length) {
+      var pick = hubData.reports[0];
+      if (hubData.focus_export_id) {
+        var focus = hubData.reports.filter(function (r) {
+          return r.export_id === hubData.focus_export_id && r.format === "markdown" && r.sop_kind === "pt";
+        })[0];
+        if (focus) pick = focus;
+      }
+      selectReport(pick.key);
+    } else {
+      document.getElementById("hubContent").innerHTML = "<p class=\"muted\">暂无报告，请先在训练页发起 AI 评估或完成 BM1688 导出。</p>";
+    }
+    toast("已加载 " + (hubData.reports || []).length + " 项报告", "ok");
+  }
+
+  document.getElementById("btnLoadHub").onclick = loadHub;
+  document.getElementById("btnModeRead").onclick = function () {
+    viewMode = "read";
+    setModeButtons();
+    if (activeKey) selectReport(activeKey);
+  };
+  document.getElementById("btnModeCompare").onclick = function () {
+    viewMode = "compare";
+    setModeButtons();
+    if (hubData && hubData.compare_groups && hubData.compare_groups.length) {
+      renderCompareGroup(hubData.compare_groups[0].id);
+    } else {
+      document.getElementById("hubContent").innerHTML = "<p class=\"muted\">当前作业无可用的对比组</p>";
+    }
+  };
+
+  var qp = readUrlParams();
+  if (qp.taskId) document.getElementById("inpTaskId").value = qp.taskId;
+  if (qp.jobId) document.getElementById("inpJobId").value = qp.jobId;
+  if (qp.exportId) document.getElementById("inpExportId").value = qp.exportId;
+  if (qp.taskId && qp.jobId && getToken()) loadHub();
+})();
+  </script>
+</body>
+</html>

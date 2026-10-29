@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>训练作业详情 · UI 效果稿</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --card: #fff;
+      --border: #d7d8dd;
+      --primary: #1677ff;
+      --muted: rgba(18, 19, 22, 0.5);
+      --text: rgba(18, 19, 22, 0.88);
+      --success: #389e0d;
+      --warn: #d46b08;
+      --fail: #cf1322;
+    }
+    * { box-sizing: border-box; }
+    body.labelu-shell { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    .page-main { padding: 12px 16px 24px; max-width: 1280px; margin: 0 auto; }
+    .mock-banner {
+      background: #e6f4ff;
+      border: 1px solid #91caff;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    .mock-layout { display: grid; grid-template-columns: 240px 1fr; gap: 16px; align-items: start; }
+    @media (max-width: 900px) { .mock-layout { grid-template-columns: 1fr; } }
+    .mock-nav {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      position: sticky;
+      top: 12px;
+    }
+    .mock-nav h4 { margin: 0 0 8px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+    .mock-nav button {
+      display: block; width: 100%; text-align: left; margin: 2px 0;
+      padding: 8px 10px; border: 1px solid transparent; border-radius: 6px;
+      background: transparent; font-size: 12px; cursor: pointer; color: var(--text);
+    }
+    .mock-nav button:hover { background: #f0f5ff; }
+    .mock-nav button.active { background: #e6f4ff; border-color: #91caff; color: var(--primary); font-weight: 600; }
+    .mock-preview-title { margin: 0 0 12px; font-size: 18px; }
+    .mock-preview-sub { margin: 0 0 16px; font-size: 12px; color: var(--muted); }
+    .modal-mock {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      max-width: 760px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+    }
+    .modal-mock-hd { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .modal-mock-hd h3 { margin: 0; font-size: 16px; }
+    .modal-mock-hd p { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+    .tab-bar { display: flex; flex-wrap: wrap; gap: 0; border-bottom: 1px solid var(--border); padding: 0 8px; }
+    .tab-bar .tab {
+      padding: 10px 14px; font-size: 12px; border: none; background: none; cursor: default;
+      border-bottom: 2px solid transparent; color: var(--muted);
+    }
+    .tab-bar .tab.on { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+    .modal-mock-bd { padding: 16px; min-height: 360px; }
+    .modal-mock-ft { padding: 10px 16px; border-top: 1px solid var(--border); background: #fafafa; display: flex; gap: 8px; flex-wrap: wrap; }
+    .btn { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: #fff; font-size: 12px; cursor: pointer; }
+    .btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .btn.danger { color: var(--fail); border-color: #ffa39e; }
+    .btn:disabled { opacity: 0.5; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border); }
+    .pill.ok { background: #f6ffed; border-color: #b7eb8f; color: var(--success); }
+    .pill.run { background: #fff7e6; border-color: #ffd591; color: var(--warn); }
+    .pill.wait { background: #fafafa; color: var(--muted); }
+    .progress-track { height: 10px; background: #f0f0f0; border-radius: 5px; overflow: hidden; margin-top: 6px; }
+    .progress-fill { height: 100%; background: var(--primary); border-radius: 5px; }
+    .step-item { border-bottom: 1px solid #eee; }
+    .step-item summary {
+      list-style: none; cursor: pointer; padding: 12px 4px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .step-item summary::-webkit-details-marker { display: none; }
+    .step-item summary::before { content: "▸"; color: var(--muted); font-size: 11px; width: 14px; }
+    .step-item[open] summary::before { content: "▾"; }
+    .step-num {
+      width: 22px; height: 22px; border-radius: 11px; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 600; flex-shrink: 0;
+    }
+    .step-num.done { background: var(--primary); color: #fff; }
+    .step-num.run { border: 2px solid var(--primary); color: var(--primary); }
+    .step-num.wait { background: #f0f0f0; color: var(--muted); }
+    .step-body { padding: 0 8px 14px 36px; font-size: 12px; }
+    .step-body h5 { margin: 10px 0 6px; font-size: 12px; }
+    .step-body ul { margin: 0; padding-left: 18px; color: var(--muted); line-height: 1.55; }
+    .file-table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; }
+    .file-table th, .file-table td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; }
+    .file-table th { background: #fafafa; }
+    .path-pre { font-size: 10px; background: #fafafa; padding: 8px; border-radius: 6px; word-break: break-all; margin-top: 4px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .grid2 .cell { background: #fafafa; padding: 8px; border-radius: 6px; font-size: 12px; }
+    .grid2 .cell label { display: block; font-size: 10px; color: var(--muted); margin-bottom: 2px; }
+    .callout { padding: 10px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 12px; }
+    .callout.info { background: #e6f4ff; border: 1px solid #91caff; }
+    .callout.warn { background: #fff7e6; border: 1px solid #ffd591; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .data-table th, .data-table td { border: 1px solid var(--border); padding: 8px; }
+    .data-table th { background: #fafafa; }
+    .panel-hidden { display: none !important; }
+    .confirm-box { max-width: 400px; padding: 20px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="yolo-train-detail-mockup">
+  <div class="labelu-shell-header" role="banner">
+    <div class="labelu-shell-brand">
+      <a class="labelu-shell-logo" href="/">7GAI进化平台</a>
+      <span class="labelu-shell-page-title">训练详情 UI 效果稿</span>
+    </div>
+    <nav class="labelu-shell-nav" aria-label="7GAI进化平台工具导航"></nav>
+  </div>
+
+  <main class="page-main" data-lu-toolkit-main>
+    <div class="mock-banner">
+      <strong>静态效果稿</strong> — 用于确认 UI，不调用后端。左侧切换页面，右侧为预览。
+      正式页面在 <a href="/yolo-training">模型训练</a> 列表点「详情」打开。
+    </div>
+
+    <div class="mock-layout">
+      <nav class="mock-nav" id="mockNav"></nav>
+      <div>
+        <h2 class="mock-preview-title" id="previewTitle">Tab② 训练步骤（展开示例）</h2>
+        <p class="mock-preview-sub" id="previewSub">每个节点默认收起，点击展开查看操作与文件路径</p>
+        <div id="previewHost"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+(function () {
+  var JOB_ROOT = "/data/labeIU/labeIuMedia/yolo_train/job-67";
+
+  var STEPS = [
+    {
+      key: "preparing_dataset", label: "1. 准备数据集", summary: "从 FINISHED 样本导出 YOLO 训练集",
+      time: "14:02:01", status: "done",
+      ops: ["读取主任务 + 合并任务 DONE 样本", "JSON → YOLO txt，按 7:2:1 划分", "生成 data.yaml"],
+      files: [
+        ["dataset/data.yaml", "类别与路径"],
+        ["dataset/images/train|val|test/", "图片"],
+        ["dataset/labels/train|val|test/", "YOLO 标注"],
+        ["phase.json", "阶段=preparing_dataset"]
+      ],
+      root: JOB_ROOT + "/dataset/"
+    },
+    {
+      key: "dataset_ready", label: "2. 数据集就绪", summary: "train=896 val=256 test=128",
+      time: "14:03:18", status: "done",
+      ops: ["校验数据集写入 reports/", "样本数写入 DB metrics_summary 片段"],
+      files: [["reports/validation_summary.json", "校验结果"], ["phase.json", "dataset_ready"]],
+      root: JOB_ROOT + "/reports/"
+    },
+    {
+      key: "loading_model", label: "3. 加载预训练权重", summary: "trained:58 → best.pt",
+      time: "14:03:22", status: "done",
+      ops: ["解析 weights_source", "YOLO(path) 加载", "注册暂停回调"],
+      files: [["（读）…/job-58/…/best.pt", "源权重"], ["phase.json", "loading_model"]],
+      root: "权重路径因作业而异"
+    },
+    {
+      key: "running", label: "4. Ultralytics 训练", summary: "epoch 42/100 · device=0",
+      time: "14:03:25", status: "run", open: true,
+      ops: ["model.train()", "每 epoch 写 results.csv", "epoch 边界可暂停"],
+      files: [
+        ["train/weights/best.pt", "最优权重"],
+        ["train/weights/last.pt", "续训用"],
+        ["train/results.csv", "每轮指标"],
+        ["train/args.yaml", "参数快照"],
+        ["train/*.png", "训练曲线图"]
+      ],
+      root: JOB_ROOT + "/train/"
+    },
+    {
+      key: "finalizing", label: "5. 写入指标", summary: "val/test 各类别 mAP",
+      time: "待执行", status: "wait",
+      ops: ["run_split_val(val)", "run_split_val(test)", "写 metrics_summary"],
+      files: [["DB metrics_summary", "JSON"], ["phase.json", "val_per_class → completed"]],
+      root: "指标在数据库，原始在 train/results.csv"
+    },
+    {
+      key: "completed", label: "6. 训练完成", summary: "best.pt 可下载",
+      time: "待执行", status: "wait",
+      ops: ["状态 COMPLETED", "可选自动 AI 评估"],
+      files: [["train/weights/best.pt", "最终权重"]],
+      root: JOB_ROOT + "/train/weights/best.pt"
+    }
+  ];
+
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function modalChrome(activeTab, title, sub, body, footer) {
+    var tabs = ["概览", "训练步骤", "指标验证", "AI 评估", "JSON 相关"];
+    var tabHtml = tabs.map(function (t, i) {
+      return '<span class="tab' + (i === activeTab ? " on" : "") + '">' + t + "</span>";
+    }).join("");
+    return (
+      '<div class="modal-mock">' +
+      '<div class="modal-mock-hd"><h3>' + esc(title) + "</h3><p>" + esc(sub) + "</p></div>" +
+      '<div class="tab-bar">' + tabHtml + "</div>" +
+      '<div class="modal-mock-bd">' + body + "</div>" +
+      (footer ? '<div class="modal-mock-ft">' + footer + "</div>" : "") +
+      "</div>"
+    );
+  }
+
+  function stepHtml(steps, defaultOpen) {
+    return steps.map(function (s) {
+      var numCls = s.status === "done" ? "done" : s.status === "run" ? "run" : "wait";
+      var pill = s.status === "done" ? '<span class="pill ok">已完成</span>'
+        : s.status === "run" ? '<span class="pill run">进行中</span>'
+        : '<span class="pill wait">等待</span>';
+      var open = (s.open || s.key === defaultOpen) ? " open" : "";
+      var files = s.files.map(function (f) {
+        return "<tr><td><code>" + esc(f[0]) + "</code></td><td>" + esc(f[1]) + "</td></tr>";
+      }).join("");
+      return (
+        '<details class="step-item"' + open + ">" +
+        "<summary>" +
+        '<span class="step-num ' + numCls + '">' + (s.status === "done" ? "OK" : s.label.charAt(0)) + "</span>" +
+        "<strong>" + esc(s.label) + "</strong>" +
+        '<span class="muted" style="flex:1;font-size:11px;">' + esc(s.summary) + "</span>" +
+        '<span style="font-size:10px;color:var(--muted)">' + esc(s.time) + "</span>" + pill +
+        "</summary>" +
+        '<div class="step-body">' +
+        "<h5>做了什么</h5><ul>" + s.ops.map(function (o) { return "<li>" + esc(o) + "</li>"; }).join("") + "</ul>" +
+        "<h5>产出文件</h5>" +
+        '<table class="file-table"><thead><tr><th>路径</th><th>说明</th></tr></thead><tbody>' + files + "</tbody></table>" +
+        "<h5>保存位置</h5><div class=\"path-pre\">" + esc(s.root) + "</div>" +
+        '<p class="muted" style="margin:6px 0 0;font-size:10px;">根目录 = {MEDIA_ROOT}/yolo_train/job-{id}</p>' +
+        "</div></details>"
+      );
+    }).join("");
+  }
+
+  var VIEWS = {
+    "tab-steps-collapsed": {
+      title: "Tab② 训练步骤（默认收起）",
+      sub: "全部节点折叠，点击行头展开",
+      html: modalChrome(1, "训练作业 #67", "训练步骤 · 4s 轮询刷新",
+        '<div class="callout info">每个步骤默认<strong>收起</strong>，点击左侧 ▸ 展开详情。</div>' +
+        '<div style="margin-bottom:12px"><span class="muted">Epoch 进度</span>' +
+        '<div class="progress-track"><div class="progress-fill" style="width:42%"></div></div>' +
+        '<span style="font-size:13px;font-weight:600">42 / 100</span></div>' +
+        stepHtml(STEPS, null),
+        '<button type="button" class="btn">复制作业根目录</button><button type="button" class="btn">查看 phase.json</button>')
+    },
+    "tab-steps-expanded": {
+      title: "Tab② 训练步骤（展开示例）",
+      sub: "展开「4. Ultralytics 训练」节点",
+      html: modalChrome(1, "训练作业 #67", "示例：进行中步骤可展开",
+        '<div class="callout info">展开后显示：做了什么 · 产出文件表 · 磁盘路径</div>' +
+        stepHtml(STEPS, "running"),
+        "")
+    },
+    "tab-overview-run": {
+      title: "Tab① 概览（训练中）",
+      sub: "状态条 + epoch 进度 + 元信息",
+      html: modalChrome(0, "训练作业 #67", "占道经营 #12 · 训练中",
+        '<span class="pill run">训练中</span> <span class="muted">epoch 42/100</span>' +
+        '<div class="progress-track" style="margin:12px 0"><div class="progress-fill" style="width:42%"></div></div>' +
+        '<div class="callout warn">当前在「Ultralytics 训练」，详见「训练步骤」Tab。</div>' +
+        '<div class="grid2" style="margin-top:12px">' +
+        '<div class="cell"><label>初始权重</label>trained:58</div>' +
+        '<div class="cell"><label>样本</label>896/256/128</div></div>',
+        '<button type="button" class="btn">关闭</button><button type="button" class="btn danger">暂停</button>')
+    },
+    "tab-overview-done": {
+      title: "Tab① 概览（已完成）",
+      sub: "快捷操作条",
+      html: modalChrome(0, "训练作业 #66", "已完成 · 达标",
+        '<span class="pill ok">完成</span> <span class="pill ok">达标</span>' +
+        '<div class="callout info" style="margin-top:12px">mAP50-95=0.72</div>',
+        '<button type="button" class="btn primary">下载 best.pt</button>' +
+        '<button type="button" class="btn">BM1688</button>' +
+        '<button type="button" class="btn">迭代训练</button>')
+    },
+    "tab-metrics": {
+      title: "Tab③ 指标验证",
+      sub: "各类别 + val/test 汇总",
+      html: modalChrome(2, "训练作业 #66", "指标验证",
+        '<table class="data-table"><thead><tr><th>类别</th><th>Val mAP50</th><th>Test mAP50</th></tr></thead>' +
+        '<tbody><tr><td>占道经营</td><td>0.81</td><td>0.79</td></tr></tbody></table>' +
+        '<p style="margin-top:12px"><button type="button" class="btn primary">刷新验证/测试指标</button></p>',
+        "")
+    },
+    "tab-eval": {
+      title: "Tab④ AI 评估",
+      sub: "发起与查看报告",
+      html: modalChrome(3, "训练作业 #66", "AI 评估",
+        '<button type="button" class="btn primary">全维度报告</button> ' +
+        '<button type="button" class="btn">迭代建议</button> ' +
+        '<button type="button" class="btn">刷新评估结果</button>',
+        "")
+    },
+    "tab-raw": {
+      title: "Tab⑤ JSON 相关",
+      sub: "metrics / hyperparams / phase 子标签",
+      html: modalChrome(4, "训练作业 #66", "JSON",
+        '<span class="pill">metrics_summary</span> <span class="pill">hyperparams</span> <span class="pill">phase.json</span>' +
+        '<pre class="path-pre" style="margin-top:12px">{ "dataset": { "train": 896 } }</pre>',
+        "")
+    },
+    "btn-restart": {
+      title: "按钮：继续运行",
+      sub: "确认框",
+      html: '<div class="confirm-box"><h3 style="margin:0 0 10px">继续运行作业 #67？</h3>' +
+        '<p class="muted">从 last.pt 断点恢复，作业 ID 不变。</p>' +
+        '<p style="margin-top:16px"><button class="btn">取消</button> <button class="btn primary">继续运行</button></p></div>'
+    }
+  };
+
+  var NAV = [
+    { group: "训练步骤（重点）", ids: ["tab-steps-collapsed", "tab-steps-expanded"] },
+    { group: "5 个 Tab", ids: ["tab-overview-run", "tab-overview-done", "tab-metrics", "tab-eval", "tab-raw"] },
+    { group: "按钮", ids: ["btn-restart"] }
+  ];
+
+  var current = "tab-steps-expanded";
+  var navEl = document.getElementById("mockNav");
+  var host = document.getElementById("previewHost");
+  var titleEl = document.getElementById("previewTitle");
+  var subEl = document.getElementById("previewSub");
+
+  NAV.forEach(function (g) {
+    var h = document.createElement("h4");
+    h.textContent = g.group;
+    navEl.appendChild(h);
+    g.ids.forEach(function (id) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.textContent = VIEWS[id].title;
+      b.dataset.id = id;
+      if (id === current) b.className = "active";
+      b.onclick = function () {
+        current = id;
+        navEl.querySelectorAll("button").forEach(function (x) {
+          x.classList.toggle("active", x.dataset.id === id);
+        });
+        titleEl.textContent = VIEWS[id].title;
+        subEl.textContent = VIEWS[id].sub;
+        host.innerHTML = VIEWS[id].html;
+      };
+      navEl.appendChild(b);
+    });
+  });
+
+  titleEl.textContent = VIEWS[current].title;
+  subEl.textContent = VIEWS[current].sub;
+  host.innerHTML = VIEWS[current].html;
+})();
+  </script>
+</body>
+</html>

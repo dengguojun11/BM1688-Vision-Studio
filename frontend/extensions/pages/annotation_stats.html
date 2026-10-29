@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>标注统计 — 7GAI进化平台</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script src="/assets/labelu_pager.js"></script>
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #fff;
+      --border: #e8edf4;
+      --primary: #2f6fed;
+      --text: #0f172a;
+      --muted: #64748b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .page-main { padding: 0 1.25rem 2rem; max-width: 1400px; margin: 0 auto; }
+    .task-tabs {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.875rem 0 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .task-tabs a, .task-tabs span {
+      border: 0;
+      border-radius: 8px 8px 0 0;
+      padding: 0.625rem 1.125rem;
+      font-size: 0.9375rem;
+      text-decoration: none;
+      color: var(--muted);
+      background: transparent;
+    }
+    .task-tabs a.active, .task-tabs span.active {
+      color: var(--primary);
+      font-weight: 600;
+      background: #fff;
+      box-shadow: 0 -1px 0 #fff inset;
+    }
+    .hero {
+      padding: 1.25rem 1.5rem;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 45%, #0f2744 100%);
+      color: #e2e8f0;
+      margin-bottom: 1rem;
+    }
+    .hero h1 { margin: 0 0 0.35rem; font-size: 1.375rem; color: #f8fafc; }
+    .hero p { margin: 0; font-size: 0.8125rem; color: #94a3b8; }
+    .filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    .filters input, .filters select {
+      padding: 0.45rem 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font: inherit;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.125rem;
+    }
+    .card .label { font-size: 0.8125rem; color: var(--muted); }
+    .card .value { font-size: 1.5rem; font-weight: 700; margin-top: 0.25rem; }
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+      overflow: auto;
+    }
+    .panel h2 { margin: 0 0 0.75rem; font-size: 1rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th, td { padding: 0.5rem 0.65rem; border-bottom: 1px solid #eef1f6; text-align: left; }
+    th { color: var(--muted); font-weight: 600; }
+    .badge-top { margin-left: 6px; font-size: 11px; color: var(--primary); font-weight: 600; }
+    .pager { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.75rem; }
+    .pager button {
+      padding: 0.35rem 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      cursor: pointer;
+    }
+    .pager button:disabled { opacity: 0.45; cursor: not-allowed; }
+    .error-box {
+      padding: 1rem;
+      border-radius: 8px;
+      background: #fff2f0;
+      border: 1px solid #ffccc7;
+      color: #cf1322;
+    }
+    .loading { padding: 2rem; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body data-lu-page="annotation-stats">
+  <div class="labelu-shell-nav"></div>
+  <main class="page-main">
+    <nav class="task-tabs" aria-label="任务页视图">
+      <a href="/tasks">任务列表</a>
+      <a href="/training">模型训练</a>
+      <span class="active" aria-current="page">标注统计</span>
+    </nav>
+
+    <section class="hero">
+      <h1>标注统计大屏</h1>
+      <p id="subtitle">汇总可见任务内每位修改人每日真实修改图片张数与单张图片真实修改记录；已排除 admin@123.com</p>
+    </section>
+
+    <div class="filters">
+      <input type="date" id="dateFrom" />
+      <span style="color:var(--muted)">至</span>
+      <input type="date" id="dateTo" />
+      <select id="taskId"><option value="">全部任务</option></select>
+      <button type="button" id="reloadBtn" style="padding:0.45rem 0.85rem;border:1px solid var(--border);border-radius:6px;background:#fff;cursor:pointer;">刷新</button>
+    </div>
+
+    <div id="content" class="loading">加载中…</div>
+  </main>
+
+  <script>
+  (function () {
+    var API = "/api/v1";
+    var samplePage = 0;
+    var sampleSize = 10;
+    var sampleTimingsTotal = 0;
+    var samplePager = null;
+
+    function tokenHeaders() {
+      var t = localStorage.getItem("token") || "";
+      if (!t) return null;
+      return { Authorization: t.indexOf("Bearer") === 0 ? t : "Bearer " + t, "Content-Type": "application/json" };
+    }
+
+    function fmtDate(d) {
+      var y = d.getFullYear();
+      var m = String(d.getMonth() + 1).padStart(2, "0");
+      var day = String(d.getDate()).padStart(2, "0");
+      return y + "-" + m + "-" + day;
+    }
+
+    function addDays(d, n) {
+      var x = new Date(d);
+      x.setDate(x.getDate() + n);
+      return x;
+    }
+
+    function fmtDuration(sec) {
+      if (sec == null || sec < 0) return "—";
+      if (sec < 60) return sec + " 秒";
+      if (sec < 3600) return Math.round(sec / 60) + " 分钟";
+      var h = Math.floor(sec / 3600);
+      var m = Math.round((sec % 3600) / 60);
+      return h + " 小时" + (m ? " " + m + " 分" : "");
+    }
+
+    function fmtDateTime(iso) {
+      if (!iso) return "—";
+      var d = new Date(iso);
+      if (isNaN(d.getTime())) return "—";
+      return fmtDate(d) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    }
+
+    function qs(id) { return document.getElementById(id); }
+
+    function initDates() {
+      qs("dateTo").value = fmtDate(new Date());
+      qs("dateFrom").value = fmtDate(new Date());
+    }
+
+    function loadTasks() {
+      var headers = tokenHeaders();
+      if (!headers) return Promise.resolve();
+      return fetch(API + "/tasks?size=500&page=0", { headers: headers })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          var sel = qs("taskId");
+          (res.data || []).forEach(function (t) {
+            var opt = document.createElement("option");
+            opt.value = String(t.id);
+            opt.textContent = (t.name || "任务") + " #" + t.id;
+            sel.appendChild(opt);
+          });
+        });
+    }
+
+    function sortedDailyRows(rows) {
+      var byDate = {};
+      rows.forEach(function (r) {
+        if (!byDate[r.stat_date]) byDate[r.stat_date] = [];
+        byDate[r.stat_date].push(r);
+      });
+      var out = [];
+      Object.keys(byDate).sort().reverse().forEach(function (date) {
+        byDate[date].sort(function (a, b) { return b.done_count - a.done_count; });
+        out = out.concat(byDate[date]);
+      });
+      return out;
+    }
+
+    function render(data) {
+      var root = qs("content");
+      var s = data.summary || {};
+      var daily = sortedDailyRows(data.daily_by_user || []);
+      var timings = data.sample_timings || [];
+      sampleTimingsTotal = data.sample_timings_total || 0;
+
+      var html = '<div class="cards">';
+      html += card("累计真实修改", s.total_done);
+      html += card("标注人数", s.total_annotators);
+      html += card("平均单张处理时长", fmtDuration(s.avg_duration_seconds));
+      html += card("今日真实修改", s.today_done);
+      html += '</div>';
+
+      html += '<div class="panel"><h2>每日真实修改图片数（按日期 · 修改张数降序）</h2><table><thead><tr><th>日期</th><th>修改人</th><th>真实修改图片张数</th></tr></thead><tbody>';
+      var prevDate = null;
+      daily.forEach(function (r) {
+        var top = r.stat_date !== prevDate;
+        prevDate = r.stat_date;
+        html += "<tr><td>" + r.stat_date + "</td><td>" + escapeHtml(r.username) +
+          (top ? '<span class="badge-top">当日最多</span>' : "") +
+          "</td><td>" + r.done_count + "</td></tr>";
+      });
+      if (!daily.length) html += '<tr><td colspan="3" style="color:var(--muted)">暂无数据</td></tr>';
+      html += '</tbody></table></div>';
+
+      html += '<div class="panel"><h2>单张真实修改记录 <span style="font-weight:400;color:var(--muted);font-size:12px">' +
+        escapeHtml(data.duration_note || "") + '</span></h2><table><thead><tr>' +
+        '<th>任务</th><th>图片</th><th>修改人</th><th>框数</th><th>估算用时</th><th>最近真实修改时间</th></tr></thead><tbody>';
+      timings.forEach(function (r) {
+        html += "<tr><td>" + escapeHtml(r.task_name || ("#" + r.task_id)) + "</td><td>" + escapeHtml(r.filename || "") +
+          "</td><td>" + escapeHtml(r.username || "") + "</td><td>" + (r.annotated_count != null ? r.annotated_count : "—") +
+          "</td><td>" + fmtDuration(r.duration_seconds) + "</td><td>" + fmtDateTime(r.annotated_at) + "</td></tr>";
+      });
+      if (!timings.length) html += '<tr><td colspan="6" style="color:var(--muted)">暂无数据</td></tr>';
+      html += '</tbody></table><div id="sampleTimingsPager" class="pager"></div></div>';
+
+      root.innerHTML = html;
+      if (window.LuPager) {
+        samplePager = LuPager.mount("sampleTimingsPager", {
+          page: samplePage,
+          size: sampleSize,
+          total: sampleTimingsTotal,
+          onChange: function (next) {
+            samplePage = next.page;
+            sampleSize = next.size;
+            loadStats();
+          },
+        });
+      }
+    }
+
+    function card(label, value) {
+      return '<div class="card"><div class="label">' + label + '</div><div class="value">' + (value != null ? value : "—") + '</div></div>';
+    }
+
+    function escapeHtml(s) {
+      return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function showError(msg) {
+      qs("content").innerHTML = '<div class="error-box">' + escapeHtml(msg) + '</div>';
+    }
+
+    function loadStats() {
+      var headers = tokenHeaders();
+      if (!headers) {
+        location.href = "/login";
+        return;
+      }
+      qs("content").innerHTML = '<div class="loading">加载中…</div>';
+      var params = new URLSearchParams({
+        date_from: qs("dateFrom").value,
+        date_to: qs("dateTo").value,
+        sample_page: String(samplePage),
+        sample_size: String(sampleSize),
+      });
+      var tid = qs("taskId").value;
+      if (tid) params.set("task_id", tid);
+
+      fetch(API + "/tasks/annotation-stats/dashboard?" + params.toString(), { headers: headers })
+        .then(function (r) {
+          if (r.status === 401 || r.status === 403) {
+            throw new Error(r.status === 403 ? "无权限查看标注统计（需任务超管）" : "登录已失效，请重新登录");
+          }
+          if (!r.ok) throw new Error("加载失败 (" + r.status + ")");
+          return r.json();
+        })
+        .then(function (res) { render(res.data || {}); })
+        .catch(function (e) { showError(e.message || String(e)); });
+    }
+
+    function bind() {
+      qs("reloadBtn").onclick = function () { samplePage = 0; loadStats(); };
+      qs("taskId").onchange = function () { samplePage = 0; loadStats(); };
+      qs("dateFrom").onchange = function () { samplePage = 0; loadStats(); };
+      qs("dateTo").onchange = function () { samplePage = 0; loadStats(); };
+    }
+
+    function boot() {
+      initDates();
+      bind();
+      loadTasks().finally(loadStats);
+    }
+
+    if (window.labeluAuthReady) {
+      window.labeluAuthReady.then(boot).catch(boot);
+    } else if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", boot);
+    } else {
+      boot();
+    }
+  })();
+  </script>
+</body>
+</html>

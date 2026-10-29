@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BM1688 模型编译 - 原版优化静态稿 v3</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --card-soft: #fafcff;
+      --line: #e4e9f1;
+      --line-strong: #d5ddea;
+      --text: #1f2a37;
+      --muted: #6b7280;
+      --primary: #1677ff;
+      --primary-soft: #eaf3ff;
+      --success: #389e0d;
+      --success-soft: #f6ffed;
+      --warning: #d48806;
+      --warning-soft: #fffbe6;
+      --danger: #cf1322;
+      --danger-soft: #fff1f0;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+      --radius-lg: 16px;
+      --radius-md: 12px;
+      --radius-sm: 10px;
+      --mono: "Consolas", "SFMono-Regular", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    body { min-height: 100vh; }
+    button, input, select { font: inherit; }
+    code { font-family: var(--mono); }
+
+    .page {
+      max-width: 1520px;
+      margin: 0 auto;
+      padding: 18px 18px 28px;
+    }
+
+    .top-alert {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      border: 1px solid #ffe58f;
+      border-radius: var(--radius-md);
+      background: #fffbe6;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #8c6d1f;
+    }
+
+    .page-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 16px 18px;
+      margin-bottom: 12px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+    }
+
+    .page-title {
+      margin: 0 0 6px;
+      font-size: 24px;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+
+    .head-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      min-width: 320px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      padding: 0 13px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: var(--card);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      cursor: default;
+    }
+    .btn.primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+    }
+    .btn.ghost {
+      background: #f8fafc;
+      color: #334155;
+    }
+    .btn.sm {
+      min-height: 28px;
+      padding: 0 10px;
+      font-size: 11px;
+      border-radius: 8px;
+    }
+
+    .status-strip {
+      display: grid;
+      grid-template-columns: 1.4fr repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .strip-card {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--card);
+      box-shadow: var(--shadow);
+      min-height: 84px;
+    }
+
+    .strip-card label {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .strip-card strong {
+      font-size: 22px;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+
+    .strip-card span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .sop-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .sop-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 30px;
+      padding: 0 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: #fafcff;
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      white-space: nowrap;
+    }
+    .sop-chip.active {
+      border-color: #b7d3ff;
+      background: var(--primary-soft);
+      color: #1559c0;
+    }
+
+    .sop-tip {
+      margin-left: auto;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .panel {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 18px 12px;
+      border-bottom: 1px solid #edf1f6;
+      background: linear-gradient(180deg, #fcfdff 0%, #ffffff 100%);
+    }
+
+    .panel-head h2,
+    .panel-head h3 {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.2;
+    }
+
+    .panel-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px 18px 0;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-left,
+    .toolbar-right {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .filter {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: #fff;
+      color: #475569;
+      font-size: 12px;
+    }
+
+    .table-wrap {
+      padding: 12px 18px 18px;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1240px;
+      font-size: 12px;
+    }
+
+    thead th {
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfe;
+      text-align: left;
+      color: #667085;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    tbody td {
+      padding: 14px 10px;
+      border-bottom: 1px solid #eef2f7;
+      vertical-align: top;
+      line-height: 1.65;
+    }
+
+    tbody tr.active {
+      background: #f8fbff;
+    }
+
+    .name-cell strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .subtext {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .artifact-list,
+    .chip-row,
+    .ops {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .artifact {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 8px;
+      border: 1px solid var(--line-strong);
+      border-radius: 7px;
+      background: #fff;
+      color: #334155;
+      font-family: var(--mono);
+      font-size: 11px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 0 9px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .tag.info { background: var(--primary-soft); border-color: #cfe0ff; color: #145cbf; }
+    .tag.success { background: var(--success-soft); border-color: #caefb2; color: var(--success); }
+    .tag.warn { background: var(--warning-soft); border-color: #ffe08a; color: var(--warning); }
+    .tag.danger { background: var(--danger-soft); border-color: #ffc1c0; color: var(--danger); }
+
+    .judge-cell strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .judge-cell span {
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.6;
+    }
+
+    .ops {
+      justify-content: flex-end;
+      min-width: 220px;
+    }
+
+    .detail-body {
+      padding: 14px 18px 18px;
+    }
+
+    .detail-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+
+    .detail-summary-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 14px 16px;
+      margin-bottom: 14px;
+      border: 1px solid #d6e6ff;
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fbfdff 0%, #f2f7ff 100%);
+    }
+
+    .detail-summary-bar strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 15px;
+    }
+
+    .detail-summary-bar p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .tab {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 0 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 999px;
+      background: #fff;
+      color: #475569;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .tab.active {
+      background: var(--primary-soft);
+      border-color: #cfe0ff;
+      color: #145cbf;
+    }
+
+    .detail-panel {
+      display: none;
+    }
+
+    .detail-panel.active {
+      display: block;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .summary-card {
+      padding: 13px 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+    }
+
+    .summary-card label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+
+    .summary-card strong {
+      display: block;
+      font-size: 20px;
+      line-height: 1.15;
+      margin-bottom: 6px;
+    }
+
+    .summary-card span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .card-block {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--card-soft);
+    }
+
+    .card-block h4 {
+      margin: 0 0 12px;
+      font-size: 14px;
+    }
+
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 26px 1fr auto;
+      gap: 10px;
+      align-items: start;
+      padding-bottom: 10px;
+      border-bottom: 1px dashed #e5eaf2;
+    }
+
+    .timeline-item:last-child {
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .timeline-dot {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #eaf3ff;
+      color: #145cbf;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .timeline-item strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .timeline-item small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .kv-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .kv {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .kv label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    .kv strong {
+      display: block;
+      font-size: 12px;
+      line-height: 1.7;
+      word-break: break-all;
+    }
+
+    .section-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .mini-table {
+      width: 100%;
+      min-width: 0;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .mini-table th,
+    .mini-table td {
+      padding: 9px 8px;
+      text-align: left;
+      border-bottom: 1px solid #e8edf4;
+      vertical-align: top;
+    }
+
+    .mini-table th {
+      background: #f8fbff;
+      color: #667085;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .mini-table tr:last-child td { border-bottom: none; }
+
+    .inline-split {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .field-box {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .field-box label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    .field-box strong,
+    .field-box div {
+      font-size: 12px;
+      line-height: 1.7;
+      color: var(--text);
+    }
+
+    .sample-box {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+
+    .sample-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px dashed #e6ebf2;
+    }
+
+    .sample-row:last-child {
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .sample-row strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 12px;
+    }
+
+    .sample-row span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .foot-note {
+      padding: 14px 18px 18px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.8;
+      border-top: 1px dashed #e6ebf2;
+    }
+
+    @media (max-width: 1320px) {
+      .status-strip,
+      .summary-grid,
+      .detail-grid,
+      .section-grid,
+      .inline-split {
+        grid-template-columns: 1fr 1fr;
+      }
+      .status-strip .strip-card:first-child {
+        grid-column: 1 / -1;
+      }
+    }
+
+    @media (max-width: 980px) {
+      .page-head,
+      .detail-summary-bar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .head-actions {
+        min-width: 0;
+        justify-content: flex-start;
+      }
+      .status-strip,
+      .summary-grid,
+      .detail-grid,
+      .section-grid,
+      .inline-split,
+      .kv-grid {
+        grid-template-columns: 1fr;
+      }
+      .sop-tip {
+        margin-left: 0;
+        white-space: normal;
+      }
+      .page {
+        padding: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="top-alert">
+      <div>
+        <strong>静态稿 v3</strong>：
+        这次不重做页面骨架，直接沿用你当前 BM1688 页面已有的区块和业务顺序，只对布局密度、间距、状态语义、按钮层级做优化。
+      </div>
+      <span class="tag warn">方向：原版增强，不是重设计</span>
+    </div>
+
+    <section class="page-head">
+      <div>
+        <h1 class="page-title">BM1688 模型编译</h1>
+      </div>
+      <div class="head-actions">
+        <span class="btn ghost">刷新列表</span>
+        <span class="btn primary">发起导出</span>
+      </div>
+    </section>
+
+    <section class="status-strip">
+      <article class="strip-card">
+        <label>待边端验证</label>
+        <strong>1</strong>
+        <span>编译已完成，但还没有拿到真实边端执行结果，当前还不能直接用于发布判断。</span>
+      </article>
+      <article class="strip-card">
+        <label>导出总数</label>
+        <strong>25</strong>
+        <span>全部 BM1688 导出记录</span>
+      </article>
+      <article class="strip-card">
+        <label>进行中</label>
+        <strong>2</strong>
+        <span>含 ONNX 导出、bmodel 编译、边端回传</span>
+      </article>
+      <article class="strip-card">
+        <label>可进入发布评估</label>
+        <strong>8</strong>
+        <span>训练达标且 INT8 验证通过</span>
+      </article>
+    </section>
+
+    <section class="sop-bar">
+      <span class="sop-chip active">列表看记录</span>
+      <span class="sop-chip">选中看详情</span>
+      <span class="sop-chip">需要时再执行手动验证</span>
+      <span class="sop-tip">这里不再伪装成功能菜单，只表达页面使用顺序。配置入口下沉到记录详情里的“配置快照”。</span>
+    </section>
+
+    <section class="panel" style="margin-bottom: 12px;">
+      <div class="panel-head">
+        <div>
+          <h2>量化模型记录</h2>
+          <p>记录区仍然是页面主角。先看列表，再看当前选中记录的详情、评估、边端验证和执行步骤。配置相关不再放在首屏提示区干扰判断。</p>
+        </div>
+        <span class="tag info">原版字段保留，表达方式重排</span>
+      </div>
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <span class="filter">全部预设</span>
+          <span class="filter">全部状态</span>
+          <span class="filter">只看待边端验证</span>
+        </div>
+        <div class="toolbar-right">
+          <span class="btn sm ghost">批量刷新</span>
+          <span class="btn sm ghost">只看异常</span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 54px;">ID</th>
+              <th>任务 / 作业</th>
+              <th>状态</th>
+              <th>产物</th>
+              <th>训练达标</th>
+              <th>边端执行</th>
+              <th>INT8 精度</th>
+              <th>当前结论</th>
+              <th style="width: 240px; text-align: right;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="active">
+              <td>49</td>
+              <td class="name-cell">
+                <strong>垃圾暴露-训练筛选一致 #79</strong>
+                <div class="subtext">作业 #198 · 640px · 训练 mAP50-95=0.509 · 测试 mAP50=0.762 · 2026-06-29 15:22</div>
+              </td>
+              <td>
+                <div class="chip-row">
+                  <span class="tag info">已完成</span>
+                </div>
+                <div class="subtext" style="margin-top: 6px;">ONNX 与 bmodel 已生成</div>
+              </td>
+              <td>
+                <div class="artifact-list">
+                  <span class="artifact">ONNX</span>
+                  <span class="artifact">yolov11n_fp32_1b.bmodel</span>
+                  <span class="artifact">yolov11n_fp16_1b.bmodel</span>
+                  <span class="artifact">yolov11n_int8_1b.bmodel</span>
+                </div>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag success">达标</span></strong>
+                <span>训练质量已满足前置门槛</span>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag success">结果已回传</span></strong>
+                <span>边端脚本已执行，报告已拉回平台</span>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag success">通过</span></strong>
+                <span>INT8 相对 PT 损失 1.10%，处于阈值内</span>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag success">可进入发布评估</span></strong>
+                <span>当前不建议继续停留在编译页</span>
+              </td>
+              <td>
+                <div class="ops">
+                  <span class="btn sm primary">详情</span>
+                  <span class="btn sm ghost">评估</span>
+                  <span class="btn sm ghost">手动边端验证</span>
+                  <span class="btn sm ghost">执行步骤</span>
+                  <span class="btn sm ghost">更多</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>48</td>
+              <td class="name-cell">
+                <strong>垃圾桶满溢 #73</strong>
+                <div class="subtext">作业 #183 · 640px · 2026-06-26 17:14</div>
+              </td>
+              <td>
+                <div class="chip-row">
+                  <span class="tag info">已完成</span>
+                </div>
+                <div class="subtext" style="margin-top: 6px;">编译完成，待边端确认</div>
+              </td>
+              <td>
+                <div class="artifact-list">
+                  <span class="artifact">ONNX</span>
+                  <span class="artifact">yolov11n_int8_1b.bmodel</span>
+                </div>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag success">达标</span></strong>
+                <span>训练指标满足当前规则</span>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag warn">未验证</span></strong>
+                <span>还没有实际边端执行结果</span>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag warn">待评估</span></strong>
+                <span>依赖边端验证与报告回传</span>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag warn">待继续验证</span></strong>
+                <span>当前结论不能用于发布</span>
+              </td>
+              <td>
+                <div class="ops">
+                  <span class="btn sm primary">详情</span>
+                  <span class="btn sm ghost">评估</span>
+                  <span class="btn sm ghost">手动边端验证</span>
+                  <span class="btn sm ghost">执行步骤</span>
+                  <span class="btn sm ghost">更多</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>47</td>
+              <td class="name-cell">
+                <strong>占道经营-lxl-wly #45</strong>
+                <div class="subtext">作业 #145 · 640px · 2026-06-26 12:07</div>
+              </td>
+              <td>
+                <div class="chip-row">
+                  <span class="tag info">已完成</span>
+                </div>
+                <div class="subtext" style="margin-top: 6px;">产物完整，评估未通过</div>
+              </td>
+              <td>
+                <div class="artifact-list">
+                  <span class="artifact">ONNX</span>
+                  <span class="artifact">yolov11n_fp32_1b.bmodel</span>
+                  <span class="artifact">yolov11n_fp16_1b.bmodel</span>
+                  <span class="artifact">yolov11n_int8_1b.bmodel</span>
+                </div>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag success">达标</span></strong>
+                <span>训练过程满足前置要求</span>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag success">结果已回传</span></strong>
+                <span>边端执行完成，但精度不满足要求</span>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag danger">未通过</span></strong>
+                <span>INT8 相对 PT 超出阈值</span>
+              </td>
+              <td class="judge-cell">
+                <strong><span class="tag danger">不建议发布</span></strong>
+                <span>建议回到训练或量化配置阶段处理</span>
+              </td>
+              <td>
+                <div class="ops">
+                  <span class="btn sm primary">详情</span>
+                  <span class="btn sm ghost">评估</span>
+                  <span class="btn sm ghost">手动边端验证</span>
+                  <span class="btn sm ghost">执行步骤</span>
+                  <span class="btn sm ghost">更多</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div>
+          <h3>详情</h3>
+          <p>列表点中一条记录后，下面进入详情页，通过标签切换查看概览、模型评估、手动边端验证、执行步骤和配置快照。</p>
+        </div>
+        <span class="tag info">当前：导出 #49</span>
+      </div>
+
+      <div class="detail-body">
+        <div class="detail-summary-bar">
+          <div>
+            <strong>垃圾暴露-训练筛选一致 #79 · 当前结论：可进入发布评估</strong>
+            <p>训练达标、边端已完成实际执行、INT8 精度在阈值范围内。这里作为详情头部摘要，直接服务下面的详情内容。</p>
+          </div>
+          <div class="ops">
+            <span class="btn sm primary">查看评估</span>
+            <span class="btn sm ghost">执行步骤</span>
+            <span class="btn sm ghost">重新编译</span>
+          </div>
+        </div>
+
+        <div class="detail-tabs">
+          <span class="tab active" data-tab="overview">概览</span>
+          <span class="tab" data-tab="evaluation">模型评估</span>
+          <span class="tab" data-tab="steps">执行步骤</span>
+          <span class="tab" data-tab="manual-result">手动验证结果</span>
+          <span class="tab" data-tab="config">配置快照</span>
+        </div>
+
+        <section class="detail-panel active" data-panel="overview">
+          <div class="summary-grid">
+            <div class="summary-card">
+              <label>PT mAP50</label>
+              <strong>0.6721</strong>
+              <span>测试集基线指标</span>
+            </div>
+            <div class="summary-card">
+              <label>ONNX 相对 PT</label>
+              <strong>0.04%</strong>
+              <span>目标阈值不超过 3%</span>
+            </div>
+            <div class="summary-card">
+              <label>INT8 相对 PT</label>
+              <strong>1.10%</strong>
+              <span>目标阈值不超过 5%</span>
+            </div>
+            <div class="summary-card">
+              <label>边端设备</label>
+              <strong>10.10.11.26</strong>
+              <span>docker 容器：bm1688</span>
+            </div>
+          </div>
+
+          <div class="detail-grid">
+            <section class="card-block">
+              <h4>执行进度摘要</h4>
+              <div class="timeline">
+                <div class="timeline-item">
+                  <div class="timeline-dot">1</div>
+                  <div>
+                    <strong>ONNX 导出</strong>
+                    <small>训练产物已成功导出 ONNX，供后续编译与本机 SOP 评估使用。</small>
+                  </div>
+                  <span class="tag info">已完成</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot">2</div>
+                  <div>
+                    <strong>bmodel 编译</strong>
+                    <small>fp32、fp16、int8 三种 bmodel 已生成并可下载。</small>
+                  </div>
+                  <span class="tag info">已完成</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot">3</div>
+                  <div>
+                    <strong>边端执行</strong>
+                    <small>模型和验证图片已下发边端，推理脚本执行成功，平台已收到回传结果。</small>
+                  </div>
+                  <span class="tag success">结果已回传</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-dot">4</div>
+                  <div>
+                    <strong>INT8 精度评估</strong>
+                    <small>已完成 PT / ONNX / INT8 对比，INT8 损失处于可接受范围内。</small>
+                  </div>
+                  <span class="tag success">通过</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="card-block">
+              <h4>产物与路径</h4>
+              <div class="kv-grid">
+                <div class="kv">
+                  <label>ONNX</label>
+                  <strong><code>models/onnx/yolo11n.onnx</code></strong>
+                </div>
+                <div class="kv">
+                  <label>FP32 bmodel</label>
+                  <strong><code>BM1688/yolov11n_fp32_1b.bmodel</code></strong>
+                </div>
+                <div class="kv">
+                  <label>FP16 bmodel</label>
+                  <strong><code>BM1688/yolov11n_fp16_1b.bmodel</code></strong>
+                </div>
+                <div class="kv">
+                  <label>INT8 bmodel</label>
+                  <strong><code>BM1688/yolov11n_int8_1b.bmodel</code></strong>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section class="card-block">
+            <h4>当前判定说明</h4>
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th>项目</th>
+                  <th>结果</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>训练达标</td>
+                  <td><span class="tag success">达标</span></td>
+                  <td>当前训练模型已达到进入编译阶段的前置条件。</td>
+                </tr>
+                <tr>
+                  <td>边端执行</td>
+                  <td><span class="tag success">结果已回传</span></td>
+                  <td>说明不是只编译成功，而是边端真实运行并把结果拉回来了。</td>
+                </tr>
+                <tr>
+                  <td>INT8 精度</td>
+                  <td><span class="tag success">通过</span></td>
+                  <td>INT8 相对 PT 损失 1.10%，未超过 5% 阈值。</td>
+                </tr>
+                <tr>
+                  <td>当前结论</td>
+                  <td><span class="tag success">可进入发布评估</span></td>
+                  <td>建议把结论命名成业务动作，而不是抽象术语。</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+        </section>
+
+        <section class="detail-panel" data-panel="evaluation">
+          <div class="section-grid" style="grid-template-columns: 1fr 1fr;">
+            <section class="card-block">
+              <h4>模型评估</h4>
+              <div class="chip-row" style="margin-bottom: 10px;">
+                <span class="tag success">ONNX 通过</span>
+                <span class="tag success">INT8 通过</span>
+                <span class="tag info">阈值来自 SOP 3.6.2</span>
+              </div>
+              <table class="mini-table">
+                <thead>
+                  <tr>
+                    <th>类别</th>
+                    <th>PT AP50</th>
+                    <th>INT8 AP50</th>
+                    <th>AP50 差值</th>
+                    <th>召回差值</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>garbage_street_scattered</td>
+                    <td>0.4808</td>
+                    <td>0.4768</td>
+                    <td>-0.0040</td>
+                    <td>+0.0074</td>
+                  </tr>
+                  <tr>
+                    <td>garbage_street_pack</td>
+                    <td>0.7380</td>
+                    <td>0.7439</td>
+                    <td>+0.0059</td>
+                    <td>+0.0219</td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+
+            <section class="card-block">
+              <h4>评估结论</h4>
+              <div class="summary-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 12px;">
+                <div class="summary-card">
+                  <label>PT mAP50</label>
+                  <strong>0.6721</strong>
+                  <span>test 集基线</span>
+                </div>
+                <div class="summary-card">
+                  <label>INT8 mAP50</label>
+                  <strong>0.6795</strong>
+                  <span>相对 PT 损失 1.10%</span>
+                </div>
+              </div>
+              <div class="field-box">
+                <label>结论说明</label>
+                <div>当前 PT、ONNX、INT8 三者对比已完成，INT8 精度在可接受阈值内，模型可继续进入发布评估阶段。</div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="detail-panel" data-panel="manual-result">
+          <div class="section-grid" style="grid-template-columns: 1fr 1fr;">
+            <section class="card-block">
+              <h4>最近一次手动验证结果</h4>
+              <div class="inline-split">
+                <div class="field-box">
+                  <label>验证模式</label>
+                  <strong>运行验证 + 精度评估</strong>
+                </div>
+                <div class="field-box">
+                  <label>阈值来源</label>
+                  <strong>AI 推荐</strong>
+                </div>
+                <div class="field-box">
+                  <label>conf_thres</label>
+                  <div>0.31</div>
+                </div>
+                <div class="field-box">
+                  <label>nms_thres</label>
+                  <div>0.69</div>
+                </div>
+              </div>
+              <div class="field-box">
+                <label>结果说明</label>
+                <div>最近一次手动边端验证采用 AI 推荐阈值完成，边端可运行，且有标注样本的精度结果已回写到当前模型评估链路中。</div>
+              </div>
+            </section>
+
+            <section class="card-block">
+              <h4>最近一次验证样本</h4>
+              <div class="sample-box">
+                <div class="sample-row">
+                  <div>
+                    <strong>已选图片</strong>
+                    <span>任务内抽样 20 张 + 自定义勾选 5 张</span>
+                  </div>
+                  <span class="tag info">共 25 张</span>
+                </div>
+                <div class="sample-row">
+                  <div>
+                    <strong>标注分布</strong>
+                    <span>有标注 18 张，无标注 7 张</span>
+                  </div>
+                  <span class="tag warn">混合验证</span>
+                </div>
+                <div class="sample-row">
+                  <div>
+                    <strong>结果去向</strong>
+                    <span>有标注图片进入精度评估，无标注图片仅用于边端可运行性确认。</span>
+                  </div>
+                  <span class="tag success">结果已回写</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="detail-panel" data-panel="steps">
+          <section class="card-block">
+            <h4>执行步骤</h4>
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="timeline-dot">1</div>
+                <div>
+                  <strong>ONNX 导出</strong>
+                  <small>训练产物已成功导出 ONNX，供后续编译与本机 SOP 评估使用。</small>
+                </div>
+                <span class="tag info">已完成</span>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot">2</div>
+                <div>
+                  <strong>bmodel 编译</strong>
+                  <small>fp32、fp16、int8 三种 bmodel 已生成并可下载。</small>
+                </div>
+                <span class="tag info">已完成</span>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot">3</div>
+                <div>
+                  <strong>边端执行</strong>
+                  <small>模型和验证图片已下发边端，推理脚本执行成功，平台已收到回传结果。</small>
+                </div>
+                <span class="tag success">结果已回传</span>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot">4</div>
+                <div>
+                  <strong>INT8 精度评估</strong>
+                  <small>已完成 PT / ONNX / INT8 对比，INT8 损失处于可接受范围内。</small>
+                </div>
+                <span class="tag success">通过</span>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="detail-panel" data-panel="config">
+          <section class="card-block">
+            <h4>配置快照</h4>
+            <div class="inline-split">
+              <div class="field-box">
+                <label>自动编译</label>
+                <strong>开启</strong>
+              </div>
+              <div class="field-box">
+                <label>编译模式</label>
+                <strong>full: fp32 / fp16 / int8</strong>
+              </div>
+              <div class="field-box">
+                <label>目标平台</label>
+                <strong>bm1688</strong>
+              </div>
+              <div class="field-box">
+                <label>量化方式</label>
+                <strong>Docker</strong>
+              </div>
+            </div>
+            <div class="field-box" style="margin-bottom: 10px;">
+              <label>边端 SSH</label>
+              <div>10.10.11.26 · linaro · docker 容器 bm1688 · 导出完成后自动验证已开启</div>
+            </div>
+            <div class="field-box">
+              <label>高级配置</label>
+              <div>TPU_MLIR_ROOT、校准集目录、qtable、自定义命令建议统一收进折叠区，平时默认不抢占主视野，只在用户需要排查编译问题时展开。</div>
+            </div>
+          </section>
+        </section>
+      </div>
+
+      <div class="foot-note">
+        这版静态稿的原则是：
+        1. 保留你原来页面的业务顺序和核心区块，不做全新工作台重构。
+        2. 导出记录仍然在最上面，详情与评估落在列表下方，减少多弹窗来回切换。
+        3. 列表中的状态统一成“状态 / 训练达标 / 边端执行 / INT8 精度 / 当前结论”五层表达，避免同一条记录出现多种说法。
+        4. 配置结果提示不再出现在首屏状态卡里，首屏只展示业务状态，配置类信息下沉到“配置快照”或详情内入口。
+        5. 详情改成 Tab 标签切换结构，进入后一次只看一个模块，不再把多个模块同时堆在一个长页面里。
+        6. `手动边端验证` 放回列表操作栏，因为它是针对某一条记录发起的新任务动作，不属于详情内容本体。
+        7. Tab 内只展示“最近一次手动验证结果”，不再承载发起功能。
+        8. 把“更多”作为补充操作入口，用来容纳报告中心、下载产物等次级动作，减少操作列过宽。
+      </div>
+    </section>
+  </main>
+  <script>
+    (function () {
+      var tabs = Array.prototype.slice.call(document.querySelectorAll(".detail-tabs .tab"));
+      var panels = Array.prototype.slice.call(document.querySelectorAll(".detail-panel"));
+      function activate(tabKey) {
+        tabs.forEach(function (tab) {
+          tab.classList.toggle("active", tab.getAttribute("data-tab") === tabKey);
+        });
+        panels.forEach(function (panel) {
+          panel.classList.toggle("active", panel.getAttribute("data-panel") === tabKey);
+        });
+      }
+      tabs.forEach(function (tab) {
+        tab.addEventListener("click", function () {
+          activate(tab.getAttribute("data-tab"));
+        });
+      });
+    })();
+  </script>
+</body>
+</html>

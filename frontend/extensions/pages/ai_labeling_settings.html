@@ -1,0 +1,868 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI 标注设置</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #f0f2f5;
+      --card: #fff;
+      --border: #e5e7eb;
+      --primary: #1677ff;
+      --primary-hover: #4096ff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --radius: 10px;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; min-height: 100vh; }
+    .ai-settings-main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 8px 16px 32px;
+    }
+    .lu-page-links { font-size: 12px; color: var(--muted); margin: 0 0 10px; }
+    .lu-page-links a { color: var(--primary); text-decoration: none; }
+    .lu-page-links a:hover { text-decoration: underline; }
+    .tab-bar {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0;
+    }
+    .tab-bar .tab {
+      padding: 10px 16px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      background: #ececec;
+      color: rgba(18, 19, 22, 0.85);
+      font-size: 13px;
+      margin-bottom: -1px;
+    }
+    .tab-bar .tab:hover {
+      background: #fff;
+      color: var(--text);
+      border-color: #d0d0d0;
+    }
+    .tab-bar .tab.active {
+      color: #0958d9;
+      font-weight: 600;
+      background: #fff;
+      border-color: var(--border);
+      border-bottom-color: #fff;
+    }
+    .topbar { margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 14px 16px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .card h3 { margin: 0 0 12px; font-size: 15px; font-weight: 600; }
+    .auth-banner {
+      background: linear-gradient(135deg, #fff7e6 0%, #fffbe6 100%); border: 1px solid #ffe58f;
+      border-radius: var(--radius); padding: 14px 16px; margin-bottom: 18px;
+    }
+    .auth-banner input { width: 100%; max-width: 520px; padding: 8px 10px; margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; }
+    code, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
+    pre.ex { background: #1e293b; color: #e2e8f0; padding: 12px; border-radius: 8px; overflow: auto; font-size: 12px; line-height: 1.45; white-space: pre-wrap; max-height: 480px; }
+    pre.ex-template { max-height: 420px; }
+    textarea.ta { width: 100%; min-height: 160px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; resize: vertical; }
+    textarea.ta-lg { min-height: 280px; }
+    table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.data th, table.data td { padding: 10px 8px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+    table.data th { color: var(--muted); font-weight: 500; }
+    button.btn { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); cursor: pointer; font-size: 13px; }
+    button.btn:hover { border-color: #cbd5e1; }
+    button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    button.primary:hover { background: var(--primary-hover); border-color: var(--primary-hover); }
+    button.danger { color: #b91c1c; border-color: #fecaca; background: #fef2f2; }
+    button.small { padding: 4px 10px; font-size: 12px; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .chain-list { list-style: decimal; padding-left: 22px; margin: 8px 0; }
+    .chain-list li { margin: 6px 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    label.ck { display: flex; align-items: center; gap: 8px; margin: 8px 0; cursor: pointer; font-size: 14px; }
+    .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 10000; align-items: center; justify-content: center; padding: 16px; }
+    .modal-bg.show { display: flex; }
+    body.modal-open { overflow: hidden; }
+    .modal-bg .modal {
+      background: var(--card);
+      border-radius: 10px;
+      width: min(720px, calc(100vw - 32px));
+      max-width: 720px;
+      max-height: calc(100vh - 32px);
+      margin: 0;
+      padding: 18px 20px 24px;
+      overflow-y: auto;
+      box-shadow: 0 18px 48px rgba(24,39,52,.18);
+    }
+    .modal h4 { margin: 0 0 14px; font-size: 16px; }
+    .confirm-modal { width: min(440px, calc(100vw - 32px)); }
+    .confirm-modal p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .field { margin-bottom: 12px; }
+    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .field input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; background: #ecfdf5; color: #047857; }
+    #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 10px 20px; border-radius: 8px; background: #111827; color: #fff; display: none; z-index: 2000; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.2); }
+    .ok { color: #059669; } .warn { color: #d97706; }
+    .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .provider-list { margin: 8px 0 0; padding: 0; list-style: none; }
+    .provider-item {
+      border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+      display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px;
+    }
+    .provider-item.disabled { opacity: 0.72; background: #f9fafb; }
+    .provider-item .pi-main { flex: 1; min-width: 200px; }
+    .provider-item .pi-model { font-size: 12px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+    .badge-ok { color: #047857; background: #ecfdf5; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .badge-warn { color: #b45309; background: #fffbeb; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .badge-muted { color: #6b7280; background: #f3f4f6; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .call-plan { margin: 0; padding-left: 20px; }
+    .call-plan li { margin: 6px 0; font-size: 13px; }
+    .compose-steps { margin: 0; padding-left: 20px; font-size: 13px; }
+    .compose-steps li { margin: 8px 0; }
+    .section-label { font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="ai-labeling">
+  <div class="labelu-shell-header" role="banner">
+    <div class="labelu-shell-brand">
+      <a class="labelu-shell-logo" href="/">7GAI进化平台</a>
+      <span class="labelu-shell-page-title" id="pageTitle">AI 标注设置</span>
+    </div>
+    <nav class="labelu-shell-nav" aria-label="7GAI进化平台工具导航"></nav>
+  </div>
+  <main class="ai-settings-main" data-lu-toolkit-main>
+      <div id="luPageHero"></div>
+      <p class="lu-page-links"><a href="/">返回首页</a> · <a href="/annotation-settings">预设 / 全局维度</a></p>
+      <div class="topbar">
+        <span class="muted">主存 MySQL 治理表 · 登录后可读写 · JSON 仅兼容同步</span>
+      </div>
+
+      <div class="tab-bar ai-settings-tabs" role="tablist" aria-label="AI 标注设置分区">
+        <button type="button" class="tab active" data-panel="overview" id="tabOverview">概览与链路</button>
+        <button type="button" class="tab" data-panel="models" id="tabModels">大模型配置</button>
+        <button type="button" class="tab" data-panel="site" id="tabSite">站点附加提示词</button>
+        <button type="button" class="tab" data-panel="yolo" id="tabYolo">YOLO 评估提示词</button>
+      </div>
+
+      <div class="auth-banner" id="authBox" data-lu-auth-panel>
+        <div id="authNeedLogin"><strong>未检测到登录。</strong>请先 <a href="/login">在主站登录</a>，成功后返回本页将自动鉴权。</div>
+        <details class="auth-manual" style="margin-top:10px;">
+          <summary class="muted" style="cursor:pointer;font-size:12px;">无法自动登录？手动粘贴 Token</summary>
+          <input type="text" id="tokenInput" placeholder="Bearer …" autocomplete="off" style="margin-top:8px;" />
+          <div style="margin-top:10px;"><button type="button" class="btn primary" id="btnSaveToken">保存 Token</button></div>
+        </details>
+      </div>
+
+      <!-- 概览 -->
+      <div id="panel-overview" class="panel active">
+        <div class="card">
+          <h3>实际调用链路（与线上一致）</h3>
+          <p class="muted" style="margin-top:0;" id="callPlanHint"></p>
+          <ol class="call-plan" id="callPlanSteps"></ol>
+          <p class="hint" id="callPlanEmpty" style="display:none;"></p>
+        </div>
+        <div class="card">
+          <h3>运行状态（只读）</h3>
+          <table class="data" id="tblStatus"><tbody></tbody></table>
+        </div>
+        <div class="card">
+          <h3>内置视觉链路（.env）</h3>
+          <p class="muted" style="margin-top:0;">当<strong>未配置</strong>「大模型配置」Tab 中的档案调用顺序时，仅下列已在 .env 配置密钥的模型可参与降级；勾选决定尝试顺序。</p>
+          <div class="section-label">已配置密钥 · 可勾选进链路</div>
+          <ul class="provider-list" id="builtinConfiguredList"></ul>
+          <div class="section-label" id="builtinMissingLabel" style="display:none;">未配置 · 不会参与调用</div>
+          <ul class="provider-list" id="builtinMissingList"></ul>
+          <div style="margin-top:12px;">
+            <button type="button" class="btn primary" id="btnSaveOverview">保存内置链路勾选</button>
+          </div>
+          <p class="hint">「站点附加提示词」请切换到上方 Tab；完整主提示与合成规则见该 Tab。</p>
+        </div>
+      </div>
+
+      <!-- 大模型 -->
+      <div id="panel-models" class="panel">
+        <div class="card">
+          <h3>已配置的模型档案</h3>
+          <p class="muted" style="margin-top:0;">填写 OpenAI 兼容的 <code>/v1/chat/completions</code> 服务根地址（无需含路径后缀）。密钥仅在服务端存储；列表与编辑表单中一律脱敏展示。</p>
+          <div class="row-actions" style="margin-bottom:12px;">
+            <button type="button" class="btn primary" id="btnNewProfile">新增档案</button>
+            <button type="button" class="btn" id="btnReloadProfiles">刷新</button>
+          </div>
+          <table class="data">
+            <thead><tr><th>名称</th><th>Endpoint</th><th>模型</th><th>密钥</th><th></th></tr></thead>
+            <tbody id="profileRows"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <h3>AI 图像标注调用顺序</h3>
+          <p class="muted" style="margin-top:0;">将可选档案按优先级加入右侧列表：<strong>非空时</strong>仅使用此处档案依次调用；<strong>清空并保存</strong>则退回「内置视觉链路（.env）」。</p>
+          <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+            <div>
+              <div class="muted" style="font-size:12px;margin-bottom:6px;">可选档案</div>
+              <select id="selAddChain" size="6" style="min-width:200px;padding:6px;border-radius:8px;border:1px solid var(--border);"></select>
+              <div style="margin-top:8px;"><button type="button" class="btn small" id="btnChainAdd">加入顺序末尾</button></div>
+            </div>
+            <div style="flex:1;min-width:240px;">
+              <div class="muted" style="font-size:12px;margin-bottom:6px;">当前顺序（先调用在上）</div>
+              <ul class="chain-list" id="chainList"></ul>
+              <button type="button" class="btn primary" id="btnSaveChain" style="margin-top:8px;">保存调用顺序</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 站点提示 -->
+      <div id="panel-site" class="panel">
+        <div class="card">
+          <h3>提示词合成流程（前后端一致）</h3>
+          <ol class="compose-steps" id="compositionSteps"></ol>
+          <p class="hint" id="templateMeta"></p>
+        </div>
+        <div class="card">
+          <h3>① 主提示 · 标准规则模版（只读）</h3>
+          <p class="hint">由 <code id="templateSourceLoc">_build_instruction</code> 根据<strong>任务</strong> labels / tag_dimensions / 图片尺寸生成。下方为固定参考样例（与源码同函数），非虚构文案。</p>
+          <details style="margin-bottom:8px;">
+            <summary class="muted" style="cursor:pointer;font-size:12px;">参考 payload（JSON）</summary>
+            <pre class="ex" id="referencePayloadPre" style="max-height:200px;margin-top:8px;"></pre>
+          </details>
+          <pre class="ex ex-template" id="baseTemplatePre">加载中…</pre>
+          <div class="row-actions" style="margin-top:8px;">
+            <button type="button" class="btn small" id="btnCopyTemplate">复制主提示模版</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>② 站点附加提示词（可编辑 · 主存 MySQL 治理表）</h3>
+          <p class="muted" style="margin-top:0;">保存后追加在 ① 之后，固定标题：<code id="siteSuffixHeaderLabel"></code></p>
+          <textarea id="suffix" class="ta" style="min-height:120px;" placeholder="在此编写站点 / 业务级附加说明…"></textarea>
+          <div class="row-actions" style="margin-top:10px;">
+            <button type="button" class="btn" id="btnFillExample">填入站点附加示例</button>
+            <button type="button" class="btn primary" id="btnSaveSite">保存到服务器</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>③ 实际下发 instruction 预览（主提示 + 当前已保存附加）</h3>
+          <p class="hint">与 <code>call_vision_llm_chain</code> 拼入模型的文本结构一致（参考样例任务尺寸与标签）。编辑未保存时可用「刷新预览」。</p>
+          <pre class="ex" id="composedInstructionPre">加载中…</pre>
+          <div class="row-actions" style="margin-top:8px;">
+            <button type="button" class="btn small" id="btnRefreshComposed">刷新预览</button>
+            <button type="button" class="btn small" id="btnCopyComposed">复制完整 instruction</button>
+          </div>
+        </div>
+        <div class="card">
+          <h3>站点附加示例文案</h3>
+          <pre class="ex" id="siteExamplePre" style="max-height:140px;"></pre>
+        </div>
+      </div>
+
+      <!-- YOLO -->
+      <div id="panel-yolo" class="panel">
+        <div class="card">
+          <h3>YOLO11 训练后「AI 评估」使用的提示词</h3>
+          <p class="muted" style="margin-top:0;">两类报告分别对应训练后台的「全维度分析」与「下一轮迭代」。保存后立即作用于<strong>下一次</strong>触发的评估任务。</p>
+          <p class="muted" id="yoloPath"></p>
+          <pre class="ex" id="yoloPlaceholders" style="min-height:80px;"></pre>
+        </div>
+        <div class="card">
+          <h3>全维度分析（full_analysis）</h3>
+          <textarea id="yoloFull" class="ta ta-lg"></textarea>
+        </div>
+        <div class="card">
+          <h3>下一轮迭代（next_iteration）</h3>
+          <textarea id="yoloNext" class="ta ta-lg"></textarea>
+          <div style="margin-top:12px;"><button type="button" class="btn primary" id="btnSaveYolo">保存两份提示词</button></div>
+        </div>
+      </div>
+  </main>
+
+  <div class="modal-bg" id="modalBg">
+    <div class="modal">
+      <form id="profileModalForm" autocomplete="off" onsubmit="return false">
+      <h4 id="modalTitle">模型档案</h4>
+      <input type="hidden" id="editProfileId" />
+      <div class="field" id="fieldCustomId">
+        <label>自定义 ID（可选，字母数字下划线横线）</label>
+        <input type="text" id="inpPid" placeholder="留空则自动生成" />
+      </div>
+      <div class="field">
+        <label>显示名称</label>
+        <input type="text" id="inpName" placeholder="例如：生产环境-千问VL" />
+      </div>
+      <div class="field">
+        <label>Base URL（OpenAI 兼容根地址）</label>
+        <input type="text" id="inpBase" placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" />
+      </div>
+      <div class="field">
+        <label>模型名 / 接入点 ID</label>
+        <input type="text" id="inpModel" placeholder="qwen-vl-plus 或 doubao-xxx" />
+      </div>
+      <div class="field">
+        <label>API Key</label>
+        <input type="password" id="inpKey" placeholder="新建必填；编辑时留空表示不修改" autocomplete="new-password" />
+      </div>
+      <div class="row-actions" style="margin-top:16px;">
+        <button type="button" class="btn primary" id="modalOk">保存</button>
+        <button type="button" class="btn" id="modalCancel">取消</button>
+      </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="confirmBg" aria-hidden="true">
+    <div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <h4 id="confirmTitle">确认删除模型档案</h4>
+      <p id="confirmMessage"></p>
+      <div class="row-actions" style="margin-top:16px; justify-content:flex-end;">
+        <button type="button" class="btn danger" id="confirmOk">删除</button>
+        <button type="button" class="btn" id="confirmCancel">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+(function () {
+  var API = "/api/v1";
+  var SITE_EXAMPLE = "【业务场景】城市道路占道经营、夜市周边的巡查抓拍。\n【术语】「摊贩」指占用道路摆设的经营者；「柜台」指固定门店门口延伸区域。\n【输出要求】全局 tag 维度必须从任务提供的 value_en 中选择；若无把握宁可留空也不要编造枚举值。\n【几何框】只框清晰可见的主体；重叠严重时优先框占画面积最大的实例。";
+  var SITE_SUFFIX_HEADER = "【站点附加提示（可在 /ai-labeling-settings 页面修改）】";
+  var instructionTemplateCache = { base: "", siteSuffixHeader: SITE_SUFFIX_HEADER };
+
+  function getToken() {
+    if (window.LabeluPortal && LabeluPortal.getAuthToken) return LabeluPortal.getAuthToken();
+    var raw = (localStorage.getItem("token") || "").trim();
+    if (!raw) return "";
+    if (/^bearer\s+/i.test(raw)) return raw;
+    if (raw.indexOf("eyJ") === 0) return "Bearer " + raw;
+    return raw;
+  }
+  function setToken(t) {
+    if (window.LabeluPortal && LabeluPortal.setAuthToken) LabeluPortal.setAuthToken(t || "");
+    else if (t) localStorage.setItem("token", getToken() || String(t).trim());
+    else localStorage.removeItem("token");
+  }
+  function requireToken(msg) {
+    if (getToken()) return true;
+    toast(msg || "请先登录");
+    return false;
+  }
+  function toast(msg) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.style.display = "block";
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { el.style.display = "none"; }, 3200);
+  }
+  async function api(method, path, body) {
+    var r = await fetch(API + path, {
+      method: method,
+      headers: { "Content-Type": "application/json", Authorization: getToken() },
+      body: body !== undefined && body !== null ? JSON.stringify(body) : undefined,
+      cache: "no-store"
+    });
+    var text = await r.text();
+    var json = null;
+    try { json = text ? JSON.parse(text) : null; } catch (e) {}
+    return { ok: r.ok, json: json, text: text };
+  }
+
+  function checkAuth() {
+    if (window.LabeluPortal && LabeluPortal.syncAuthBox) return LabeluPortal.syncAuthBox();
+    var box = document.getElementById("authBox");
+    if (box) box.style.display = getToken() ? "none" : "block";
+    return !!getToken();
+  }
+
+  var builtinProviderState = [];
+
+  function renderCallPlan(plan) {
+    var hintEl = document.getElementById("callPlanHint");
+    var stepsEl = document.getElementById("callPlanSteps");
+    var emptyEl = document.getElementById("callPlanEmpty");
+    plan = plan || { mode: "none", steps: [], hint: "" };
+    if (hintEl) hintEl.textContent = plan.hint || "";
+    stepsEl.innerHTML = "";
+    if (!plan.steps || !plan.steps.length) {
+      emptyEl.style.display = "block";
+      emptyEl.textContent = plan.hint || "当前无可用视觉模型。";
+      return;
+    }
+    emptyEl.style.display = "none";
+    plan.steps.forEach(function (s, i) {
+      var li = document.createElement("li");
+      var kind = s.kind === "profile" ? "档案" : ".env 内置";
+      li.innerHTML =
+        "<strong>" + (i + 1) + ". " + esc(s.label || s.provider_key) + "</strong> " +
+        '<span class="badge-muted">' + esc(kind) + "</span><br>" +
+        '<span class="pi-model">模型 <code>' + esc(s.model || "") + "</code>" +
+        (s.base_url ? ' · <code>' + esc(s.base_url) + "</code>" : "") + "</span>";
+      stepsEl.appendChild(li);
+    });
+  }
+
+  function renderBuiltinProviders(providers) {
+    builtinProviderState = providers || [];
+    var configuredEl = document.getElementById("builtinConfiguredList");
+    var missingEl = document.getElementById("builtinMissingList");
+    var missingLabel = document.getElementById("builtinMissingLabel");
+    configuredEl.innerHTML = "";
+    missingEl.innerHTML = "";
+    var hasMissing = false;
+    (providers || []).forEach(function (p) {
+      var li = document.createElement("li");
+      li.className = "provider-item" + (p.configured ? "" : " disabled");
+      if (p.configured) {
+        var checked = p.enabled ? " checked" : "";
+        li.innerHTML =
+          '<label class="ck" style="margin:0;"><input type="checkbox" class="builtin-enable" data-key="' +
+          esc(p.key) + '"' + checked + " /> <strong>" + esc(p.display_name) + "</strong></label>" +
+          '<div class="pi-main">' +
+          '<div><span class="badge-ok">.env 已配置</span> ' +
+          (p.usable ? '<span class="badge-ok">将参与调用</span>' : '<span class="badge-warn">已勾选关闭或未启用</span>') +
+          "</div>" +
+          '<div class="pi-model">模型 <code>' + esc(p.model_id) + "</code><br>Endpoint <code>" +
+          esc(p.base_url) + "</code><br>密钥变量 <code>" + esc(p.env_key_var) + "</code></div></div>";
+        configuredEl.appendChild(li);
+      } else {
+        hasMissing = true;
+        li.innerHTML =
+          '<div class="pi-main"><strong>' + esc(p.display_name) + "</strong> " +
+          '<span class="badge-muted">未配置</span>' +
+          '<div class="pi-model">' + esc(p.missing_reason || "") + "</div></div>";
+        missingEl.appendChild(li);
+      }
+    });
+    if (missingLabel) missingLabel.style.display = hasMissing ? "block" : "none";
+    if (!configuredEl.children.length) {
+      var empty = document.createElement("li");
+      empty.className = "provider-item disabled";
+      empty.innerHTML = '<div class="pi-main"><span class="warn">.env 中未配置任何内置视觉密钥</span>，请配置 VISION_VOLCENGINE_API_KEY 或 VISION_QWEN_API_KEY，或使用「大模型配置」档案。</div>';
+      configuredEl.appendChild(empty);
+    }
+  }
+
+  function readEnabledBuiltinProviders() {
+    var arr = [];
+    document.querySelectorAll(".builtin-enable:checked").forEach(function (el) {
+      var k = el.getAttribute("data-key");
+      if (k) arr.push(k);
+    });
+    return arr;
+  }
+
+  function navTo(panel) {
+    document.querySelectorAll(".ai-settings-tabs .tab").forEach(function (btn) {
+      btn.classList.toggle("active", btn.getAttribute("data-panel") === panel);
+    });
+    document.querySelectorAll(".panel").forEach(function (p) {
+      p.classList.toggle("active", p.id === "panel-" + panel);
+    });
+    var titles = { overview: "概览与链路", models: "大模型配置", site: "站点附加提示词", yolo: "YOLO 评估提示词" };
+    document.getElementById("pageTitle").textContent = "AI 标注设置 · " + (titles[panel] || "");
+    if (getToken()) {
+      if (panel === "overview") loadOverview();
+      if (panel === "models") loadProfiles();
+      if (panel === "site") loadSite();
+      if (panel === "yolo") loadYolo();
+    }
+  }
+
+  function onHash() {
+    var h = (location.hash || "#overview").replace(/^#/, "") || "overview";
+    if (["overview", "models", "site", "yolo"].indexOf(h) < 0) h = "overview";
+    navTo(h);
+  }
+
+  async function loadOverview() {
+    var res = await api("GET", "/ai-labeling/runtime-settings", null);
+    if (!res.ok) { toast((res.json && res.json.msg) || "加载失败"); return; }
+    var d = res.json.data;
+    renderCallPlan(d.effective_call_plan);
+    renderBuiltinProviders(d.builtin_providers);
+    var tb = document.querySelector("#tblStatus tbody");
+    tb.innerHTML = "";
+    function row(k, v) {
+      var tr = document.createElement("tr");
+      tr.innerHTML = "<td>" + k + "</td><td>" + v + "</td>";
+      tb.appendChild(tr);
+    }
+    row("AI_AUTO_LABEL_ENABLED", d.ai_auto_label_enabled ? '<span class="ok">已开启</span>' : '<span class="warn">未开启（.env）</span>');
+    row("AI_PROVIDER", "<code>" + esc(d.ai_provider || "") + "</code>");
+    row("已保存模型档案数", String(d.llm_profile_count || 0));
+    row("档案调用顺序", (d.annotation_chain_profile_ids && d.annotation_chain_profile_ids.length)
+      ? "<code>" + esc(d.annotation_chain_profile_ids.join(" → ")) + "</code>"
+      : '<span class="muted">（空 = 使用 .env 内置链路）</span>');
+    row("内置链路模式", d.effective_call_plan && d.effective_call_plan.mode === "profiles"
+      ? '<span class="ok">档案优先</span>'
+      : (d.effective_call_plan && d.effective_call_plan.mode === "builtin_env"
+        ? '<span class="ok">.env 内置</span>'
+        : '<span class="warn">无可用链路</span>'));
+    row("火山 Key", d.secrets.volcengine_configured ? "已配置" : "未配置");
+    row("千问 Key", d.secrets.qwen_configured ? "已配置" : "未配置");
+    row("本地 AI_MODEL_ENDPOINT", d.secrets.local_endpoint_configured ? "已配置" : "未配置");
+    row("配置主存", "<code>" + esc(d.config_backend_label || "MySQL 治理表（system_config_*）") + "</code>");
+    row("兼容同步文件", "<code>" + esc(d.runtime_file || "") + "</code>");
+    row("说明", esc(d.secrets_doc || ""));
+  }
+
+  document.getElementById("btnSaveOverview").onclick = async function () {
+    var prov = readEnabledBuiltinProviders();
+    if (!prov.length) { toast("请至少勾选一条已配置的内置模型"); return; }
+    var res = await api("PATCH", "/ai-labeling/runtime-settings", {
+      enabled_providers: prov
+    });
+    if (!res.ok) { toast((res.json && res.json.msg) || "保存失败"); return; }
+    toast("已保存");
+    loadOverview();
+  };
+
+  var chainState = [];
+
+  function esc(s) {
+    var d = document.createElement("div");
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  function renderChainUi(profiles, chainIds) {
+    var sel = document.getElementById("selAddChain");
+    sel.innerHTML = "";
+    profiles.forEach(function (p) {
+      var o = document.createElement("option");
+      o.value = p.id;
+      o.textContent = p.name + " (" + p.id + ")";
+      sel.appendChild(o);
+    });
+    chainState = (chainIds || []).slice();
+    renderChainList(profiles);
+  }
+
+  function renderChainList(profiles) {
+    var ul = document.getElementById("chainList");
+    ul.innerHTML = "";
+    var map = {};
+    profiles.forEach(function (p) { map[p.id] = p; });
+    chainState.forEach(function (id, idx) {
+      var p = map[id];
+      var li = document.createElement("li");
+      li.innerHTML = '<span>' + esc((p && p.name) || id) + '</span> <code style="font-size:11px">' + esc(id) + '</code> ';
+      var up = document.createElement("button");
+      up.type = "button"; up.className = "btn small"; up.textContent = "上移";
+      up.onclick = function () {
+        if (idx <= 0) return;
+        var t = chainState[idx - 1]; chainState[idx - 1] = chainState[idx]; chainState[idx] = t;
+        renderChainList(profiles);
+      };
+      var down = document.createElement("button");
+      down.type = "button"; down.className = "btn small"; down.textContent = "下移";
+      down.onclick = function () {
+        if (idx >= chainState.length - 1) return;
+        var t = chainState[idx + 1]; chainState[idx + 1] = chainState[idx]; chainState[idx] = t;
+        renderChainList(profiles);
+      };
+      var rm = document.createElement("button");
+      rm.type = "button"; rm.className = "btn small danger"; rm.textContent = "移除";
+      rm.onclick = function () {
+        chainState.splice(idx, 1);
+        renderChainList(profiles);
+      };
+      li.appendChild(up); li.appendChild(down); li.appendChild(rm);
+      ul.appendChild(li);
+    });
+  }
+
+  var lastProfiles = [];
+  var pendingDeleteProfile = null;
+
+  function closeProfileModal() {
+    document.getElementById("modalBg").classList.remove("show");
+    document.body.classList.remove("modal-open");
+  }
+
+  function closeConfirmModal() {
+    var bg = document.getElementById("confirmBg");
+    bg.classList.remove("show");
+    bg.setAttribute("aria-hidden", "true");
+    pendingDeleteProfile = null;
+    if (!document.getElementById("modalBg").classList.contains("show")) {
+      document.body.classList.remove("modal-open");
+    }
+  }
+
+  function openDeleteConfirm(profile) {
+    pendingDeleteProfile = profile;
+    document.getElementById("confirmMessage").textContent =
+      "确定删除模型档案“" + profile.name + "”吗？删除后不能恢复。";
+    var bg = document.getElementById("confirmBg");
+    bg.classList.add("show");
+    bg.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+    document.getElementById("confirmCancel").focus();
+  }
+
+  async function loadProfiles() {
+    var res = await api("GET", "/ai-labeling/llm-profiles", null);
+    if (!res.ok) { toast((res.json && res.json.msg) || "加载失败"); return; }
+    var d = res.json.data;
+    lastProfiles = d.profiles || [];
+    var tb = document.getElementById("profileRows");
+    tb.innerHTML = "";
+    lastProfiles.forEach(function (p) {
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>" + esc(p.name) + "</td>" +
+        "<td><code>" + esc(p.base_url) + "</code></td>" +
+        "<td><code>" + esc(p.model) + "</code></td>" +
+        "<td>" + (p.api_key_configured ? esc(p.api_key_masked || "********") : '<span class="muted">未设置</span>') + "</td>" +
+        "<td class='row-actions'></td>";
+      var td = tr.lastChild;
+      var b1 = document.createElement("button"); b1.className = "btn small"; b1.textContent = "编辑";
+      b1.onclick = function () { openModal(p); };
+      var b2 = document.createElement("button"); b2.className = "btn small danger"; b2.textContent = "删除";
+      b2.onclick = function () { openDeleteConfirm(p); };
+      td.appendChild(b1); td.appendChild(b2);
+      tb.appendChild(tr);
+    });
+    renderChainUi(lastProfiles, d.annotation_chain_profile_ids || []);
+  }
+
+  document.getElementById("btnReloadProfiles").onclick = loadProfiles;
+  document.getElementById("btnChainAdd").onclick = function () {
+    var sel = document.getElementById("selAddChain");
+    var id = sel.value;
+    if (!id) return;
+    if (chainState.indexOf(id) >= 0) { toast("已在顺序中"); return; }
+    chainState.push(id);
+    renderChainList(lastProfiles);
+  };
+  document.getElementById("btnSaveChain").onclick = async function () {
+    var res = await api("PATCH", "/ai-labeling/annotation-chain", { profile_ids: chainState });
+    if (!res.ok) { toast((res.json && res.json.msg) || "保存失败"); return; }
+    toast("调用顺序已保存");
+    loadProfiles();
+  };
+
+  function openModal(p) {
+    document.getElementById("modalBg").classList.add("show");
+    document.body.classList.add("modal-open");
+    document.getElementById("modalTitle").textContent = p ? "编辑模型档案" : "新增模型档案";
+    document.getElementById("fieldCustomId").style.display = p ? "none" : "block";
+    document.getElementById("editProfileId").value = p ? p.id : "";
+    document.getElementById("inpPid").value = "";
+    document.getElementById("inpName").value = p ? p.name : "";
+    document.getElementById("inpBase").value = p ? p.base_url : "";
+    document.getElementById("inpModel").value = p ? p.model : "";
+    document.getElementById("inpKey").value = "";
+    document.getElementById("modalCancel").focus();
+  }
+  document.getElementById("btnNewProfile").onclick = function () { openModal(null); };
+  document.getElementById("modalCancel").onclick = function () {
+    closeProfileModal();
+  };
+  document.getElementById("modalBg").onclick = function (e) {
+    if (e.target.id === "modalBg") {
+      closeProfileModal();
+    }
+  };
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    var bg = document.getElementById("modalBg");
+    var confirmBg = document.getElementById("confirmBg");
+    if (confirmBg.classList.contains("show")) {
+      closeConfirmModal();
+      return;
+    }
+    if (bg.classList.contains("show")) closeProfileModal();
+  });
+  document.getElementById("modalOk").onclick = async function () {
+    var editId = document.getElementById("editProfileId").value;
+    if (editId) {
+      var body = {
+        name: document.getElementById("inpName").value || undefined,
+        base_url: document.getElementById("inpBase").value || undefined,
+        model: document.getElementById("inpModel").value || undefined,
+      };
+      var k = document.getElementById("inpKey").value.trim();
+      if (k) body.api_key = k;
+      var r = await api("PATCH", "/ai-labeling/llm-profiles/" + encodeURIComponent(editId), body);
+      if (!r.ok) { toast((r.json && r.json.msg) || "保存失败"); return; }
+    } else {
+      var body2 = {
+        name: document.getElementById("inpName").value,
+        base_url: document.getElementById("inpBase").value,
+        model: document.getElementById("inpModel").value,
+        api_key: document.getElementById("inpKey").value,
+      };
+      var cid = document.getElementById("inpPid").value.trim();
+      if (cid) body2.id = cid;
+      var r2 = await api("POST", "/ai-labeling/llm-profiles", body2);
+      if (!r2.ok) { toast((r2.json && r2.json.msg) || "创建失败"); return; }
+    }
+    closeProfileModal();
+    toast("已保存");
+    loadProfiles();
+  };
+
+  document.getElementById("confirmCancel").onclick = closeConfirmModal;
+  document.getElementById("confirmBg").onclick = function (e) {
+    if (e.target.id === "confirmBg") closeConfirmModal();
+  };
+  document.getElementById("confirmOk").onclick = async function () {
+    var profile = pendingDeleteProfile;
+    if (!profile) return;
+    var r2 = await api("DELETE", "/ai-labeling/llm-profiles/" + encodeURIComponent(profile.id), null);
+    if (!r2.ok) { toast((r2.json && r2.json.msg) || "删除失败"); return; }
+    closeConfirmModal();
+    toast("已删除");
+    loadProfiles();
+  };
+
+  function renderCompositionSteps(steps) {
+    var ol = document.getElementById("compositionSteps");
+    if (!ol) return;
+    ol.innerHTML = "";
+    (steps || []).forEach(function (s) {
+      var li = document.createElement("li");
+      li.innerHTML =
+        "<strong>" + esc(String(s.order) + ". " + (s.title || "")) + "</strong> — " +
+        esc(s.description || "") +
+        (s.source ? '<br><span class="muted" style="font-size:12px;">' + esc(s.source) + "</span>" : "");
+      ol.appendChild(li);
+    });
+  }
+
+  function updateComposedPreviewLocal() {
+    var base = instructionTemplateCache.base || "";
+    var suf = (document.getElementById("suffix").value || "").trim();
+    var header = instructionTemplateCache.siteSuffixHeader || SITE_SUFFIX_HEADER;
+    var composed = base;
+    if (suf) composed = base + "\n\n" + header + "\n" + suf + "\n";
+    var pre = document.getElementById("composedInstructionPre");
+    if (pre) pre.textContent = composed || "（空）";
+  }
+
+  async function loadSite() {
+    document.getElementById("siteExamplePre").textContent = SITE_EXAMPLE;
+    var tplRes = await api("GET", "/ai-labeling/instruction-template", null);
+    if (tplRes.ok && tplRes.json && tplRes.json.data) {
+      var t = tplRes.json.data;
+      instructionTemplateCache.base = t.base_template || "";
+      instructionTemplateCache.siteSuffixHeader = t.site_suffix_header || SITE_SUFFIX_HEADER;
+      document.getElementById("baseTemplatePre").textContent = instructionTemplateCache.base || "（空）";
+      var loc = document.getElementById("templateSourceLoc");
+      if (loc) loc.textContent = t.source_location || "vision_llm_chain._build_instruction";
+      var hdr = document.getElementById("siteSuffixHeaderLabel");
+      if (hdr) hdr.textContent = instructionTemplateCache.siteSuffixHeader;
+      var meta = document.getElementById("templateMeta");
+      if (meta) {
+        meta.textContent = (t.reference_note || "") + (t.reference_image_size ? " · 参考尺寸 " + t.reference_image_size : "");
+      }
+      renderCompositionSteps(t.composition_steps);
+      var rp = document.getElementById("referencePayloadPre");
+      if (rp) rp.textContent = t.reference_payload_json || "";
+      document.getElementById("suffix").value = t.site_suffix_current || "";
+      var composedPre = document.getElementById("composedInstructionPre");
+      if (composedPre) composedPre.textContent = t.composed_with_site_suffix || instructionTemplateCache.base || "";
+    } else {
+      document.getElementById("baseTemplatePre").textContent =
+        (tplRes.json && tplRes.json.msg) || tplRes.text || "加载标准模版失败（需重启后端以启用 API）";
+    }
+  }
+  document.getElementById("btnFillExample").onclick = function () {
+    document.getElementById("suffix").value = SITE_EXAMPLE;
+    toast("已填入站点附加示例，可直接修改后再保存");
+  };
+  document.getElementById("btnCopyTemplate").onclick = function () {
+    var text = instructionTemplateCache.base || "";
+    if (!text) { toast("模版尚未加载"); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast("已复制标准模版"); }).catch(function () { toast("复制失败"); });
+    } else {
+      toast("浏览器不支持自动复制，请手动选择文本");
+    }
+  };
+  document.getElementById("btnRefreshComposed").onclick = function () {
+    updateComposedPreviewLocal();
+    toast("已按当前编辑区刷新预览（未保存部分亦会显示）");
+  };
+  document.getElementById("btnCopyComposed").onclick = function () {
+    var text = (document.getElementById("composedInstructionPre").textContent || "").trim();
+    if (!text) { toast("预览为空"); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { toast("已复制完整 instruction"); }).catch(function () { toast("复制失败"); });
+    } else {
+      toast("请手动选择预览区文本复制");
+    }
+  };
+  document.getElementById("btnSaveSite").onclick = async function () {
+    var res = await api("PATCH", "/ai-labeling/runtime-settings", {
+      instruction_suffix: document.getElementById("suffix").value
+    });
+    if (!res.ok) { toast((res.json && res.json.msg) || "保存失败"); return; }
+    toast("站点附加提示词已保存");
+    loadSite();
+  };
+
+  async function loadYolo() {
+    var res = await api("GET", "/ai-labeling/yolo-eval-prompts", null);
+    if (!res.ok) { toast((res.json && res.json.msg) || "加载失败"); return; }
+    var d = res.json.data;
+    document.getElementById("yoloFull").value = d.full_analysis || "";
+    document.getElementById("yoloNext").value = d.next_iteration || "";
+    document.getElementById("yoloPath").textContent =
+      "配置主存：" + (d.config_backend_label || "MySQL 治理表（system_config_*）") +
+      " · 兼容同步文件：" + (d.prompts_file || "");
+    document.getElementById("yoloPlaceholders").textContent = d.placeholders_help || "";
+  }
+  document.getElementById("btnSaveYolo").onclick = async function () {
+    var res = await api("PATCH", "/ai-labeling/yolo-eval-prompts", {
+      full_analysis: document.getElementById("yoloFull").value,
+      next_iteration: document.getElementById("yoloNext").value
+    });
+    if (!res.ok) { toast((res.json && res.json.msg) || "保存失败"); return; }
+    toast("YOLO 评估提示词已保存");
+    loadYolo();
+  };
+
+  document.getElementById("btnSaveToken").onclick = function () {
+    setToken(document.getElementById("tokenInput").value || "");
+    checkAuth();
+    toast("Token 已保存");
+    onHash();
+  };
+
+  document.querySelectorAll(".ai-settings-tabs .tab").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var panel = btn.getAttribute("data-panel");
+      if (panel) {
+        location.hash = panel;
+        navTo(panel);
+      }
+    });
+  });
+  window.addEventListener("hashchange", onHash);
+
+  document.getElementById("siteExamplePre").textContent = SITE_EXAMPLE;
+  window.addEventListener("labelu-token-changed", function () {
+    checkAuth();
+    onHash();
+  });
+  checkAuth();
+  onHash();
+})();
+  </script>
+</body>
+</html>

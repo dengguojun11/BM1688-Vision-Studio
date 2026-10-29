@@ -1,0 +1,1245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BM1688 模型编译 - 原版优化静态稿</title>
+  <style>
+    :root {
+      --bg: #f3f6fb;
+      --surface: #ffffff;
+      --surface-soft: #f8fbff;
+      --line: #dbe4f0;
+      --text: #1b2a41;
+      --muted: #6b7b92;
+      --primary: #1d63ff;
+      --primary-soft: #edf4ff;
+      --success: #1f8f52;
+      --success-soft: #edf9f1;
+      --warning: #bc7300;
+      --warning-soft: #fff5df;
+      --danger: #c23a4e;
+      --danger-soft: #fff0f3;
+      --shadow: 0 14px 36px rgba(22, 42, 77, 0.08);
+      --radius-xl: 22px;
+      --radius-lg: 18px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --mono: "Consolas", "SFMono-Regular", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background:
+        radial-gradient(circle at top right, rgba(78, 149, 255, 0.12), transparent 22%),
+        linear-gradient(180deg, #eef4ff 0%, var(--bg) 20%, #f7f9fc 100%);
+      color: var(--text);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    body { min-height: 100vh; }
+    a { color: inherit; text-decoration: none; }
+    button, input, select { font: inherit; }
+
+    .page {
+      max-width: 1500px;
+      margin: 0 auto;
+      padding: 24px 24px 40px;
+    }
+
+    .top-note {
+      margin-bottom: 18px;
+      padding: 12px 16px;
+      border-radius: 16px;
+      border: 1px solid #c8dafb;
+      background: rgba(255,255,255,0.78);
+      color: #355279;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .hero {
+      background: linear-gradient(135deg, #0c58d8 0%, #1c78ff 52%, #83cbff 100%);
+      color: #fff;
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      padding: 22px 24px 20px;
+      margin-bottom: 16px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute;
+      top: -90px;
+      right: -90px;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: flex-start;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-title {
+      margin: 0 0 8px;
+      font-size: 30px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero-desc {
+      margin: 0;
+      max-width: 860px;
+      color: rgba(255,255,255,0.88);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 10px;
+      min-width: 340px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 38px;
+      padding: 0 15px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: default;
+      white-space: nowrap;
+    }
+    .btn-primary { background: #fff; color: #0f5cdc; }
+    .btn-secondary { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.3); color: #fff; }
+    .btn-ghost { background: #fff; border-color: var(--line); color: #35506f; }
+    .btn-sm { min-height: 30px; padding: 0 12px; border-radius: 10px; font-size: 12px; }
+
+    .quick-pills {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 28px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .pill.light { background: rgba(255,255,255,0.14); border-color: rgba(255,255,255,0.24); color: #fff; }
+    .pill.good { background: var(--success-soft); border-color: #bae8c7; color: var(--success); }
+    .pill.warn { background: var(--warning-soft); border-color: #ffd38a; color: var(--warning); }
+    .pill.info { background: var(--primary-soft); border-color: #c9ddff; color: var(--primary); }
+    .pill.danger { background: var(--danger-soft); border-color: #f0bbc5; color: var(--danger); }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    .stat {
+      background: rgba(255,255,255,0.9);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      box-shadow: 0 8px 22px rgba(22, 42, 77, 0.04);
+    }
+
+    .stat label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 34px;
+      letter-spacing: -0.03em;
+      margin-bottom: 8px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .flow-box {
+      background: rgba(255,255,255,0.92);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 14px 18px;
+      box-shadow: 0 8px 22px rgba(22, 42, 77, 0.04);
+      margin-bottom: 16px;
+    }
+
+    .flow-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .flow-head h2 {
+      margin: 0;
+      font-size: 15px;
+    }
+
+    .flow-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .flow-line {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .flow-step {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
+      padding: 12px;
+      min-height: 86px;
+    }
+    .flow-step.active { border-color: #a8c8ff; background: linear-gradient(180deg, #fbfdff 0%, #eef5ff 100%); }
+    .flow-step strong { display: block; margin-bottom: 6px; font-size: 13px; }
+    .flow-step small { color: var(--muted); font-size: 11px; line-height: 1.55; display: block; }
+
+    .list-panel,
+    .detail-panel,
+    .section-panel {
+      background: rgba(255,255,255,0.94);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 22px 14px;
+      border-bottom: 1px solid #ecf1f7;
+      background: linear-gradient(180deg, rgba(248,251,255,0.96) 0%, rgba(255,255,255,0.96) 100%);
+    }
+
+    .panel-head h2 {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -0.02em;
+    }
+
+    .panel-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 22px 0;
+      flex-wrap: wrap;
+    }
+
+    .toolbar-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter {
+      min-height: 38px;
+      min-width: 140px;
+      padding: 0 12px;
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      color: #4f627d;
+      font-size: 12px;
+    }
+
+    .table-wrap {
+      padding: 14px 22px 20px;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      min-width: 1200px;
+    }
+
+    thead th {
+      padding: 12px 10px;
+      text-align: left;
+      color: #51657f;
+      font-size: 11px;
+      font-weight: 700;
+      border-bottom: 1px solid #e8eef6;
+      white-space: nowrap;
+      background: #fbfdff;
+    }
+
+    tbody td {
+      padding: 14px 10px;
+      vertical-align: top;
+      border-bottom: 1px solid #edf2f8;
+      line-height: 1.65;
+    }
+
+    tbody tr.selected {
+      background: linear-gradient(180deg, rgba(248,251,255,0.85) 0%, rgba(238,245,255,0.65) 100%);
+    }
+
+    .name-cell strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 14px;
+    }
+
+    .sub-text { color: var(--muted); font-size: 12px; }
+
+    .artifact-stack {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      max-width: 310px;
+    }
+
+    .artifact-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 0 10px;
+      border-radius: 10px;
+      border: 1px solid #dce6f1;
+      background: #fff;
+      color: #35506f;
+      font-size: 11px;
+      font-family: var(--mono);
+    }
+
+    .ops {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-end;
+      min-width: 280px;
+    }
+
+    .selected-banner {
+      margin: 0 22px 18px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: linear-gradient(180deg, #fbfdff 0%, #eef5ff 100%);
+      border: 1px solid #cfe0ff;
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .selected-banner strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 6px;
+    }
+
+    .selected-banner p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .detail-layout {
+      padding: 0 22px 22px;
+    }
+
+    .detail-tabs {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+      padding: 0 14px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: #4b617e;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .tab.active {
+      background: var(--primary-soft);
+      color: var(--primary);
+      border-color: #c7dbff;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .summary-card {
+      background: linear-gradient(180deg, #fff 0%, #f9fbff 100%);
+      border: 1px solid #e4ebf5;
+      border-radius: 16px;
+      padding: 14px;
+    }
+
+    .summary-card label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+
+    .summary-card strong {
+      display: block;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+      margin-bottom: 6px;
+    }
+
+    .summary-card span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1.12fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .block {
+      border: 1px solid #e4ebf5;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fff 0%, #fafcff 100%);
+      padding: 16px;
+    }
+
+    .block h3 {
+      margin: 0 0 12px;
+      font-size: 15px;
+    }
+
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 0;
+      border-bottom: 1px dashed #e5ecf5;
+    }
+
+    .timeline-item:last-child { border-bottom: none; }
+
+    .timeline-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: #edf4ff;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .timeline-item strong {
+      display: block;
+      font-size: 13px;
+      margin-bottom: 4px;
+    }
+
+    .timeline-item small {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .kv-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .kv {
+      border: 1px solid #e4ebf5;
+      border-radius: 14px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .kv label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 6px;
+    }
+
+    .kv strong {
+      display: block;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .table-panel {
+      margin-top: 14px;
+    }
+
+    .mini-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      min-width: 0;
+    }
+
+    .mini-table th,
+    .mini-table td {
+      padding: 10px 10px;
+      border-bottom: 1px solid #e9eef5;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .mini-table th {
+      background: #f8fbff;
+      color: #536983;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .mini-table tr:last-child td { border-bottom: none; }
+
+    .tag-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .mock-box {
+      border: 1px solid #e4ebf5;
+      background: #fff;
+      border-radius: 14px;
+      padding: 12px;
+      color: #41526b;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .action-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .section-panel {
+      margin-top: 18px;
+    }
+
+    .section-body {
+      padding: 18px 22px 22px;
+    }
+
+    .modal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .field.span-2 { grid-column: span 2; }
+
+    .field label {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .input,
+    .select,
+    .textarea,
+    .sample-box {
+      border: 1px solid #dce6f1;
+      border-radius: 14px;
+      background: #fff;
+      padding: 12px;
+      color: #40526d;
+      font-size: 12px;
+    }
+
+    .textarea { min-height: 76px; line-height: 1.7; }
+
+    .sample-box {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 118px;
+    }
+
+    .sample-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border-bottom: 1px dashed #e8eef6;
+      padding-bottom: 10px;
+    }
+
+    .sample-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+    .section-note {
+      margin-top: 18px;
+      padding-top: 14px;
+      border-top: 1px dashed #dbe4f0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    @media (max-width: 1300px) {
+      .stats,
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .detail-grid,
+      .modal-grid,
+      .form-grid { grid-template-columns: 1fr; }
+      .field.span-2 { grid-column: span 1; }
+      .flow-line { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 920px) {
+      .page { padding: 16px 14px 30px; }
+      .hero-top { flex-direction: column; }
+      .hero-actions { justify-content: flex-start; min-width: 0; }
+      .stats { grid-template-columns: 1fr; }
+      .flow-line,
+      .summary-grid,
+      .kv-list { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="top-note">
+      <strong>静态原型 v2</strong>：这版不重做页面骨架，而是基于你现在的“BM1688 模型编译”页面做视觉和信息层级优化。重点保留原页面的核心结构：顶部概览、导出记录、当前选中模型详情、模型评估、手动边端验证、执行步骤。
+    </div>
+
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1 class="hero-title">BM1688 模型编译</h1>
+          <p class="hero-desc">训练完成后统一在这里看 ONNX、bmodel、边端验证和 INT8 精度结论。优化重点不是加更多字段，而是让用户一眼看懂当前进度、问题位置和下一步动作。</p>
+        </div>
+        <div class="hero-actions">
+          <span class="btn btn-primary">发起导出</span>
+          <span class="btn btn-secondary">编译配置</span>
+          <span class="btn btn-secondary">模型评估标准</span>
+          <span class="btn btn-secondary">刷新</span>
+        </div>
+      </div>
+      <div class="quick-pills">
+        <span class="pill light">自动编译：已开启</span>
+        <span class="pill light">边端 SSH：10.10.11.26</span>
+        <span class="pill light">默认流程：ONNX → bmodel → 边端 → INT8</span>
+      </div>
+    </section>
+
+    <section class="stats">
+      <article class="stat">
+        <label>导出总数</label>
+        <strong>25</strong>
+        <span>全部 BM1688 导出记录</span>
+      </article>
+      <article class="stat">
+        <label>进行中</label>
+        <strong>2</strong>
+        <span>包含导出、编译和自动重试过程</span>
+      </article>
+      <article class="stat">
+        <label>待边端验证</label>
+        <strong>1</strong>
+        <span>编译完成，但还没做边端可运行性确认</span>
+      </article>
+      <article class="stat">
+        <label>可进入发布评估</label>
+        <strong>8</strong>
+        <span>训练达标 + INT8 通过，可继续发布流转</span>
+      </article>
+    </section>
+
+    <section class="flow-box">
+      <div class="flow-head">
+        <div>
+          <h2>流程概览</h2>
+          <p>保留原页面“编译配置 / 模型评估”的主线，但改成更可读的阶段表达。</p>
+        </div>
+        <span class="pill info">当前关注点：边端验证与 INT8 结果回传</span>
+      </div>
+      <div class="flow-line">
+        <article class="flow-step">
+          <strong>1. 编译配置</strong>
+          <small>自动编译、量化模式、目标平台、边端 SSH 等基础设置。</small>
+        </article>
+        <article class="flow-step">
+          <strong>2. 模型编译</strong>
+          <small>导出 ONNX，生成 fp32 / fp16 / int8 bmodel 产物。</small>
+        </article>
+        <article class="flow-step active">
+          <strong>3. 边端验证</strong>
+          <small>下发图片与模型，确认边端真实可运行，不只是本机编译成功。</small>
+        </article>
+        <article class="flow-step">
+          <strong>4. INT8 评估</strong>
+          <small>PT / ONNX / INT8 三者对比，得到量化损失和阈值判定。</small>
+        </article>
+        <article class="flow-step">
+          <strong>5. 发布结论</strong>
+          <small>统一给出“可进入发布评估 / 待补验证 / 不建议发布”。</small>
+        </article>
+      </div>
+    </section>
+
+    <section class="list-panel">
+      <div class="panel-head">
+        <div>
+          <h2>导出记录</h2>
+          <p>保留原来的记录列表，但优化列宽、状态表达和按钮主次，减少用户横向阅读压力。</p>
+        </div>
+        <span class="pill warn">当前有 1 条待边端验证</span>
+      </div>
+
+      <div class="toolbar">
+        <div class="toolbar-group">
+          <div class="filter">全部预设</div>
+          <div class="filter">搜索：垃圾暴露</div>
+          <div class="filter">状态：全部</div>
+        </div>
+        <div class="toolbar-group">
+          <span class="btn btn-ghost btn-sm">只看待处理</span>
+          <span class="btn btn-ghost btn-sm">批量刷新状态</span>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:56px;">ID</th>
+              <th style="width:270px;">任务 / 作业</th>
+              <th style="width:120px;">状态</th>
+              <th style="width:300px;">产物</th>
+              <th style="width:120px;">训练达标</th>
+              <th style="width:120px;">边端执行</th>
+              <th style="width:120px;">INT8 精度</th>
+              <th style="width:160px;">当前结论</th>
+              <th style="width:320px; text-align:right;">操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="selected">
+              <td>49</td>
+              <td class="name-cell">
+                <strong>垃圾暴露-训练筛选一致 #79</strong>
+                <div class="sub-text">作业 #198 · 640px · 2026-06-29 20:09</div>
+              </td>
+              <td><span class="pill info">已完成</span></td>
+              <td>
+                <div class="artifact-stack">
+                  <span class="artifact-chip">ONNX</span>
+                  <span class="artifact-chip">yolov11n_fp32_1b.bmodel</span>
+                  <span class="artifact-chip">yolov11n_fp16_1b.bmodel</span>
+                  <span class="artifact-chip">yolov11n_int8_1b.bmodel</span>
+                </div>
+              </td>
+              <td><span class="pill good">达标</span></td>
+              <td><span class="pill info">结果已回传</span></td>
+              <td><span class="pill good">通过</span></td>
+              <td><span class="pill good">可进入发布评估</span></td>
+              <td>
+                <div class="ops">
+                  <span class="btn btn-primary btn-sm">评估</span>
+                  <span class="btn btn-ghost btn-sm">执行步骤</span>
+                  <span class="btn btn-ghost btn-sm">详情</span>
+                  <span class="btn btn-ghost btn-sm">手动边端验证</span>
+                  <span class="btn btn-ghost btn-sm">编译</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>48</td>
+              <td class="name-cell">
+                <strong>垃圾桶满溢 #73</strong>
+                <div class="sub-text">作业 #183 · 640px · 2026-06-26 17:14</div>
+              </td>
+              <td><span class="pill info">已完成</span></td>
+              <td>
+                <div class="artifact-stack">
+                  <span class="artifact-chip">ONNX</span>
+                  <span class="artifact-chip">yolov11n_fp32_1b.bmodel</span>
+                  <span class="artifact-chip">yolov11n_fp16_1b.bmodel</span>
+                  <span class="artifact-chip">yolov11n_int8_1b.bmodel</span>
+                </div>
+              </td>
+              <td><span class="pill good">达标</span></td>
+              <td><span class="pill warn">未验证</span></td>
+              <td><span class="pill info">待评估</span></td>
+              <td><span class="pill warn">待边端验证</span></td>
+              <td>
+                <div class="ops">
+                  <span class="btn btn-primary btn-sm">评估</span>
+                  <span class="btn btn-ghost btn-sm">执行步骤</span>
+                  <span class="btn btn-ghost btn-sm">详情</span>
+                  <span class="btn btn-ghost btn-sm">手动边端验证</span>
+                  <span class="btn btn-ghost btn-sm">编译</span>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td>47</td>
+              <td class="name-cell">
+                <strong>占道经营-lxl-wly #45</strong>
+                <div class="sub-text">作业 #145 · 640px · 2026-06-26 12:07</div>
+              </td>
+              <td><span class="pill info">已完成</span></td>
+              <td>
+                <div class="artifact-stack">
+                  <span class="artifact-chip">ONNX</span>
+                  <span class="artifact-chip">yolov11n_fp32_1b.bmodel</span>
+                  <span class="artifact-chip">yolov11n_fp16_1b.bmodel</span>
+                  <span class="artifact-chip">yolov11n_int8_1b.bmodel</span>
+                </div>
+              </td>
+              <td><span class="pill good">达标</span></td>
+              <td><span class="pill info">结果已回传</span></td>
+              <td><span class="pill danger">未通过</span></td>
+              <td><span class="pill danger">不建议发布</span></td>
+              <td>
+                <div class="ops">
+                  <span class="btn btn-primary btn-sm">评估</span>
+                  <span class="btn btn-ghost btn-sm">执行步骤</span>
+                  <span class="btn btn-ghost btn-sm">详情</span>
+                  <span class="btn btn-ghost btn-sm">手动边端验证</span>
+                  <span class="btn btn-ghost btn-sm">编译</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="detail-panel" style="margin-top:18px;">
+      <div class="panel-head">
+        <div>
+          <h2>当前选中模型详情</h2>
+          <p>不改掉原有“详情 / 执行步骤 / 评估”的功能，只把这些信息往下集中，让用户看记录后马上看到对应内容。</p>
+        </div>
+        <span class="pill info">当前查看：导出 #49</span>
+      </div>
+
+      <div class="selected-banner">
+        <div>
+          <strong>垃圾暴露-训练筛选一致 #79 · 当前结论：可进入发布评估</strong>
+          <p>训练达标、边端执行结果已回传、INT8 精度通过阈值要求。这里仍然保留原页面的“评估 / 执行步骤 / 手动边端验证 / 编译”能力，但主次更清晰。</p>
+        </div>
+        <div class="ops">
+          <span class="btn btn-primary btn-sm">查看评估</span>
+          <span class="btn btn-ghost btn-sm">执行步骤</span>
+          <span class="btn btn-ghost btn-sm">手动边端验证</span>
+          <span class="btn btn-ghost btn-sm">重新编译</span>
+        </div>
+      </div>
+
+      <div class="detail-layout">
+        <div class="detail-tabs">
+          <span class="tab active">概览</span>
+          <span class="tab">执行步骤</span>
+          <span class="tab">模型评估</span>
+          <span class="tab">手动边端验证</span>
+          <span class="tab">配置快照</span>
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-card">
+            <label>PT mAP50</label>
+            <strong>0.6721</strong>
+            <span>test 集基线</span>
+          </div>
+          <div class="summary-card">
+            <label>ONNX 相对 PT</label>
+            <strong>0.04%</strong>
+            <span>阈值 ≤ 3%</span>
+          </div>
+          <div class="summary-card">
+            <label>INT8 相对 PT</label>
+            <strong>1.10%</strong>
+            <span>阈值 ≤ 5%</span>
+          </div>
+          <div class="summary-card">
+            <label>边端设备</label>
+            <strong>10.10.11.26</strong>
+            <span>Docker: bm1688</span>
+          </div>
+        </div>
+
+        <div class="detail-grid">
+          <section class="block">
+            <h3>执行进度</h3>
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="timeline-dot">1</div>
+                <div>
+                  <strong>ONNX 导出</strong>
+                  <small>训练模型已导出 ONNX，供后续 bmodel 编译和云端评估使用。</small>
+                </div>
+                <span class="pill info">已完成</span>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot">2</div>
+                <div>
+                  <strong>bmodel 编译</strong>
+                  <small>fp32 / fp16 / int8 三种 bmodel 已生成，页面可下载，后续可继续边端验证。</small>
+                </div>
+                <span class="pill info">已完成</span>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot">3</div>
+                <div>
+                  <strong>边端执行</strong>
+                  <small>模型和图片已下发板端，边端脚本执行成功，结果已回传平台。</small>
+                </div>
+                <span class="pill info">结果已回传</span>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot">4</div>
+                <div>
+                  <strong>INT8 精度评估</strong>
+                  <small>已完成 PT / ONNX / INT8 对比，INT8 量化损失在阈值内。</small>
+                </div>
+                <span class="pill good">通过</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="block">
+            <h3>产物与路径</h3>
+            <div class="kv-list">
+              <div class="kv">
+                <label>ONNX</label>
+                <strong><code>models/onnx/yolo11n.onnx</code></strong>
+              </div>
+              <div class="kv">
+                <label>FP32 bmodel</label>
+                <strong><code>BM1688/yolov11n_fp32_1b.bmodel</code></strong>
+              </div>
+              <div class="kv">
+                <label>FP16 bmodel</label>
+                <strong><code>BM1688/yolov11n_fp16_1b.bmodel</code></strong>
+              </div>
+              <div class="kv">
+                <label>INT8 bmodel</label>
+                <strong><code>BM1688/yolov11n_int8_1b.bmodel</code></strong>
+              </div>
+            </div>
+
+            <div class="table-panel">
+              <table class="mini-table">
+                <thead>
+                  <tr>
+                    <th>项目</th>
+                    <th>结果</th>
+                    <th>说明</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>训练达标</td>
+                    <td><span class="pill good">达标</span></td>
+                    <td>前置训练指标满足当前质量标准。</td>
+                  </tr>
+                  <tr>
+                    <td>边端状态</td>
+                    <td><span class="pill info">结果已回传</span></td>
+                    <td>边端运行产物已拉回平台，可继续做模型评估。</td>
+                  </tr>
+                  <tr>
+                    <td>发布建议</td>
+                    <td><span class="pill good">可进入发布评估</span></td>
+                    <td>当前不用再卡在编译页，可以继续去发布菜单。</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-panel">
+      <div class="panel-head">
+        <div>
+          <h2>关键功能展示原型</h2>
+          <p>这里不是新建流程，而是把原页面已有功能的展示方式重新整理。</p>
+        </div>
+      </div>
+      <div class="section-body">
+        <div class="modal-grid">
+          <section class="block">
+            <h3>模型评估</h3>
+            <div class="tag-row">
+              <span class="pill good">本机 ONNX 与边端 INT8 均已通过</span>
+              <span class="pill info">SOP 3.6 阈值判定</span>
+            </div>
+            <div class="summary-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 12px;">
+              <div class="summary-card">
+                <label>PT mAP50</label>
+                <strong>0.6721</strong>
+                <span>基线</span>
+              </div>
+              <div class="summary-card">
+                <label>ONNX mAP50</label>
+                <strong>0.6718</strong>
+                <span>相对 PT 0.04%</span>
+              </div>
+              <div class="summary-card">
+                <label>INT8 mAP50</label>
+                <strong>0.6795</strong>
+                <span>相对 PT 1.10%</span>
+              </div>
+            </div>
+            <table class="mini-table">
+              <thead>
+                <tr>
+                  <th>类别</th>
+                  <th>PT AP50</th>
+                  <th>INT8 AP50</th>
+                  <th>AP50 Δ</th>
+                  <th>召回 Δ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>garbage_street_scattered</td>
+                  <td>0.4808</td>
+                  <td>0.4768</td>
+                  <td>-0.0040</td>
+                  <td>+0.0074</td>
+                </tr>
+                <tr>
+                  <td>garbage_street_pack</td>
+                  <td>0.7380</td>
+                  <td>0.7439</td>
+                  <td>+0.0059</td>
+                  <td>+0.0219</td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="action-row">
+              <span class="btn btn-primary btn-sm">完整评估报告</span>
+              <span class="btn btn-ghost btn-sm">边端原始报告</span>
+              <span class="btn btn-ghost btn-sm">质量报告 JSON</span>
+            </div>
+          </section>
+
+          <section class="block">
+            <h3>手动边端验证</h3>
+            <div class="form-grid" style="margin-bottom: 12px;">
+              <div class="field">
+                <label>验证模式</label>
+                <div class="select">运行验证 + 精度评估</div>
+              </div>
+              <div class="field">
+                <label>阈值来源</label>
+                <div class="select">AI 推荐</div>
+              </div>
+              <div class="field">
+                <label>conf_thres</label>
+                <div class="input">0.31</div>
+              </div>
+              <div class="field">
+                <label>nms_thres</label>
+                <div class="input">0.69</div>
+              </div>
+              <div class="field span-2">
+                <label>AI 推荐说明</label>
+                <div class="textarea">本次要验证的图片中包含街面小目标与混合垃圾，建议在控制误检的前提下略微提高召回，优先保证边端可用性与漏检可控。</div>
+              </div>
+            </div>
+            <div class="sample-box">
+              <div class="sample-item">
+                <div>
+                  <strong>已选图片</strong>
+                  <div class="sub-text" style="margin-top:4px;">任务内抽样 20 张 + 自定义勾选 5 张</div>
+                </div>
+                <span class="pill info">共 25 张</span>
+              </div>
+              <div class="sample-item">
+                <div>
+                  <strong>标注分布</strong>
+                  <div class="sub-text" style="margin-top:4px;">有标注 18 张，无标注 7 张</div>
+                </div>
+                <span class="pill warn">混合验证</span>
+              </div>
+              <div class="sample-item">
+                <div>
+                  <strong>执行规则</strong>
+                  <div class="sub-text" style="margin-top:4px;">有标注图做精度评估；无标注图仅做边端可运行性确认。</div>
+                </div>
+                <span class="pill good">系统内选图</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="block">
+            <h3>执行步骤</h3>
+            <div class="timeline">
+              <div class="timeline-item">
+                <div class="timeline-dot">1</div>
+                <div>
+                  <strong>导出 ONNX</strong>
+                  <small>从训练产物生成 ONNX，并确认目录结构完整。</small>
+                </div>
+                <span class="pill info">已完成</span>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot">2</div>
+                <div>
+                  <strong>编译 bmodel</strong>
+                  <small>生成 fp32 / fp16 / int8 产物，为边端验证做准备。</small>
+                </div>
+                <span class="pill info">已完成</span>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot">3</div>
+                <div>
+                  <strong>打包与下发边端</strong>
+                  <small>将模型、图片、配置打包发送至边端工作目录。</small>
+                </div>
+                <span class="pill info">已完成</span>
+              </div>
+              <div class="timeline-item">
+                <div class="timeline-dot">4</div>
+                <div>
+                  <strong>边端运行与回传</strong>
+                  <small>在容器内执行推理脚本并拉回结果，形成最终评估依据。</small>
+                </div>
+                <span class="pill good">已回传</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="block">
+            <h3>编译配置快照</h3>
+            <div class="form-grid">
+              <div class="field">
+                <label>自动编译</label>
+                <div class="input">开启</div>
+              </div>
+              <div class="field">
+                <label>编译模式</label>
+                <div class="input">full（fp32 / fp16 / int8）</div>
+              </div>
+              <div class="field">
+                <label>目标平台</label>
+                <div class="input">bm1688</div>
+              </div>
+              <div class="field">
+                <label>量化方式</label>
+                <div class="input">Docker</div>
+              </div>
+              <div class="field span-2">
+                <label>边端 SSH</label>
+                <div class="mock-box">10.10.11.26 · linaro · docker 容器 bm1688 · 自动边端验证：已开启</div>
+              </div>
+              <div class="field span-2">
+                <label>高级配置</label>
+                <div class="mock-box">TPU_MLIR_ROOT、校准集、qtable、自定义编译命令统一折叠到“高级配置”中，不在默认视野里抢焦点。</div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div class="section-note">
+          这版静态稿的设计原则是：<br />
+          1. 不推翻你原页面的功能结构，只优化层级和可读性。<br />
+          2. 记录区仍然是主角，但把“当前选中模型详情”集中到列表下方，减少来回点弹窗。<br />
+          3. 状态全部统一成“编译状态 / 边端执行 / INT8 精度 / 当前结论”四组表达，避免同页多种说法混在一起。<br />
+          4. 评估、执行步骤、手动边端验证、编译配置全部还在，只是展示更像一个业务工作台，而不是工程参数页。
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,2358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AICM 模型发布</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <link rel="stylesheet" href="/assets/labelu_train_hub.css" />
+  <script src="/assets/labelu_embedded_boot.js"></script>
+  <script src="/assets/labelu_pager.js"></script>
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #f0f2f5;
+      --card: #fff;
+      --border: #e5e7eb;
+      --primary: #1677ff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --success: #389e0d;
+      --danger: #cf1322;
+    }
+    * { box-sizing: border-box; }
+    body.labelu-shell { margin: 0; min-height: 100vh; background: var(--bg); color: var(--text); }
+    .page-main.lu-hub-page {
+      max-width: none;
+      margin: 0;
+      padding: 12px 16px 20px;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+    body.labelu-shell[data-lu-page="yolo-model-publish"] .lu-toolkit-shell .main.lu-toolkit-main {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: auto;
+    }
+    body.labelu-embedded[data-lu-page="yolo-model-publish"] .lu-toolkit-shell .main.lu-toolkit-main {
+      overflow: auto;
+      min-height: 0;
+    }
+    body.labelu-shell[data-lu-page="yolo-model-publish"] .page-main.lu-hub-page {
+      flex: 0 0 auto;
+      min-height: auto;
+    }
+    body.labelu-embedded[data-lu-page="yolo-model-publish"] .page-main.lu-hub-page {
+      padding: 10px 12px 16px;
+      overflow: visible;
+    }
+    body.labelu-shell[data-lu-page="yolo-model-publish"] .lu-train-list-card {
+      flex: 0 0 auto;
+      min-height: auto;
+    }
+    body.labelu-shell[data-lu-page="yolo-model-publish"] .lu-train-list-card .hub-list-panel {
+      flex: 0 0 auto;
+      min-height: auto;
+    }
+    body.labelu-shell[data-lu-page="yolo-model-publish"] .train-table-wrap {
+      flex: 0 0 auto;
+      min-height: auto;
+      overflow: visible;
+    }
+    .qa-stack { display:flex; flex-direction:column; gap:4px; align-items:flex-start; }
+    .qa-line { display:flex; flex-wrap:wrap; gap:4px; align-items:center; font-size:11px; line-height:1.4; }
+    .qa-chip { display:inline-flex; align-items:center; padding:1px 6px; border-radius:999px; border:1px solid var(--border); background:#f8fafc; }
+    .qa-chip--ok { color:#237804; border-color:#b7eb8f; background:#f6ffed; }
+    .qa-chip--warn { color:#ad6800; border-color:#ffd591; background:#fff7e6; }
+    .qa-chip--bad { color:#a8071a; border-color:#ffccc7; background:#fff1f0; }
+    .qa-chip--na { color:#666; border-color:#d9d9d9; background:#fafafa; }
+    button.btn.btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    button.btn.btn-ghost {
+      background: rgba(255,255,255,0.16);
+      border-color: rgba(255,255,255,0.35);
+      color: #fff;
+    }
+    table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table.data-table th, table.data-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: middle;
+    }
+    table.data-table th { background: #fafafa; color: var(--muted); font-weight: 600; font-size: 11px; }
+    .tab-panel.hub-list-panel { display: none; flex-direction: column; flex: 1; min-height: 0; }
+    .tab-panel.hub-list-panel.active { display: flex; }
+    #activeEnvBadgeInline { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 10px; border: 1px solid #d8dde6; border-radius: 6px; background: #f7f8fa; color: #475467; font-size: 12px; }
+    #activeEnvBadgeInline.warn { color: #ad6800; background: #fff7e6; border-color: #ffd591; }
+    #activeEnvBadgeInline.ok { color: #237804; background: #f6ffed; border-color: #b7eb8f; }
+    #activeEnvBadgeInline.info { color: #0958d9; background: #e6f4ff; border-color: #91caff; }
+    #activeEnvBadgeInline.err { color: #a8071a; background: #fff1f0; border-color: #ffccc7; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 2px rgba(0,0,0,.04);
+    }
+    .card h3 { margin: 0 0 12px; font-size: 15px; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+    @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+    .field label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .field input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+    .field input[type="checkbox"] { width: auto; margin-right: 6px; }
+    table.data { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.data th, table.data td { padding: 8px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+    table.data th { color: var(--muted); font-weight: 500; }
+    button.btn { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: #fff; cursor: pointer; font-size: 13px; }
+    button.btn.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+    button.btn.publish-risk { background: #d46b08; color: #fff; border-color: #d46b08; }
+    button.btn.publish-risk:hover { background: #ad4e00; border-color: #ad4e00; }
+    button.btn.publish-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
+    button.btn.publish-danger:hover { background: #a8071a; border-color: #a8071a; }
+    button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .auth-box { background: #fffbe6; border: 1px solid #ffe58f; padding: 12px 16px; margin-bottom: 12px; font-size: 13px; }
+    .auth-box input { width: 100%; max-width: 480px; padding: 8px; margin-top: 8px; border: 1px solid var(--border); border-radius: 6px; }
+    #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 10px 18px; border-radius: 8px; background: #111; color: #fff; display: none; z-index: 9999; font-size: 13px; }
+    .tag-ok { color: var(--success); font-weight: 600; }
+    .tag-no { color: var(--danger); }
+    .cfg-ready { color: var(--success); font-weight: 600; font-size: 13px; }
+    .cfg-not-ready { color: var(--danger); font-size: 13px; }
+    .steps-log { max-width: 100%; max-height: 200px; padding: 10px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; font-size: 12px; overflow-wrap: anywhere; white-space: pre-wrap; }
+    .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 8000; align-items: center; justify-content: center; padding: 16px; }
+    .modal-bg.show { display: flex; }
+    .modal { background: #fff; border-radius: 10px; max-width: 640px; width: 100%; padding: 18px; max-height: 90vh; overflow: auto; }
+    .progress-steps { list-style: none; margin: 0 0 12px; padding: 0; font-size: 13px; }
+    .progress-steps li { max-width: 100%; padding: 6px 8px; margin-bottom: 4px; border: 1px solid transparent; border-radius: 6px; overflow-wrap: anywhere; }
+    .progress-steps li.pending { color: var(--muted); }
+    .progress-steps li.running { background: #e6f4ff; border-color: #91caff; font-weight: 600; }
+    .progress-steps li.ok { color: var(--success); }
+    .progress-steps li.error { background: #fff1f0; border-color: #ffa39e; color: var(--danger); }
+    .progress-steps li.skipped { color: var(--muted); text-decoration: line-through; }
+    .progress-steps .step-detail { display: block; max-width: 100%; margin-top: 2px; color: var(--muted); font-size: 11px; font-weight: 400; overflow-wrap: anywhere; }
+    .progress-status { font-size: 13px; margin-bottom: 10px; }
+    .page-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+    .page-tabs button {
+      padding: 10px 18px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .page-tabs button.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    .tag-warn { color: #d46b08; font-weight: 600; }
+    .third-party-mark { display:inline-flex; align-items:center; margin-top:4px; padding:1px 6px; border:1px solid #91caff; border-radius:4px; color:#0958d9; background:#e6f4ff; font-size:12px; line-height:18px; }
+    .page-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .page-toolbar .spacer { flex: 1; min-width: 8px; }
+    .active-env-badge {
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      background: #e6f4ff;
+      border: 1px solid #91caff;
+      color: #0958d9;
+    }
+    .active-env-badge.warn {
+      background: #fffbe6;
+      border-color: #ffe58f;
+      color: #ad6800;
+    }
+    .publish-surface-state {
+      margin: 0 0 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #dbeafe;
+      background: #f8fbff;
+      color: #1d4ed8;
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .publish-surface-state.warn {
+      border-color: #ffe58f;
+      background: #fffbe6;
+      color: #ad6800;
+    }
+    .publish-surface-state.err {
+      border-color: #ffccc7;
+      background: #fff1f0;
+      color: #cf1322;
+    }
+    .publish-surface-state.ok {
+      border-color: #b7eb8f;
+      background: #f6ffed;
+      color: #237804;
+    }
+    .publish-judge-stack { display:flex; flex-direction:column; gap:6px; }
+    .publish-judge-main,
+    .publish-judge-meta { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+    .publish-judge-note { font-size:11px; color: var(--muted); line-height:1.5; }
+    .publish-judge-note strong { color: var(--text); }
+    .publish-ops-note { display:block; margin-top:4px; font-size:11px; color: var(--muted); }
+    details.intro-fold {
+      margin-bottom: 12px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0 14px;
+    }
+    details.intro-fold summary {
+      cursor: pointer;
+      padding: 12px 0;
+      font-weight: 600;
+      font-size: 14px;
+      list-style: none;
+      user-select: none;
+    }
+    details.intro-fold summary::-webkit-details-marker { display: none; }
+    details.intro-fold summary::before {
+      content: "▸ ";
+      color: var(--muted);
+      display: inline-block;
+      transition: transform 0.15s;
+    }
+    details.intro-fold[open] summary::before { transform: rotate(90deg); }
+    .intro-fold-body { padding: 0 0 14px; border-top: 1px solid var(--border); }
+    button.btn.danger { color: var(--danger); border-color: #ffa39e; }
+    button.btn.danger:hover { background: #fff1f0; }
+    .publish-opt { font-size: 13px; color: var(--text); }
+    .bmodel-choice-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 12px 0 14px;
+    }
+    .bmodel-choice {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      background: #fafafa;
+    }
+    .bmodel-choice:has(input:checked) {
+      border-color: #91caff;
+      background: #e6f4ff;
+    }
+    .bmodel-choice.is-disabled {
+      cursor: not-allowed;
+      background: #fafafa;
+      border-color: #e8e8e8;
+      opacity: 0.78;
+    }
+    .bmodel-choice.is-disabled:has(input:checked) {
+      background: #fafafa;
+      border-color: #e8e8e8;
+    }
+    .bmodel-choice input { margin-top: 3px; flex-shrink: 0; }
+    .bmodel-choice-main { flex: 1; min-width: 0; }
+    .bmodel-choice-title { font-weight: 600; font-size: 13px; }
+    .bmodel-choice-meta { font-size: 12px; color: var(--muted); margin-top: 2px; word-break: break-all; }
+    .bmodel-choice-metrics { display:flex; flex-wrap:wrap; gap:6px 12px; margin-top:6px; font-size:11px; color:var(--muted); }
+    .bmodel-choice-reason { margin-top:6px; color:var(--danger); font-size:11px; line-height:1.45; }
+    .publish-confirm-risk {
+      display: none;
+      margin: 10px 0;
+      padding: 9px 11px;
+      border: 1px solid #ffd591;
+      border-radius: 6px;
+      background: #fff7e6;
+      color: #874d00;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .publish-confirm-risk.show { display: block; }
+    .publish-confirm-risk.high { border-color:#ffccc7; background:#fff2f0; color:#a8071a; }
+    .bmodel-choice-tag {
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #f6ffed;
+      color: var(--success);
+      border: 1px solid #b7eb8f;
+      flex-shrink: 0;
+    }
+    .bmodel-choice-tag.is-blocked { color:var(--danger); background:#fff2f0; border-color:#ffccc7; }
+    .bmodel-choice-tag.is-risk { color:#ad6800; background:#fff7e6; border-color:#ffd591; }
+    .bmodel-choice-tag.is-neutral { color:#595959; background:#f5f5f5; border-color:#d9d9d9; }
+    .publish-summary { font-size: 13px; line-height: 1.55; margin: 0 0 8px; }
+    .publish-view-switcher {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(16,24,40,.04);
+    }
+    .publish-view-tabs {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid #e4e7ec;
+      border-radius: 7px;
+      background: #f5f7fa;
+    }
+    .publish-view-tab {
+      min-height: 32px;
+      padding: 5px 15px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: #667085;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+    }
+    .publish-view-tab:hover { color: #0958d9; }
+    .publish-view-tab.active { background: #fff; color: #0958d9; font-weight: 650; box-shadow: 0 1px 3px rgba(16,24,40,.12); }
+    .publish-view-tab:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+    .publish-view-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+    .publish-view-actions .btn { min-height: 32px; white-space: nowrap; }
+    .publish-metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 12px 0;
+    }
+    .publish-metric {
+      min-width: 0;
+      min-height: 92px;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .publish-metric-label { color: var(--muted); font-size: 12px; font-weight: 600; }
+    .publish-metric-value { color: #111827; font-size: 26px; line-height: 1.1; font-weight: 700; }
+    .publish-metric-hint { color: #8a94a6; font-size: 11px; }
+    .publish-metric--ready { border-top: 3px solid #52c41a; }
+    .publish-metric--blocked { border-top: 3px solid #ff4d4f; }
+    .publish-metric--review { border-top: 3px solid #faad14; }
+    .publish-surface-state { border-radius: 8px; }
+    .publish-workspace {
+      padding: 0;
+      overflow: hidden;
+      border-radius: 8px;
+    }
+    .publish-workspace .train-list-section-head {
+      padding: 14px 16px 0;
+      border-bottom: 1px solid var(--border);
+      align-items: flex-end;
+    }
+    .publish-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: #fafbfc;
+    }
+    .publish-toolbar input,
+    .publish-toolbar select {
+      height: 34px;
+      min-width: 168px;
+      padding: 0 10px;
+      border: 1px solid #d8dde6;
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      font-size: 13px;
+    }
+    .publish-toolbar input { min-width: 240px; }
+    .publish-toolbar-spacer { flex: 1; }
+    .publish-queue-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 12px 16px 0;
+      overflow-x: auto;
+      scrollbar-width: thin;
+    }
+    .publish-queue-tab {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      min-height: 32px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      color: #4b5563;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .publish-queue-tab.active { color: #0958d9; border-color: #91caff; background: #e6f4ff; font-weight: 600; }
+    .publish-queue-count { min-width: 18px; padding: 1px 5px; border-radius: 10px; background: #eef1f5; text-align: center; }
+    .publish-queue-tab.active .publish-queue-count { background: #fff; }
+    .publish-workspace .train-table-wrap { padding: 8px 16px 0; overflow-x: auto; }
+    .publish-workspace table.data-table { table-layout: fixed; min-width: 1050px; }
+    .publish-workspace table.data-table th { padding: 10px 12px; background: #f7f8fa; color: #667085; }
+    .publish-workspace table.data-table td { padding: 12px; vertical-align: top; }
+    .publish-workspace table.data-table tbody tr:hover { background: #fafcff; }
+    .publish-col-source { width: 19%; }
+    .publish-col-contract { width: 20%; }
+    .publish-col-artifact { width: 15%; }
+    .publish-col-gate { width: 23%; }
+    .publish-col-target { width: 14%; }
+    .publish-col-actions { width: 9%; }
+    .publish-record-title { color: #111827; font-size: 13px; font-weight: 650; line-height: 1.45; }
+    .publish-record-meta { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.55; }
+    .publish-record-meta + .publish-record-meta { margin-top: 1px; }
+    .publish-contract-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .publish-label-chip { max-width: 130px; padding: 2px 6px; border-radius: 4px; background: #f2f4f7; color: #475467; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .publish-label-more { color: #667085; font-size: 11px; align-self: center; }
+    .publish-artifact-main { color: #111827; font-size: 14px; font-weight: 650; }
+    .publish-target-status { display: inline-flex; margin-top: 5px; padding: 2px 6px; border-radius: 4px; font-size: 11px; }
+    .publish-target-status.ok { color: #237804; background: #f6ffed; }
+    .publish-target-status.warn { color: #ad6800; background: #fff7e6; }
+    .publish-action-stack { display: flex; flex-direction: column; gap: 6px; align-items: stretch; }
+    .publish-action-stack .btn { width: 100%; white-space: nowrap; }
+    .publish-gate-card { display: flex; gap: 9px; align-items: flex-start; }
+    .publish-gate-indicator { width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; flex: 0 0 auto; background: #98a2b3; }
+    .publish-gate-card.ready .publish-gate-indicator { background: #52c41a; }
+    .publish-gate-card.blocked .publish-gate-indicator { background: #ff4d4f; }
+    .publish-gate-card.review .publish-gate-indicator { background: #faad14; }
+    .publish-gate-card.legacy .publish-gate-indicator { background: #8c8c8c; }
+    .publish-gate-title { color: #111827; font-size: 13px; font-weight: 650; }
+    .publish-gate-reason { margin-top: 3px; color: #667085; font-size: 11px; line-height: 1.5; }
+    .publish-gate-next { margin-top: 5px; color: #344054; font-size: 11px; font-weight: 600; }
+    .publish-gate-route { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; margin-top: 8px; padding-top: 7px; border-top: 1px dashed #e4e7ec; }
+    .publish-gate-route-label { color: #475467; font-size: 10px; font-weight: 700; white-space: nowrap; }
+    .publish-gate-route-text { flex: 1 1 180px; color: #667085; font-size: 10px; line-height: 1.55; }
+    .publish-gate-route-button { width: auto !important; min-height: 26px; padding: 3px 8px; font-size: 11px; }
+    .publish-empty { padding: 42px 16px; text-align: center; color: var(--muted); }
+    .publish-id-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+      margin: 12px 0 16px;
+    }
+    .publish-id-item { padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: #fafbfc; }
+    .publish-id-label { display: block; color: var(--muted); font-size: 11px; }
+    .publish-id-value { display: block; margin-top: 3px; color: #111827; font-size: 14px; font-weight: 650; word-break: break-word; }
+    .publish-failure-box { display: none; margin: 0 0 14px; padding: 11px 12px; border: 1px solid #ffccc7; border-radius: 6px; background: #fff1f0; color: #a8071a; font-size: 12px; line-height: 1.55; }
+    .publish-failure-box.show { display: block; }
+    .publish-section-title { margin: 14px 0 8px; color: #344054; font-size: 12px; font-weight: 650; }
+    .publish-technical-details { margin: 8px 0 14px; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+    .publish-technical-details summary { padding: 10px 0; cursor: pointer; color: #475467; font-size: 12px; font-weight: 600; }
+    .publish-technical-details .detail-body { padding: 0 0 12px; color: var(--muted); font-size: 11px; line-height: 1.65; }
+    .publish-confirm-context { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 12px 0 16px; }
+    .publish-confirm-context > div { padding: 9px 10px; border-radius: 6px; background: #f7f8fa; }
+    .publish-confirm-context span { display: block; color: var(--muted); font-size: 11px; }
+    .publish-confirm-context strong { display: block; margin-top: 2px; color: #111827; font-size: 12px; word-break: break-word; }
+    .publish-detail-modal-bg { padding: 24px; background: rgba(16,24,40,.42); }
+    .publish-detail-modal {
+      display: flex;
+      width: min(880px, calc(100vw - 48px));
+      max-width: none;
+      max-height: min(88vh, 760px);
+      margin: 0;
+      padding: 0;
+      flex-direction: column;
+      overflow: hidden;
+      border-radius: 8px;
+      box-shadow: 0 18px 48px rgba(16,24,40,.24);
+    }
+    .publish-detail-modal-head { display: flex; flex: 0 0 auto; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 16px 20px 14px; border-bottom: 1px solid var(--border); background: #fff; }
+    .publish-detail-modal-head h4 { margin: 0; font-size: 16px; }
+    .publish-detail-modal-body { min-height: 0; padding: 4px 20px 20px; overflow-y: auto; }
+    .publish-close-button { width: 32px; height: 32px; padding: 0; font-size: 20px; line-height: 1; }
+    .publish-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .publish-detail-item { min-width: 0; padding: 10px 0; border-bottom: 1px solid #eef0f3; }
+    .publish-detail-item dt { color: var(--muted); font-size: 11px; }
+    .publish-detail-item dd { margin: 4px 0 0; color: #111827; font-size: 12px; line-height: 1.5; word-break: break-word; }
+    .publish-workspace .pager { padding: 8px 16px 14px; }
+    @media (max-width: 980px) {
+      .publish-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .publish-workspace table.data-table { min-width: 920px; }
+    }
+    @media (max-width: 720px) {
+      body.labelu-embedded[data-lu-page="yolo-model-publish"] .page-main.lu-hub-page { padding: 8px; }
+      .publish-view-switcher { align-items: stretch; flex-direction: column; }
+      .publish-view-tabs { display: flex; width: 100%; }
+      .publish-view-tab { flex: 1; }
+      .publish-view-actions { width: 100%; margin-left: 0; flex-wrap: wrap; justify-content: flex-start; }
+      #activeEnvBadgeInline { flex: 1; }
+      .publish-metric-grid { gap: 8px; }
+      .publish-metric { min-height: 82px; padding: 11px 12px; }
+      .publish-metric-value { font-size: 22px; }
+      .publish-toolbar { align-items: stretch; flex-direction: column; }
+      .publish-toolbar input,
+      .publish-toolbar select { width: 100%; min-width: 0; }
+      .publish-toolbar-spacer { display: none; }
+      .publish-workspace .train-table-wrap { padding: 8px; overflow: visible; }
+      .publish-workspace table.data-table { display: block; min-width: 0; }
+      .publish-workspace table.data-table thead { display: none; }
+      .publish-workspace table.data-table tbody { display: grid; gap: 8px; }
+      .publish-workspace table.data-table tr { display: grid; grid-template-columns: 1fr; border: 1px solid var(--border); border-radius: 8px; background: #fff; overflow: hidden; }
+      .publish-workspace table.data-table td { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; padding: 9px 11px; border-bottom: 1px solid #eef0f3; }
+      .publish-workspace table.data-table td:last-child { border-bottom: 0; }
+      .publish-workspace table.data-table td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 600; }
+      .publish-action-stack { flex-direction: row; }
+      .publish-action-stack .btn { width: auto; flex: 1; }
+      .publish-id-grid,
+      .publish-confirm-context,
+      .publish-detail-grid { grid-template-columns: 1fr; }
+      .publish-detail-modal-bg { padding: 8px; }
+      .publish-detail-modal { width: calc(100vw - 16px); max-height: calc(100vh - 16px); }
+    }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="yolo-model-publish">
+  <div class="labelu-shell-header" role="banner">
+    <div class="labelu-shell-brand">
+      <a class="labelu-shell-logo" href="/">7GAI进化平台</a>
+      <span class="labelu-shell-page-title">模型发布</span>
+    </div>
+    <nav class="labelu-shell-nav" aria-label="7GAI进化平台工具导航"></nav>
+  </div>
+  <main class="page-main lu-hub-page" data-lu-toolkit-main>
+    <div class="auth-box" id="authBox">
+      未检测到登录态。请先<a href="/login?redirect=%2Fyolo-model-publish">登录主站</a>，或粘贴 JWT（与主站共用 <code>localStorage.token</code>）
+      <input type="password" id="tokenInput" placeholder="Bearer eyJ…" autocomplete="off" />
+      <button type="button" class="btn primary" id="btnSaveToken" style="margin-top:8px;">保存令牌</button>
+    </div>
+
+    <section class="publish-view-switcher" aria-label="发布视图与操作">
+      <div class="publish-view-tabs" role="tablist" aria-label="发布数据视图">
+        <button type="button" class="publish-view-tab active" data-tab="publishable" id="tabPublishable" role="tab" aria-selected="true" aria-controls="panelPublishable">候选发布</button>
+        <button type="button" class="publish-view-tab" data-tab="history" id="tabHistory" role="tab" aria-selected="false" aria-controls="panelHistory">发布记录</button>
+      </div>
+      <div class="publish-view-actions">
+        <span id="activeEnvBadgeInline" class="info">发布环境：加载中</span>
+        <a href="/aicm-publish-environments" class="btn" id="btnEnvConfig">环境配置</a>
+        <button type="button" class="btn" id="btnRefreshList" aria-label="刷新当前视图">↻ 刷新</button>
+      </div>
+    </section>
+
+    <div class="publish-metric-grid" id="publishStatsGrid" aria-live="polite">
+      <article class="publish-metric">
+        <span class="publish-metric-label" id="publishStatLabel1">候选总数</span>
+        <span class="publish-metric-value" id="statPublishTotal">—</span>
+        <span class="publish-metric-hint" id="publishStatHint1">符合当前分类</span>
+      </article>
+      <article class="publish-metric publish-metric--ready">
+        <span class="publish-metric-label" id="publishStatLabel2">直接发布</span>
+        <span class="publish-metric-value" id="statPublishPassed">—</span>
+        <span class="publish-metric-hint" id="publishStatHint2">当前页</span>
+      </article>
+      <article class="publish-metric publish-metric--blocked">
+        <span class="publish-metric-label" id="publishStatLabel3">不可人工发布</span>
+        <span class="publish-metric-value" id="statPublishFailed">—</span>
+        <span class="publish-metric-hint" id="publishStatHint3">当前页</span>
+      </article>
+      <article class="publish-metric publish-metric--review">
+        <span class="publish-metric-label" id="publishStatLabel4">风险发布</span>
+        <span class="publish-metric-value" id="statPublishPage">—</span>
+        <span class="publish-metric-hint" id="publishStatHint4">当前页</span>
+      </article>
+    </div>
+    <div id="publishSurfaceState" class="publish-surface-state">正在初始化发布环境与候选记录…</div>
+
+    <div class="card lu-train-list-card publish-workspace">
+      <div class="train-list-section-head">
+        <div class="train-list-section-title-wrap">
+          <h3 class="train-list-section-title" id="publishListSectionTitle">候选发布队列</h3>
+        </div>
+      </div>
+
+      <div id="panelPublishable" class="tab-panel hub-list-panel active" role="tabpanel" aria-labelledby="tabPublishable" aria-hidden="false">
+        <div class="publish-toolbar" id="publishFiltersPublishable" role="search" aria-label="筛选候选模型">
+          <select id="filterPublishableDatasetCategory" class="filter-input-preset" aria-label="数据集分类">
+            <option value="">全部分类</option>
+          </select>
+          <input type="search" id="filterPublishableKeyword" placeholder="搜索任务、作业或标签" aria-label="搜索候选模型" />
+          <span class="publish-toolbar-spacer"></span>
+          <button type="button" class="btn" id="btnRefreshPublishable">刷新列表</button>
+        </div>
+        <div class="publish-queue-tabs" id="publishQueueTabs" role="tablist" aria-label="发布门禁分组">
+          <button type="button" class="publish-queue-tab active" data-queue="all">全部 <span class="publish-queue-count" data-queue-count="all">0</span></button>
+          <button type="button" class="publish-queue-tab" data-queue="ready">可发布 <span class="publish-queue-count" data-queue-count="ready">0</span></button>
+          <button type="button" class="publish-queue-tab" data-queue="config">配置阻断 <span class="publish-queue-count" data-queue-count="config">0</span></button>
+          <button type="button" class="publish-queue-tab" data-queue="quality">质量风险 <span class="publish-queue-count" data-queue-count="quality">0</span></button>
+          <button type="button" class="publish-queue-tab" data-queue="legacy">历史不兼容 <span class="publish-queue-count" data-queue-count="legacy">0</span></button>
+        </div>
+        <div class="train-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="publish-col-source">模型来源</th>
+                <th class="publish-col-contract">数据与标签契约</th>
+                <th class="publish-col-artifact">产物与精度</th>
+                <th class="publish-col-gate">发布建议</th>
+                <th class="publish-col-target">目标环境与发布包</th>
+                <th class="publish-col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody id="publishTbody">
+              <tr><td colspan="6" class="muted">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager" id="pagerPublishable"></div>
+      </div>
+
+      <div id="panelHistory" class="tab-panel hub-list-panel" role="tabpanel" aria-labelledby="tabHistory" aria-hidden="true">
+        <div class="publish-toolbar" id="publishFiltersHistory">
+          <select id="filterPublishHistoryDatasetCategory" class="filter-input-preset" aria-label="数据集分类">
+            <option value="">全部分类</option>
+          </select>
+          <input type="search" id="filterPublishHistoryKeyword" placeholder="搜索任务、发布任务或标签" aria-label="搜索发布记录" />
+          <span class="publish-toolbar-spacer"></span>
+          <button type="button" class="btn" id="btnRefreshHistory">刷新记录</button>
+        </div>
+        <div class="train-table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th class="publish-col-source">发布结果</th>
+                <th class="publish-col-source">模型来源</th>
+                <th class="publish-col-contract">数据与发布包</th>
+                <th class="publish-col-artifact">发布标识</th>
+                <th class="publish-col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody id="historyTbody">
+              <tr><td colspan="5" class="muted">加载中…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager" id="pagerHistory"></div>
+      </div>
+    </div>
+    <div id="luPageHero" style="display:none;"></div>
+  </main>
+
+  <div class="modal-bg" id="publishConfirmModal">
+    <div class="modal" style="max-width:560px;">
+      <h4 id="publishConfirmTitle">发布到 AICM</h4>
+      <div class="publish-confirm-context" id="publishConfirmSummary"></div>
+      <div class="publish-confirm-risk" id="publishConfirmRisk" role="status"></div>
+      <p class="publish-section-title">选择发布精度</p>
+      <div class="bmodel-choice-list" id="publishBmodelChoices"></div>
+      <details class="publish-technical-details">
+        <summary>查看发布包处理规则</summary>
+        <div class="detail-body">人工发布允许选择任一已生成的 BModel 精度。质量评估只展示风险，不阻断人工操作；发布包保留实际精度文件名，并同步更新 <code>video.json</code> 的模型路径。</div>
+      </details>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+        <button type="button" class="btn" id="btnPublishConfirmCancel">取消</button>
+        <button type="button" class="btn primary" id="btnPublishConfirmOk">确认发布</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="progressModal">
+    <div class="modal">
+      <h4 id="progressTitle">AICM 发布进度</h4>
+      <p class="progress-status" id="progressStatus">正在启动…</p>
+      <ul class="progress-steps" id="progressSteps"></ul>
+      <details class="publish-technical-details">
+        <summary>执行日志</summary>
+        <div class="steps-log" id="progressLog"></div>
+      </details>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" class="btn" id="btnCloseProgress" disabled>关闭</button>
+      </div>
+    </div>
+  </div>
+
+
+  <div class="modal-bg publish-detail-modal-bg" id="candidateDetailModal">
+    <section class="modal publish-detail-modal" role="dialog" aria-modal="true" aria-labelledby="candidateDetailTitle">
+      <div class="publish-detail-modal-head">
+        <div><h4 id="candidateDetailTitle">候选模型详情</h4><p class="publish-summary muted" id="candidateDetailSummary"></p></div>
+        <button type="button" class="btn publish-close-button" id="btnCloseCandidateDetail" aria-label="关闭">×</button>
+      </div>
+      <div class="publish-detail-modal-body" id="candidateDetailBody"></div>
+    </section>
+  </div>
+
+  <div class="modal-bg publish-detail-modal-bg" id="historyDetailModal">
+    <section class="modal publish-detail-modal" role="dialog" aria-modal="true" aria-labelledby="historyDetailTitle">
+      <div class="publish-detail-modal-head">
+        <div><h4 id="historyDetailTitle">发布详情</h4><p class="progress-status" id="historyDetailSummary"></p></div>
+        <button type="button" class="btn publish-close-button" id="btnCloseHistoryDetail" aria-label="关闭">×</button>
+      </div>
+      <div class="publish-detail-modal-body">
+        <div class="publish-id-grid" id="historyDetailIds"></div>
+        <div class="publish-failure-box" id="historyDetailFailure"></div>
+        <p class="publish-section-title">运行步骤</p>
+        <ul class="progress-steps" id="historyDetailSteps"></ul>
+        <details class="publish-technical-details">
+          <summary>原始执行日志</summary>
+          <div class="steps-log" id="historyDetailLog" style="max-height:360px;"></div>
+        </details>
+      </div>
+    </section>
+  </div>
+
+  <div id="toast"></div>
+
+  <script>
+(function () {
+  "use strict";
+  var API = "/api/v1";
+  var page = 0;
+  var size = 10;
+  var publishablePager = null;
+  var envBundle = { active_environment_id: "", environments: [] };
+  var activeTab = "publishable";
+  var historyPage = 0;
+  var historySize = 10;
+  var historyTotal = 0;
+  var historyPager = null;
+  var publishableRows = [];
+  var activeQueue = "all";
+  var datasetCategoriesCache = [];
+  var DATASET_CATEGORIES_CACHE_KEY = "labelu:dataset-categories";
+  var YOLO_PAGE_DATA_CACHE_TTL_MS = 5 * 60 * 1000;
+  var publishUiState = { env: "idle", envError: "", list: "idle", listError: "", lastRows: 0, lastTotal: 0 };
+  var envRequestSeq = 0;
+  var listRequestSeq = 0;
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function qaStatusClass(status) {
+    var st = String(status || "").trim();
+    if (st === "\u8fbe\u6807" || st === "\u7a33\u5b9a" || st === "\u53ef\u7528" || st === "\u53ef\u53d1\u5e03") return "qa-chip qa-chip--ok";
+    if (st === "\u6761\u4ef6\u8fbe\u6807" || st === "\u6709\u98ce\u9669" || st === "\u53ef\u8fd0\u884c\u4f46\u6548\u679c\u5f85\u786e\u8ba4" || st === "\u9700\u590d\u6838") return "qa-chip qa-chip--warn";
+    if (st === "\u4e0d\u8fbe\u6807" || st === "\u4e0d\u53ef\u7528" || st === "\u4e0d\u53ef\u53d1\u5e03") return "qa-chip qa-chip--bad";
+    return "qa-chip qa-chip--na";
+  }
+
+  function qaToneClass(status) {
+    var st = String(status || "").trim();
+    if (st === "\u8fbe\u6807" || st === "\u7a33\u5b9a" || st === "\u53ef\u7528" || st === "\u53ef\u53d1\u5e03") return "qa-summary--ok";
+    if (st === "\u4e0d\u8fbe\u6807" || st === "\u4e0d\u53ef\u7528" || st === "\u4e0d\u53ef\u53d1\u5e03") return "qa-summary--bad";
+    return "qa-summary--warn";
+  }
+
+  function formatQualityAssessmentCell(qa, options) {
+    options = options || {};
+    if (!qa) return "";
+    var lines = [];
+    [
+      ["release_readiness", "\u53d1\u5e03"],
+      ["edge_usability", "\u8fb9\u7aef"],
+      ["generalization_quality", "\u6cdb\u5316"],
+      ["training_quality", "\u8bad\u7ec3"]
+    ].forEach(function (pair) {
+      var item = qa[pair[0]];
+      if (!item || !item.status) return;
+      var reason = Array.isArray(item.reasons) && item.reasons.length ? item.reasons[0] : "";
+      lines.push(
+        "<div class=\"qa-line\">" +
+        "<span class=\"" + qaStatusClass(item.status) + "\">" + esc(pair[1]) + " " + esc(String(item.status)) + "</span>" +
+        (!options.compact && reason ? "<span class=\"muted\">" + esc(String(reason)) + "</span>" : "") +
+        "</div>"
+      );
+    });
+    if (!lines.length) return "";
+    return "<div class=\"qa-stack\" style=\"margin-top:6px;\">" + lines.join("") + "</div>";
+  }
+
+  function getToken() {
+    if (window.LabeluPortal && LabeluPortal.getAuthToken) return LabeluPortal.getAuthToken();
+    var raw = (localStorage.getItem("token") || "").trim();
+    if (!raw) return "";
+    if (/^bearer\s+/i.test(raw)) return raw;
+    if (raw.indexOf("eyJ") === 0) return "Bearer " + raw;
+    return raw;
+  }
+  function setToken(t) {
+    if (window.LabeluPortal && LabeluPortal.setAuthToken) {
+      LabeluPortal.setAuthToken(t || "");
+      return;
+    }
+    if (t) {
+      var raw = String(t).trim();
+      if (raw && !/^bearer\s+/i.test(raw) && raw.indexOf("eyJ") === 0) raw = "Bearer " + raw;
+      localStorage.setItem("token", raw);
+    } else {
+      localStorage.removeItem("token");
+    }
+  }
+  function toast(msg, kind) {
+    var el = document.getElementById("toast");
+    el.textContent = msg;
+    el.style.display = "block";
+    el.style.background = kind === "err" ? "#b91c1c" : "#111";
+    clearTimeout(el._t);
+    el._t = setTimeout(function () { el.style.display = "none"; }, 3200);
+  }
+  function setButtonBusy(btn, loading, busyText) {
+    if (!btn) return;
+    if (loading) {
+      if (!btn.dataset.labelBase) btn.dataset.labelBase = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = busyText || btn.textContent;
+      btn.classList.add("is-loading");
+      return;
+    }
+    btn.disabled = false;
+    if (btn.dataset.labelBase) btn.textContent = btn.dataset.labelBase;
+    btn.classList.remove("is-loading");
+  }
+  function errMsg(res) {
+    if (!res) return "请求失败";
+    if (res.json) {
+      var d = res.json.detail;
+      if (typeof d === "string") return d;
+      if (res.json.msg) return res.json.msg;
+      if (d) return JSON.stringify(d);
+    }
+    return res.text || ("HTTP " + res.status);
+  }
+  function readSessionJsonCache(key) {
+    try {
+      var raw = sessionStorage.getItem(key);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      if (!parsed || parsed.ts == null || Date.now() - parsed.ts > YOLO_PAGE_DATA_CACHE_TTL_MS) return null;
+      return parsed.data;
+    } catch (e) {
+      return null;
+    }
+  }
+  function writeSessionJsonCache(key, data) {
+    try {
+      sessionStorage.setItem(key, JSON.stringify({ ts: Date.now(), data: data }));
+    } catch (e) {}
+  }
+  function fillDatasetCategorySelectOptions(sel, emptyLabel) {
+    if (!sel) return;
+    sel.innerHTML = "";
+    var opt0 = document.createElement("option");
+    opt0.value = "";
+    opt0.textContent = emptyLabel || "全部分类";
+    sel.appendChild(opt0);
+    datasetCategoriesCache.forEach(function (category) {
+      var opt = document.createElement("option");
+      opt.value = String(category.id);
+      opt.textContent = category.name + "（" + category.category_key + "）";
+      sel.appendChild(opt);
+    });
+  }
+  async function loadDatasetCategories(forceRefresh) {
+    var publishableSel = document.getElementById("filterPublishableDatasetCategory");
+    var historySel = document.getElementById("filterPublishHistoryDatasetCategory");
+    if (!publishableSel && !historySel) return;
+    datasetCategoriesCache = [];
+    if (!getToken()) return;
+    if (!forceRefresh) {
+      var cached = readSessionJsonCache(DATASET_CATEGORIES_CACHE_KEY);
+      if (cached && cached.length) {
+        datasetCategoriesCache = cached;
+        fillDatasetCategorySelectOptions(publishableSel, "全部分类");
+        fillDatasetCategorySelectOptions(historySel, "全部分类");
+        return;
+      }
+    }
+    var res = await api("/annotation-taxonomy/dataset-categories?include_disabled=false", { method: "GET" });
+    if (!res.ok) return;
+    datasetCategoriesCache = (res.json && res.json.data) || [];
+    datasetCategoriesCache = datasetCategoriesCache.filter(function (category) {
+      return category && category.status === "active";
+    });
+    datasetCategoriesCache.sort(function (a, b) {
+      return (a.sort_order || 0) - (b.sort_order || 0) || a.id - b.id;
+    });
+    fillDatasetCategorySelectOptions(publishableSel, "全部分类");
+    fillDatasetCategorySelectOptions(historySel, "全部分类");
+    writeSessionJsonCache(DATASET_CATEGORIES_CACHE_KEY, datasetCategoriesCache);
+  }
+  async function api(path, opts) {
+    opts = opts || {};
+    var token = getToken();
+    var headers = Object.assign({}, opts.headers || {}, {
+      "Content-Type": "application/json",
+      Authorization: token
+    });
+    var r = await fetch(API + path, Object.assign({}, opts, {
+      method: opts.method || "GET",
+      headers: headers,
+      body: opts.body,
+      cache: "no-store",
+      credentials: "same-origin"
+    }));
+    var text = await r.text();
+    var json = null;
+    try { json = text ? JSON.parse(text) : null; } catch (e) {}
+    if (!r.ok && window.LabeluPortal && LabeluPortal.handleUnauthorized) {
+      if (LabeluPortal.handleUnauthorized(r.status)) {
+        return { ok: false, status: r.status, json: json, text: text };
+      }
+    }
+    return { ok: r.ok, status: r.status, json: json, text: text };
+  }
+  function requireToken(msg) {
+    if (getToken()) return true;
+    if (window.LabeluPortal && LabeluPortal.requireAuthToken) {
+      return LabeluPortal.requireAuthToken(msg || "请先登录后再操作");
+    }
+    toast(msg || "请先登录", "err");
+    window.location.href = "/login?redirect=" + encodeURIComponent(location.pathname + location.search);
+    return false;
+  }
+  function checkAuth() {
+    if (window.LabeluPortal && LabeluPortal.syncAuthBox) return LabeluPortal.syncAuthBox();
+    var box = document.getElementById("authBox");
+    if (box) box.style.display = getToken() ? "none" : "block";
+    return !!getToken();
+  }
+  function showListAuthHint() {
+    var tbody = document.getElementById("publishTbody");
+    if (tbody) {
+      tbody.innerHTML = "<tr><td colspan=\"6\" class=\"muted\">未登录，请先<a href=\"/login?redirect=%2Fyolo-model-publish\">登录主站</a>后刷新。</td></tr>";
+    }
+    publishUiState.list = "unauth";
+    publishUiState.listError = "";
+    renderPublishSurfaceState();
+  }
+
+  function missingFieldsLabel(fields) {
+    var map = { base_url: "后台 URL", username: "用户名", password: "密码" };
+    return (fields || []).map(function (k) { return map[k] || k; }).join("、");
+  }
+
+  function getActiveEnvironment() {
+    var aid = envBundle.active_environment_id || "";
+    var list = envBundle.environments || [];
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].id === aid) return list[i];
+    }
+    for (var j = 0; j < list.length; j++) {
+      if (list[j].is_active) return list[j];
+    }
+    return list.length ? list[0] : null;
+  }
+
+  function setPublishUiState(patch) {
+    publishUiState = Object.assign({}, publishUiState, patch || {});
+    renderActiveEnvBadge();
+    renderPublishSurfaceState();
+  }
+
+  function syncEnvironmentBundle(bundle) {
+    envBundle = bundle || { active_environment_id: "", environments: [] };
+    var active = getActiveEnvironment();
+    setPublishUiState({
+      env: envBundle.environments.length
+        ? (active && active.ready_to_publish ? "ready" : "not_ready")
+        : "missing",
+      envError: ""
+    });
+  }
+
+  function compactText(text, maxLen) {
+    var raw = String(text || "").trim().replace(/\s+/g, " ");
+    if (!raw) return "";
+    if (!maxLen || raw.length <= maxLen) return raw;
+    return raw.slice(0, maxLen - 1) + "…";
+  }
+
+  function edgeMetaChipClass(statusCls) {
+    if (statusCls === "tag-ok") return "qa-chip qa-chip--ok";
+    if (statusCls === "tag-no") return "qa-chip qa-chip--bad";
+    if (statusCls === "tag-warn") return "qa-chip qa-chip--warn";
+    return "qa-chip qa-chip--na";
+  }
+
+  function strategyTaskMarkerHtml(marker) {
+    if (!marker || !marker.task_type_label) return "";
+    var externalTaskId = marker.external_task_id ? " | " + marker.external_task_id : "";
+    var title = (marker.source_label || "\u7b2c\u4e09\u65b9\u63a5\u53e3") + externalTaskId;
+    return '<span class="third-party-mark" title="' + esc(title) + '">\u7b2c\u4e09\u65b9 | ' + esc(marker.task_type_label) + '</span>';
+  }
+
+  function releaseGateAssessmentOf(row) {
+    var gate = row && row.release_gate_assessment;
+    if (gate && gate.status_label) return gate;
+    var qa = row && row.quality_assessment && row.quality_assessment.release_readiness;
+    if (qa && qa.status) {
+      var reason = Array.isArray(qa.reasons) && qa.reasons.length ? qa.reasons[0] : "";
+      return {
+        status_label: String(qa.status),
+        reason_summary: reason || String(qa.summary || ""),
+        summary: String(qa.summary || ""),
+      };
+    }
+    return null;
+  }
+
+  function pickPublishReason(row, edgeMeta) {
+    var gate = releaseGateAssessmentOf(row);
+    if (gate && gate.reason_summary) return gate.reason_summary;
+    if (row && row.publish_blocked_reason) return row.publish_blocked_reason;
+    var manifestReasonLabels = {
+      manifest_signature_secret_missing: "缺少模型清单签名密钥，禁止发布",
+      manifest_signature_missing: "模型清单未签名，禁止发布",
+      manifest_signature_invalid: "模型清单签名无效，禁止发布",
+      manifest_key_id_mismatch: "模型清单签名密钥版本不匹配，禁止发布",
+      manifest_export_id_mismatch: "模型清单与导出编号不匹配，禁止发布",
+      manifest_execution_signature_mismatch: "模型清单与执行摘要不匹配，禁止发布",
+      artifact_0_missing: "模型清单中的文件不存在，禁止发布",
+      artifact_0_sha256_mismatch: "模型清单中的文件校验值不一致，禁止发布",
+      artifact_0_size_mismatch: "模型清单中的文件大小不一致，禁止发布",
+      bmodel_precision_missing: "FP32、FP16、INT8 边端制品不完整，禁止发布"
+    };
+    var manifestCodes = row && row.publish_gate_reason_codes || [];
+    for (var manifestIndex = 0; manifestIndex < manifestCodes.length; manifestIndex++) {
+      var manifestCode = String(manifestCodes[manifestIndex] || "");
+      if (manifestReasonLabels[manifestCode]) return manifestReasonLabels[manifestCode];
+      if (manifestCode.indexOf("artifact_") === 0) return "模型清单中的文件完整性校验未通过，禁止发布";
+      if (manifestCode.indexOf("bmodel_precision_missing:") === 0) return manifestReasonLabels.bmodel_precision_missing;
+    }
+    if (edgeMeta && edgeMeta.detailText &&
+        edgeMeta.detailText !== "已满足发布前边端验证要求" &&
+        edgeMeta.detailText !== "尚无边端验证记录") {
+      return edgeMeta.detailText;
+    }
+    var qa = row && row.quality_assessment || {};
+    var keys = ["release_readiness", "edge_usability", "generalization_quality", "training_quality"];
+    for (var i = 0; i < keys.length; i++) {
+      var item = qa[keys[i]];
+      if (item && Array.isArray(item.reasons) && item.reasons.length) return item.reasons[0];
+    }
+    if (row && row.quality_summary) return row.quality_summary;
+    var vp = row && row.validation_pass || {};
+    if (vp.detail) return vp.detail;
+    if (vp.status) {
+      return vp.status === "达标"
+        ? "发布前结论已达标，可继续选择发布精度。"
+        : "当前发布前结论：" + vp.status;
+    }
+    return "";
+  }
+
+  function publishGatePresentation(row) {
+    var codes = row && row.publish_gate_reason_codes || [];
+    var gate = releaseGateAssessmentOf(row);
+    var status = String(gate && gate.status_label || "").trim();
+    var reason = compactText(pickPublishReason(row, edgeValidationMeta(row)), 88);
+    var manifestCodes = [
+      "manifest_signature_secret_missing", "manifest_signature_missing", "manifest_signature_invalid",
+      "manifest_key_id_mismatch", "manifest_export_id_mismatch", "manifest_execution_signature_mismatch"
+    ];
+    var hasManifestBlock = codes.some(function (code) {
+      return manifestCodes.indexOf(String(code || "")) >= 0 ||
+        String(code || "").indexOf("artifact_") === 0 ||
+        String(code || "").indexOf("bmodel_precision_missing:") === 0;
+    });
+    var missingContract = !((row && row.class_names) || []).length || !(row && row.class_order_signature);
+    var legacy = !!(row && row.legacy_preset_fallback) || missingContract;
+    if (legacy) {
+      return {
+        group: "legacy",
+        tone: "legacy",
+        title: "历史作业不兼容",
+        reason: reason || "缺少冻结的标签契约，无法确定发布标签顺序",
+        next: "下一步：使用新版任务重新训练与导出"
+      };
+    }
+    if (hasManifestBlock) {
+      return {
+        group: "manifest",
+        tone: "blocked",
+        title: "制品清单未通过",
+        reason: reason || "模型文件、签名或三精度制品不完整，禁止发布",
+        next: "下一步：重新生成并校验模型制品清单"
+      };
+    }
+    if (row && row.publish_blocked_reason || status === "不可发布") {
+      return {
+        group: "quality",
+        tone: "blocked",
+        title: "高风险，可人工发布",
+        reason: reason || "当前质量条件未满足自动发布要求",
+        next: "下一步：核对风险后人工确认发布"
+      };
+    }
+    if (status === "可发布") {
+      return {
+        group: "ready",
+        tone: "ready",
+        title: "可发布",
+        reason: reason || "训练、边端验证和发布门禁均已通过",
+        next: "下一步：确认目标环境与发布精度"
+      };
+    }
+    return {
+      group: "quality",
+      tone: "review",
+      title: "需复核，可人工发布",
+      reason: reason || "发布结论尚未完成确认",
+      next: "下一步：核对风险后人工确认发布"
+    };
+  }
+
+  function publishGateRoute(row) {
+    var gate = releaseGateAssessmentOf(row) || {};
+    var codes = [];
+    (row && row.publish_gate_reason_codes || []).concat(gate.reason_codes || []).forEach(function (code) {
+      code = String(code || "").trim();
+      if (code && codes.indexOf(code) < 0) codes.push(code);
+    });
+    var edgeCodes = [
+      "edge_validation_missing", "edge_validation_incomplete", "edge_validation_failed",
+      "edge_unusable", "edge_pending", "edge_execution_failed", "edge_eval_failed",
+      "run_only_only", "labeled_eval_missing", "pt_bmodel_comparison_missing",
+      "pt_bmodel_comparison_review", "pt_bmodel_drop_exceeds_policy"
+    ];
+    var trainingCodes = [
+      "generalization_missing_review", "generalization_risky_review", "training_conditional",
+      "training_validation_failed", "training_failed", "training_pending"
+    ];
+    var manifestCodes = [
+      "manifest_signature_secret_missing", "manifest_signature_missing", "manifest_signature_invalid",
+      "manifest_key_id_mismatch", "manifest_export_id_mismatch", "manifest_execution_signature_mismatch"
+    ];
+    if (codes.some(function (code) {
+      return manifestCodes.indexOf(String(code || "")) >= 0 ||
+        String(code || "").indexOf("artifact_") === 0 ||
+        String(code || "").indexOf("bmodel_precision_missing:") === 0;
+    })) {
+      return {
+        kind: "manifest",
+        text: "模型编译 → 重新生成制品清单 → 校验签名、文件和 FP32/FP16/INT8 三种 BModel → 返回发布页刷新",
+        action: "查看制品清单"
+      };
+    }
+    if (codes.some(function (code) { return edgeCodes.indexOf(code) >= 0; })) {
+      return {
+        kind: "edge",
+        text: "模型编译 → 打开导出 #" + (row && row.export_id || "—") + " → 手动边端验证 → 运行验证 + 精度评估 → 返回发布页刷新",
+        action: "打开边端验证"
+      };
+    }
+    if (codes.some(function (code) { return trainingCodes.indexOf(code) >= 0; })) {
+      return {
+        kind: "training",
+        text: "训练中心 → 打开训练 #" + (row && row.yolo_train_job_id || "—") + " → 指标验证 → 执行 best.pt 独立复验 → 返回发布页刷新",
+        action: "打开训练复验"
+      };
+    }
+    if (publishGatePresentation(row).group === "legacy") {
+      return {
+        kind: "legacy",
+        text: "训练中心 → 新建新版任务 → 重新训练并导出 → 回到模型发布页",
+        action: "查看兼容性说明"
+      };
+    }
+    return {
+      kind: "detail",
+      text: "发布页 → 查看训练与边端证据 → 对比 PT 与 BModel 各类别指标 → 确认是否允许发布",
+      action: "查看详情"
+    };
+  }
+
+  function buildPublishGateRouteHtml(row, includeAction) {
+    var route = publishGateRoute(row);
+    if (publishGatePresentation(row).group === "ready") return "";
+    var actionHtml = includeAction && (route.kind === "edge" || route.kind === "training")
+      ? '<button type="button" class="btn btn-ghost publish-gate-route-button" data-gate-route-action>' + esc(route.action) + "</button>"
+      : "";
+    return '<div class="publish-gate-route"><span class="publish-gate-route-label">人工复核路线</span><span class="publish-gate-route-text">' +
+      esc(route.text) + "</span>" + actionHtml + "</div>";
+  }
+
+  function openTrainingReview(row) {
+    if (!row || !row.yolo_train_job_id) {
+      toast("缺少训练作业信息，无法进入训练复验", "err");
+      return;
+    }
+    var params = new URLSearchParams();
+    params.set("panel", "list");
+    params.set("taskId", String(row.task_id || ""));
+    params.set("jobId", String(row.yolo_train_job_id));
+    params.set("review", "1");
+    var url = "/training?" + params.toString();
+    if (window.LabeluPortal && LabeluPortal.navigateTrainingHubTo) {
+      LabeluPortal.navigateTrainingHubTo(url);
+      return;
+    }
+    if (window.LabeluPortal && LabeluPortal.navigateAppTo) {
+      LabeluPortal.navigateAppTo(url);
+      return;
+    }
+    window.location.href = url;
+  }
+
+  function openPublishGateRoute(row) {
+    var route = publishGateRoute(row);
+    if (route.kind === "edge") {
+      openManualEdgeValidation(row);
+      return;
+    }
+    if (route.kind === "training") {
+      openTrainingReview(row);
+      return;
+    }
+    toast(route.text, "warn", 7000);
+  }
+
+  function bindPublishGateRouteButtons(root, row) {
+    if (!root) return;
+    root.querySelectorAll("[data-gate-route-action]").forEach(function (button) {
+      button.onclick = function (event) {
+        event.stopPropagation();
+        openPublishGateRoute(row);
+      };
+    });
+  }
+
+  function buildPublishVerdictCell(row) {
+    var view = publishGatePresentation(row);
+    var recommended = preferredBmodelOption(row);
+    var nextText = recommended
+      ? "推荐发布 " + String(recommended.precision || "").toUpperCase() + "；" + view.next
+      : view.next;
+    return (
+      "<div class=\"publish-gate-card " + esc(view.tone) + "\">" +
+      "<span class=\"publish-gate-indicator\" aria-hidden=\"true\"></span>" +
+      "<div><div class=\"publish-gate-title\">" + esc(view.title) + "</div>" +
+      "<div class=\"publish-gate-reason\">" + esc(view.reason) + "</div>" +
+      "<div class=\"publish-gate-next\">" + esc(nextText) + "</div>" +
+      buildPublishGateRouteHtml(row, true) + "</div>" +
+      "</div>"
+    );
+  }
+
+  function renderPublishSurfaceState() {
+    var el = document.getElementById("publishSurfaceState");
+    if (!el) return;
+    var tone = "info";
+    var msg = "正在初始化发布环境与候选记录…";
+    if (!getToken()) {
+      tone = "warn";
+      msg = "未登录，当前无法读取发布环境与发布相关对象。请先登录主站后刷新。";
+    } else if (activeTab === "history") {
+      if (publishUiState.list === "loading" || publishUiState.list === "idle") {
+        msg = "正在加载发布记录；这里追踪的是发布记录，不是导出记录。";
+      } else if (publishUiState.list === "failed") {
+        tone = "err";
+        msg = "发布记录加载失败：" + compactText(publishUiState.listError || "未知错误", 84);
+      } else if (publishUiState.list === "empty") {
+        tone = "warn";
+        msg = "当前还没有发布记录。真正的发布结果、操作者与完整日志会在这里沉淀。";
+      } else {
+        tone = "ok";
+        msg = "当前主对象是发布记录；成功/失败、发起人和完整步骤都在这里查看。";
+      }
+    } else if (publishUiState.env === "loading" || publishUiState.env === "idle" ||
+               publishUiState.list === "loading" || publishUiState.list === "idle") {
+      msg = "正在加载发布环境与候选记录；首屏状态会在数据返回后统一更新。";
+    } else if (publishUiState.env === "failed") {
+      tone = "err";
+      msg = "发布环境加载失败：" + compactText(publishUiState.envError || "未知错误", 84) + "；当前列表结果暂不适合作为发布依据。";
+    } else if (publishUiState.list === "failed") {
+      tone = "err";
+      msg = "候选导出记录加载失败：" + compactText(publishUiState.listError || "未知错误", 84);
+    } else if (publishUiState.env === "missing") {
+      tone = "warn";
+        msg = "当前还没有配置发布环境。你可以先查看候选导出记录，但暂时不能发起发布；请先到「系统管理 → 外部发布环境」维护。";
+    } else if (publishUiState.env === "not_ready") {
+      tone = "warn";
+      msg = "发布环境已识别但还未就绪。候选导出记录可先查看，真正发布前请补齐环境配置。";
+    } else if (publishUiState.list === "empty") {
+      tone = "warn";
+      msg = "当前没有可发布的导出记录；请先到「模型库 / 模型编译」完成训练与 BM1688 导出。";
+    } else {
+      tone = "ok";
+      msg = "当前主对象是候选发布记录；边端验证负责发布前结论，真正发布结果请切到「发布记录」查看。";
+    }
+    el.className = "publish-surface-state " + tone;
+    el.textContent = msg;
+  }
+
+  function renderActiveEnvBadge() {
+    var el = document.getElementById("activeEnvBadgeInline");
+    if (!el) return;
+    if (!getToken()) {
+      el.className = "warn";
+      el.textContent = "发布环境：请先登录";
+      return;
+    }
+    if (publishUiState.env === "loading" || publishUiState.env === "idle") {
+      el.className = "info";
+      el.textContent = "发布环境：加载中";
+      return;
+    }
+    if (publishUiState.env === "failed") {
+      el.className = "err";
+      el.textContent = "发布环境：加载失败";
+      return;
+    }
+    var active = getActiveEnvironment();
+    if (!active) {
+      el.className = "warn";
+      el.textContent = "发布环境：未配置";
+      return;
+    }
+    el.className = active.ready_to_publish ? "ok" : "warn";
+    el.textContent =
+      "发布环境：" + (active.name || "未命名") +
+      (active.ready_to_publish ? "" : "（未就绪）");
+  }
+
+  function updatePublishableStats(rows, total) {
+    var ready = 0;
+    var blocked = 0;
+    var review = 0;
+    (rows || []).forEach(function (r) {
+      var view = publishGatePresentation(r);
+      if (view.group === "ready") ready += 1;
+      else if (view.group === "quality") review += 1;
+      else blocked += 1;
+    });
+    var setNew = function (id, v) {
+      var n = document.getElementById(id);
+      if (n) n.textContent = String(v);
+    };
+    setNew("statPublishTotal", total != null ? total : 0);
+    setNew("statPublishPassed", ready);
+    setNew("statPublishFailed", blocked);
+    setNew("statPublishPage", review);
+  }
+
+  function updateHistoryStats(rows, total) {
+    var ok = 0;
+    var fail = 0;
+    var processing = 0;
+    (rows || []).forEach(function (r) {
+      var sl = statusLabel(r);
+      if (sl.cls === "tag-ok") ok += 1;
+      else if (sl.cls === "tag-no") fail += 1;
+      else if (String(r.status || "").toUpperCase() === "PROCESSING") processing += 1;
+    });
+    var set = function (id, v) {
+      var n = document.getElementById(id);
+      if (n) n.textContent = String(v);
+    };
+    set("publishStatLabel1", "发布记录总数");
+    set("statPublishTotal", total != null ? total : 0);
+    set("publishStatLabel2", "成功");
+    set("statPublishPassed", ok);
+    set("publishStatLabel3", "失败");
+    set("statPublishFailed", fail);
+    set("publishStatLabel4", "进行中");
+    set("statPublishPage", processing);
+    set("publishStatHint1", "符合当前分类");
+    set("publishStatHint2", "当前页");
+    set("publishStatHint3", "当前页");
+    set("publishStatHint4", "当前页");
+  }
+
+  function syncPublishHubLabels(tab) {
+    var set = function (id, v) {
+      var n = document.getElementById(id);
+      if (n) n.textContent = v;
+    };
+    var title = document.getElementById("publishListSectionTitle");
+    var hint = document.querySelector(".train-list-section-hint");
+    if (tab === "history") {
+      if (title) title.textContent = "发布记录";
+      if (hint) hint.textContent = "这里记录每次发布的操作者、结果与完整日志；它是发布记录层，不是导出记录层。";
+      set("publishStatLabel1", "发布记录总数");
+      set("publishStatLabel2", "成功");
+      set("publishStatLabel3", "失败");
+      set("publishStatLabel4", "进行中");
+      set("publishStatHint1", "符合当前分类");
+      set("publishStatHint2", "当前页");
+      set("publishStatHint3", "当前页");
+      set("publishStatHint4", "当前页");
+    } else {
+      if (title) title.textContent = "候选发布队列";
+      if (hint) hint.textContent = "这里看的是候选发布记录；训练作业产出权重，边端验证给出发布前结论，真正发布结果请看「发布记录」。";
+      set("publishStatLabel1", "候选总数");
+      set("publishStatLabel2", "直接发布");
+      set("publishStatLabel3", "不可人工发布");
+      set("publishStatLabel4", "风险发布");
+      set("publishStatHint1", "符合当前分类");
+      set("publishStatHint2", "当前页");
+      set("publishStatHint3", "当前页");
+      set("publishStatHint4", "当前页");
+    }
+    renderPublishSurfaceState();
+  }
+
+  function goEnvConfigPage() {
+    var target = "/aicm-publish-environments";
+    if (window.LabeluPortal && LabeluPortal.navigateAppTo) {
+      LabeluPortal.navigateAppTo(target);
+      return;
+    }
+    window.location.href = target;
+  }
+
+  async function loadEnvironments(options) {
+    options = options || {};
+    if (!getToken()) {
+      setPublishUiState({ env: "unauth", envError: "" });
+      return false;
+    }
+    var reqId = ++envRequestSeq;
+    setPublishUiState({ env: "loading", envError: "" });
+    var res = await api("/yolo-aicm-publish/environments");
+    if (reqId !== envRequestSeq) return false;
+    if (!res.ok) {
+      setPublishUiState({ env: "failed", envError: errMsg(res) });
+      if (!options.silent) toast("加载发布环境失败：" + errMsg(res), "err");
+      return false;
+    }
+    var d = res.json.data || {};
+    syncEnvironmentBundle({
+      active_environment_id: d.active_environment_id || "",
+      environments: d.environments || []
+    });
+    return true;
+  }
+
+  function formatMap(r) {
+    if (r.map50_95 != null) return "mAP50-95 " + (r.map50_95 * 100).toFixed(1) + "%";
+    if (r.map50 != null) return "mAP50 " + (r.map50 * 100).toFixed(1) + "%";
+    return "—";
+  }
+
+  function statusLabel(row) {
+    var st = row.status || "";
+    if (st === "PROCESSING") return { text: "进行中", cls: "tag-warn" };
+    if (row.success) return { text: "成功", cls: "tag-ok" };
+    if (st === "COMPLETED" && !row.success) return { text: "失败", cls: "tag-no" };
+    if (st === "FAILED") return { text: "失败", cls: "tag-no" };
+    return { text: st || "—", cls: "muted" };
+  }
+
+  function switchTab(name) {
+    activeTab = name;
+    document.querySelectorAll(".publish-view-tabs button").forEach(function (b) {
+      var selected = b.getAttribute("data-tab") === name;
+      b.classList.toggle("active", selected);
+      b.setAttribute("aria-selected", selected ? "true" : "false");
+    });
+    var publishablePanel = document.getElementById("panelPublishable");
+    var historyPanel = document.getElementById("panelHistory");
+    publishablePanel.classList.toggle("active", name === "publishable");
+    publishablePanel.setAttribute("aria-hidden", name === "publishable" ? "false" : "true");
+    historyPanel.classList.toggle("active", name === "history");
+    historyPanel.setAttribute("aria-hidden", name === "history" ? "false" : "true");
+    syncPublishHubLabels(name);
+    if (name === "history" && getToken()) loadPublishHistory();
+    else if (name === "publishable" && getToken()) loadPublishable();
+  }
+
+  async function loadPublishHistory(options) {
+    options = options || {};
+    if (!getToken()) {
+      setPublishUiState({ list: "unauth", listError: "" });
+      return false;
+    }
+    var reqId = ++listRequestSeq;
+    setPublishUiState({ list: "loading", listError: "" });
+    var tbody = document.getElementById("historyTbody");
+    tbody.innerHTML = "<tr><td colspan=\"5\" class=\"muted\">加载中…</td></tr>";
+    var q = "/yolo-aicm-publish/publish-jobs?page=" + historyPage + "&size=" + historySize;
+    var datasetCategoryId = document.getElementById("filterPublishHistoryDatasetCategory").value.trim();
+    if (datasetCategoryId) q += "&dataset_category_id=" + encodeURIComponent(datasetCategoryId);
+    var historyKeyword = document.getElementById("filterPublishHistoryKeyword").value.trim();
+    if (historyKeyword) q += "&q=" + encodeURIComponent(historyKeyword);
+    var res = await api(q);
+    if (reqId !== listRequestSeq) return false;
+    if (!res.ok) {
+      tbody.innerHTML = "<tr><td colspan=\"5\" class=\"muted\">加载失败：" + esc(errMsg(res)) + "</td></tr>";
+      setPublishUiState({ list: "failed", listError: errMsg(res), lastRows: 0, lastTotal: 0 });
+      return false;
+    }
+    var rows = res.json.data || [];
+    var meta = res.json.meta_data || {};
+    tbody.innerHTML = "";
+    rows.forEach(function (r) {
+      var sl = statusLabel(r);
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td data-label=\"发布结果\"><div class=\"publish-record-title " + sl.cls + "\">" + esc(sl.text) + "</div>" +
+        "<div class=\"publish-record-meta\">" + esc(r.updated_at || r.created_at || "—") + "</div>" +
+        "<div class=\"publish-record-meta\">发布人：" + esc(r.publisher_username || ("#" + (r.publisher_user_id || "—"))) + "</div></td>" +
+        "<td data-label=\"模型来源\"><div class=\"publish-record-title\">" + esc(r.task_name || "—") + "</div>" +
+        "<div class=\"publish-record-meta\">任务 #" + esc(r.task_id || "—") + " · 导出 #" + esc(r.export_id || "—") + "</div>" + strategyTaskMarkerHtml(r.strategy_task) + "</td>" +
+        "<td data-label=\"数据与发布包\"><div class=\"publish-record-title\">" + esc(r.dataset_category_name || "未分类") + "</div>" +
+        "<div class=\"publish-record-meta\">发布包：" + esc(r.publish_template_name || "YOLOv11 标准发布包") + "</div>" +
+        "<div class=\"publish-record-meta\">标签：" + esc((r.class_names || []).join("、") || "历史记录未冻结") + "</div></td>" +
+        "<td data-label=\"发布标识\"><div class=\"publish-record-title\">模型 ID：" + esc(r.model_id || r.model_set_id || "—") + "</div>" +
+        "<div class=\"publish-record-meta\">model_set_id：" + esc(r.model_set_id || "—") + "</div>" +
+        "<div class=\"publish-record-meta\">发布任务：" + esc(r.job_id || "—") + "</div></td>" +
+        "<td data-label=\"操作\"><button type=\"button\" class=\"btn\" data-job-detail=\"" + esc(r.job_id) + "\">查看详情</button></td>";
+      tr.querySelector("[data-job-detail]").onclick = function () {
+        showHistoryDetail(r.job_id);
+      };
+      tbody.appendChild(tr);
+    });
+    if (!rows.length) {
+      tbody.innerHTML = "<tr><td colspan=\"5\" class=\"muted\"><div class=\"publish-empty\">暂无发布记录</div></td></tr>";
+    }
+    historyTotal = meta.total != null ? meta.total : rows.length;
+    setPublishUiState({
+      list: rows.length ? "ready" : "empty",
+      listError: "",
+      lastRows: rows.length,
+      lastTotal: historyTotal
+    });
+    updateHistoryStats(rows, historyTotal);
+    initPublishPagers();
+    if (historyPager) {
+      historyPager.update({ page: historyPage, size: historySize, total: historyTotal });
+    }
+    if (options.feedback) {
+      toast("发布记录已刷新，共 " + historyTotal + " 条。", "ok");
+    }
+    return true;
+  }
+
+  async function showHistoryDetail(jobId) {
+    if (!requireToken()) return;
+    var res = await api("/yolo-aicm-publish/publish-jobs/" + encodeURIComponent(jobId));
+    if (!res.ok) {
+      toast("加载详情失败：" + errMsg(res), "err");
+      return;
+    }
+    var job = res.json.data || {};
+    var sl = statusLabel({ status: job.status, success: job.result && job.result.ok });
+    document.getElementById("historyDetailTitle").textContent =
+      "发布 #" + job.export_id + " · " + (job.preset_name || "") +
+      (job.strategy_task && job.strategy_task.task_type_label ? " · 第三方-" + job.strategy_task.task_type_label : "");
+    document.getElementById("historyDetailSummary").textContent =
+      (job.publisher_username ? "发布人：" + job.publisher_username + " · " : "") +
+      "状态：" + sl.text +
+      (job.error_message ? " · " + job.error_message : "");
+    document.getElementById("historyDetailSummary").style.color =
+      sl.cls === "tag-ok" ? "var(--success)" : (sl.cls === "tag-no" ? "var(--danger)" : "");
+    var result = job.result || {};
+    document.getElementById("historyDetailIds").innerHTML =
+      buildIdItem("模型 ID", result.model_id || result.model_set_id || "—") +
+      buildIdItem("model_set_id", result.model_set_id || "—") +
+      buildIdItem("导出记录", job.export_id ? "#" + job.export_id : "—") +
+      buildIdItem("发布任务", job.job_id || "—");
+    var failure = document.getElementById("historyDetailFailure");
+    var failureText = job.error_message || result.error_message || "";
+    failure.textContent = failureText ? "失败根因：" + failureText : "";
+    failure.classList.toggle("show", !!failureText);
+    renderProgressJobTo(
+      job,
+      document.getElementById("historyDetailSteps"),
+      document.getElementById("historyDetailLog")
+    );
+    document.getElementById("historyDetailModal").classList.add("show");
+  }
+
+  function buildIdItem(label, value) {
+    return "<div class=\"publish-id-item\"><span class=\"publish-id-label\">" + esc(label) + "</span><span class=\"publish-id-value\">" + esc(value) + "</span></div>";
+  }
+
+  function renderProgressJobTo(job, stepsEl, logEl) {
+    var ul = stepsEl;
+    ul.innerHTML = "";
+    (job.steps || []).forEach(function (s) {
+      var li = document.createElement("li");
+      var icon = STEP_STATUS_ICON[s.status] || "○";
+      li.className = s.status || "pending";
+      li.innerHTML = icon + " " + esc(s.label || s.key || "");
+      if (s.detail) {
+        var d = document.createElement("span");
+        d.className = "step-detail";
+        d.textContent = s.detail;
+        li.appendChild(d);
+      }
+      ul.appendChild(li);
+    });
+    var logs = (job.log_lines || []).join("\n");
+    var result = job.result;
+    if (result) {
+      if ((result.steps || []).length) {
+        logs += (logs ? "\n\n" : "") + "详细步骤：\n" + (result.steps || []).join("\n");
+      }
+      if (result.upload_response) logs += "\n\n上传响应：\n" + result.upload_response;
+      if (result.package_path) logs += "\n\n打包路径：\n" + result.package_path;
+    }
+    logEl.textContent = logs || "（暂无日志）";
+  }
+
+  function renderProgressJob(job) {
+    renderProgressJobTo(job, document.getElementById("progressSteps"), document.getElementById("progressLog"));
+    var statusEl = document.getElementById("progressStatus");
+    var st = job.status || "PROCESSING";
+    var cur = job.current_step || "";
+    if (st === "PROCESSING") {
+      statusEl.textContent = "进行中 · 当前步骤：" + (cur || "—") + " · 任务 " + (job.job_id || "");
+      statusEl.style.color = "";
+    } else if (st === "COMPLETED" && job.result && job.result.ok) {
+      statusEl.textContent = "已完成 · 任务 " + (job.job_id || "");
+      statusEl.style.color = "var(--success)";
+    } else {
+      statusEl.textContent = "失败 · " + (job.error_message || (job.result && job.result.error_message) || "未知错误");
+      statusEl.style.color = "var(--danger)";
+    }
+  }
+
+  function labelChipsHtml(names) {
+    var labels = (names || []).slice(0, 3).map(function (name) {
+      return "<span class=\"publish-label-chip\" title=\"" + esc(name) + "\">" + esc(name) + "</span>";
+    }).join("");
+    if ((names || []).length > 3) {
+      labels += "<span class=\"publish-label-more\">+" + ((names || []).length - 3) + "</span>";
+    }
+    return labels || "<span class=\"publish-label-chip\">未冻结</span>";
+  }
+
+  function updateQueueCounts(rows) {
+    var counts = { all: (rows || []).length, ready: 0, config: 0, quality: 0, legacy: 0 };
+    (rows || []).forEach(function (row) {
+      var group = publishGatePresentation(row).group;
+      if (counts[group] != null) counts[group] += 1;
+    });
+    Object.keys(counts).forEach(function (key) {
+      var el = document.querySelector("[data-queue-count=\"" + key + "\"]");
+      if (el) el.textContent = String(counts[key]);
+    });
+  }
+
+  function candidateMatchesFilters(row) {
+    var view = publishGatePresentation(row);
+    if (activeQueue !== "all" && view.group !== activeQueue) return false;
+    var keywordEl = document.getElementById("filterPublishableKeyword");
+    var keyword = String(keywordEl && keywordEl.value || "").trim().toLowerCase();
+    if (!keyword) return true;
+    var haystack = [
+      row.task_name,
+      row.task_id,
+      row.yolo_train_job_id,
+      row.export_id,
+      row.dataset_category_name,
+      row.dataset_category_key,
+      row.publish_template_name,
+      (row.class_names || []).join(" ")
+    ].join(" ").toLowerCase();
+    return haystack.indexOf(keyword) >= 0;
+  }
+
+  function handleCandidatePrimaryAction(row) {
+    var view = publishGatePresentation(row);
+    document.getElementById("candidateDetailModal").classList.remove("show");
+    if (view.group !== "legacy") {
+      openPublishConfirmModal(row);
+      return;
+    }
+    openCandidateDetail(row);
+  }
+
+  function publishActionButtonClass(row) {
+    var view = publishGatePresentation(row);
+    if (view.group === "legacy") return "";
+    if (view.group === "ready") return " primary";
+    return view.tone === "blocked" ? " publish-danger" : " publish-risk";
+  }
+
+  function renderPublishableRows() {
+    var tbody = document.getElementById("publishTbody");
+    var active = getActiveEnvironment();
+    var rows = publishableRows.filter(candidateMatchesFilters);
+    tbody.innerHTML = "";
+    rows.forEach(function (r) {
+      var view = publishGatePresentation(r);
+      var tr = document.createElement("tr");
+      tr.setAttribute("data-gate-group", view.group);
+      tr.innerHTML =
+        "<td data-label=\"模型来源\"><div class=\"publish-record-title\">" + esc(r.task_name || "未命名任务") + "</div>" +
+        "<div class=\"publish-record-meta\">任务 #" + esc(r.task_id) + " · 训练 #" + esc(r.yolo_train_job_id) + " · 导出 #" + esc(r.export_id) + "</div>" +
+        strategyTaskMarkerHtml(r.strategy_task) + "</td>" +
+        "<td data-label=\"数据与标签契约\"><div class=\"publish-record-title\">" + esc(r.dataset_category_name || "未分类") + "</div>" +
+        "<div class=\"publish-contract-tags\">" + labelChipsHtml(r.class_names) + "</div>" +
+        "<div class=\"publish-record-meta\">标签 " + (r.class_names || []).length + " 类 · 契约 " + esc(r.class_order_signature ? r.class_order_signature.slice(0, 8) : "未冻结") + "</div></td>" +
+        "<td data-label=\"产物与精度\"><div class=\"publish-artifact-main\">" + esc(formatMap(r)) + "</div>" +
+        "<div class=\"publish-record-meta\">" + formatBmodelOptionsCell(r) + "</div>" +
+        "<div class=\"publish-record-meta\">输入尺寸 " + esc(r.imgsz || 640) + "</div></td>" +
+        "<td data-label=\"发布门禁\">" + buildPublishVerdictCell(r) + "</td>" +
+        "<td data-label=\"目标环境与发布包\"><div class=\"publish-record-title\">YOLOv11 标准发布包</div>" +
+        "<div class=\"publish-record-meta\">" + esc(active ? (active.name || active.base_url || "未命名环境") : "未配置发布环境") + "</div>" +
+        "<span class=\"publish-target-status " + (active && active.ready_to_publish ? "ok" : "warn") + "\">" + (active && active.ready_to_publish ? "环境就绪" : "环境未就绪") + "</span></td>" +
+        "<td data-label=\"操作\"><div class=\"publish-action-stack\"><button type=\"button\" class=\"btn" + publishActionButtonClass(r) + "\" data-primary-action>" + esc(publishActionLabel(r)) + "</button>" +
+        "<button type=\"button\" class=\"btn\" data-candidate-detail>详情</button></div></td>";
+      tr.querySelector("[data-primary-action]").onclick = function () { handleCandidatePrimaryAction(r); };
+      tr.querySelector("[data-candidate-detail]").onclick = function () { openCandidateDetail(r); };
+      bindPublishGateRouteButtons(tr, r);
+      tbody.appendChild(tr);
+    });
+    if (!rows.length) {
+      tbody.innerHTML = "<tr><td colspan=\"6\"><div class=\"publish-empty\">当前分组没有匹配的候选模型</div></td></tr>";
+    }
+  }
+
+  function openCandidateDetail(row) {
+    var view = publishGatePresentation(row);
+    var active = getActiveEnvironment();
+    var preferredModel = preferredBmodelOption(row);
+    document.getElementById("candidateDetailTitle").textContent = row.task_name || "候选模型详情";
+    document.getElementById("candidateDetailSummary").textContent =
+      "训练 #" + row.yolo_train_job_id + " · 导出 #" + row.export_id + " · " + view.title;
+    var body = document.getElementById("candidateDetailBody");
+    var routeSection = view.group === "ready"
+      ? ""
+      : "<p class=\"publish-section-title\">人工复核路线</p>" + buildPublishGateRouteHtml(row, true);
+    body.innerHTML =
+      "<p class=\"publish-section-title\">发布判断</p>" + buildPublishVerdictCell(row) +
+      routeSection +
+      "<p class=\"publish-section-title\">模型与数据</p>" +
+      "<dl class=\"publish-detail-grid\">" +
+      detailItem("任务", (row.task_name || "—") + " #" + (row.task_id || "—")) +
+      detailItem("训练 / 导出", "#" + (row.yolo_train_job_id || "—") + " / #" + (row.export_id || "—")) +
+      detailItem("数据集分类", row.dataset_category_name || "未分类") +
+      detailItem("标签", (row.class_names || []).join("、") || "未冻结") +
+      detailItem("训练精度", formatMap(row)) +
+      detailItem("可发布产物", formatBmodelOptionsCell(row)) +
+      "</dl>" +
+      "<p class=\"publish-section-title\">发布契约</p>" +
+      "<dl class=\"publish-detail-grid\">" +
+      detailItem("目标环境", active ? (active.name || active.base_url || "未命名环境") : "未配置") +
+      detailItem("发布包", "YOLOv11 标准发布包") +
+      detailItem("默认发布模型", preferredModel ? preferredModel.filename : "暂无可发布精度") +
+      detailItem("标签顺序签名", row.class_order_signature || "未冻结") +
+      detailItem("data.yaml 摘要", row.data_yaml_sha256 || "—") +
+      detailItem("数据内容签名", row.dataset_content_signature || "—") +
+      "</dl>" +
+      "<div class=\"publish-action-stack\" style=\"margin-top:16px;max-width:220px;\"><button type=\"button\" class=\"btn" + publishActionButtonClass(row) + "\" id=\"candidateDetailPrimary\">" + esc(publishActionLabel(row)) + "</button></div>";
+    bindPublishGateRouteButtons(body, row);
+    document.getElementById("candidateDetailPrimary").onclick = function () { handleCandidatePrimaryAction(row); };
+    document.getElementById("candidateDetailModal").classList.add("show");
+  }
+
+  function detailItem(label, value) {
+    return "<div class=\"publish-detail-item\"><dt>" + esc(label) + "</dt><dd>" + esc(value) + "</dd></div>";
+  }
+
+  async function loadPublishable(options) {
+    options = options || {};
+    if (!getToken()) {
+      setPublishUiState({ list: "unauth", listError: "" });
+      showListAuthHint();
+      return false;
+    }
+    var reqId = ++listRequestSeq;
+    setPublishUiState({ list: "loading", listError: "" });
+    var tbody = document.getElementById("publishTbody");
+    tbody.innerHTML = "<tr><td colspan=\"6\" class=\"muted\">加载中…</td></tr>";
+    var q = "/yolo-aicm-publish/publishable?page=" + page + "&size=" + size;
+    var datasetCategoryId = document.getElementById("filterPublishableDatasetCategory").value.trim();
+    if (datasetCategoryId) q += "&dataset_category_id=" + encodeURIComponent(datasetCategoryId);
+    var publishableKeyword = document.getElementById("filterPublishableKeyword").value.trim();
+    if (publishableKeyword) q += "&q=" + encodeURIComponent(publishableKeyword);
+    var res = await api(q);
+    if (reqId !== listRequestSeq) return false;
+    if (!res.ok) {
+      tbody.innerHTML = "<tr><td colspan=\"6\" class=\"muted\">加载失败：" + esc(errMsg(res)) + "</td></tr>";
+      setPublishUiState({ list: "failed", listError: errMsg(res), lastRows: 0, lastTotal: 0 });
+      return false;
+    }
+    var rows = res.json.data || [];
+    var meta = res.json.meta_data || {};
+    publishableRows = rows;
+    publishableByExportId = {};
+    rows.forEach(function (r) {
+      publishableByExportId[r.export_id] = r;
+    });
+    updateQueueCounts(rows);
+    renderPublishableRows();
+    var publishTotal = meta.total != null ? meta.total : rows.length;
+    setPublishUiState({
+      list: rows.length ? "ready" : "empty",
+      listError: "",
+      lastRows: rows.length,
+      lastTotal: publishTotal
+    });
+    updatePublishableStats(rows, publishTotal);
+    initPublishPagers();
+    if (publishablePager) {
+      publishablePager.update({ page: page, size: size, total: publishTotal });
+    }
+    if (options.feedback) {
+      toast(
+        datasetCategoryId
+          ? "候选导出记录已刷新，共 " + publishTotal + " 条。"
+          : "可发布导出记录已刷新，共 " + publishTotal + " 条。",
+        "ok"
+      );
+    }
+    return true;
+  }
+
+  function initPublishPagers() {
+    if (!window.LuPager) return;
+    if (!publishablePager) {
+      publishablePager = LuPager.mount("pagerPublishable", {
+        page: page,
+        size: size,
+        total: 0,
+        onChange: function (next) {
+          page = next.page;
+          size = next.size;
+          loadPublishable();
+        },
+      });
+    }
+    if (!historyPager) {
+      historyPager = LuPager.mount("pagerHistory", {
+        page: historyPage,
+        size: historySize,
+        total: historyTotal,
+        onChange: function (next) {
+          historyPage = next.page;
+          historySize = next.size;
+          loadPublishHistory();
+        },
+      });
+    }
+  }
+
+  var pollTimer = null;
+  var publishing = false;
+  var publishableByExportId = {};
+  var pendingPublishRow = null;
+
+  function publishBlockedByEdgeValidation(row) {
+    return !!(row && row.publish_blocked_reason);
+  }
+
+  function openManualEdgeValidation(row) {
+    if (!row || !row.export_id) {
+      toast("缺少导出信息，无法进入边端验证", "err");
+      return;
+    }
+    var params = new URLSearchParams();
+    params.set("embedded", "1");
+    params.set("export_id", String(row.export_id));
+    params.set("manual_edge", "1");
+    params.set("from", "publish");
+    var edgeStatus = String(row.edge_validation && row.edge_validation.status || "").toUpperCase();
+    if (edgeStatus) params.set("blocker_status", edgeStatus);
+    var url = "/yolo-bm1688-exports?" + params.toString();
+    if (window.LabeluPortal && LabeluPortal.navigateTrainingHubTo) {
+      LabeluPortal.navigateTrainingHubTo(url);
+      return;
+    }
+    if (window.LabeluPortal && LabeluPortal.navigateAppTo) {
+      LabeluPortal.navigateAppTo(url);
+      return;
+    }
+    window.location.href = url;
+  }
+
+  function edgeValidationSummary(row) {
+    if (!row) return "--";
+    var ev = row.edge_validation || {};
+    if (ev.report_summary) return String(ev.report_summary);
+    if (row.publish_blocked_reason) return row.publish_blocked_reason;
+    return ev.status ? ("\u8fb9\u7aef\u9a8c\u8bc1 " + ev.status) : "\u8fb9\u7aef\u9a8c\u8bc1\u672a\u5f00\u59cb";
+  }
+
+  function edgeValidationMeta(row) {
+    var ev = row && row.edge_validation || {};
+    var report = ev && ev.report && typeof ev.report === "object" ? ev.report : {};
+    var assessment = row && row.edge_validation_assessment || {};
+    var assessmentCode = String(assessment.status_code || "").toLowerCase();
+    var rawStatus = String(ev.status || "").toUpperCase();
+    var statusText = "未开始";
+    var statusCls = "muted";
+    if (rawStatus === "COMPLETED") {
+      if (["unusable", "failed", "blocked", "fail"].indexOf(assessmentCode) >= 0) {
+        statusText = "质量不通过";
+        statusCls = "tag-no";
+      } else if (["usable", "passed", "pass", "ok"].indexOf(assessmentCode) >= 0) {
+        statusText = "通过";
+        statusCls = "tag-ok";
+      } else {
+        statusText = "执行完成";
+        statusCls = "tag-warn";
+      }
+    } else if (rawStatus === "PARTIAL_COMPLETED") {
+      statusText = "部分通过";
+      statusCls = "tag-warn";
+    } else if (rawStatus === "FAILED") {
+      statusText = "失败";
+      statusCls = "tag-no";
+    } else if (rawStatus === "PROCESSING") {
+      statusText = "进行中";
+      statusCls = "tag-warn";
+    } else if (rawStatus === "PENDING") {
+      statusText = "待验证";
+      statusCls = "tag-warn";
+    }
+
+    var sourceLabel = "";
+    if (report.source === "manual_edge_validation") sourceLabel = "手动边端验证";
+    else if (ev.validation_id || ev.report_summary) sourceLabel = "板端验证";
+
+    var detailText = "";
+    if (row && row.publish_blocked_reason) detailText = row.publish_blocked_reason;
+    else if (assessment && assessment.reason_summary) detailText = String(assessment.reason_summary);
+    else if (ev.report_summary) detailText = String(ev.report_summary);
+    else if (rawStatus === "COMPLETED") detailText = "验证任务已完成，质量门禁待判定";
+    else if (!rawStatus) detailText = "尚无边端验证记录";
+
+    return {
+      statusText: statusText,
+      statusCls: statusCls,
+      sourceLabel: sourceLabel,
+      detailText: detailText
+    };
+  }
+
+  function publishActionLabel(row) {
+    var view = publishGatePresentation(row);
+    if (view.group === "ready") return "发布";
+    if (view.group === "legacy") return "查看问题";
+    return view.tone === "blocked" ? "高风险发布" : "人工发布";
+  }
+
+  function formatBmodelOptionsCell(row) {
+    var opts = row.bmodel_options || [];
+    if (!opts.length) return esc(row.bmodel_filename || "—");
+    var labels = opts.map(function (o) {
+      var p = (o.precision || "").toUpperCase();
+      var status = String(o.validation_status || "").toLowerCase();
+      var suffix = status === "pass" ? "自动通过" :
+        (status === "exceeded" ? "高风险" : (status === "review" ? "需复核" : "未评估"));
+      var recommendation = o.recommended && bmodelOptionPublishable(o) ? " 推荐发布" : "";
+      return (p || o.filename) + recommendation + " " + suffix;
+    });
+    return esc(labels.join(" · "));
+  }
+
+  function bmodelOptionPublishable(option) {
+    return !!option && !!String(option.rel_path || option.filename || "").trim();
+  }
+
+  function bmodelStatusPresentation(option) {
+    var status = String(option && option.validation_status || "").toLowerCase();
+    if (status === "pass") return { text: "验证通过", cls: "" };
+    if (status === "not_applicable") return { text: "专用模型", cls: "is-neutral" };
+    if (status === "exceeded") return { text: "高风险", cls: "is-blocked" };
+    if (status === "missing") return { text: "未评估", cls: "is-risk" };
+    if (status === "review") return { text: "需复核", cls: "is-risk" };
+    return bmodelOptionPublishable(option)
+      ? { text: "可发布", cls: "is-neutral" }
+      : { text: "不可发布", cls: "is-blocked" };
+  }
+
+  function formatBmodelMetric(value) {
+    var n = Number(value);
+    return Number.isFinite(n) ? n.toFixed(4) : "—";
+  }
+
+  function preferredBmodelOption(row) {
+    var options = row && row.bmodel_options || [];
+    return options.find(function (option) {
+      return option.recommended && bmodelOptionPublishable(option);
+    }) || options.find(bmodelOptionPublishable) || null;
+  }
+
+  function selectedPublishBmodelOption() {
+    if (!pendingPublishRow) return null;
+    var checked = document.querySelector('input[name="publishBmodel"]:checked');
+    if (!checked) return null;
+    var index = Number(checked.value);
+    var option = (pendingPublishRow.bmodel_options || [])[index];
+    return bmodelOptionPublishable(option) ? option : null;
+  }
+
+  function selectedOptionInheritsRowRisk(row, selected) {
+    var selectedStatus = String(selected && selected.validation_status || "").toLowerCase();
+    if (selectedStatus !== "pass" && selectedStatus !== "not_applicable") return true;
+    var gate = releaseGateAssessmentOf(row) || {};
+    var codes = Array.isArray(gate.reason_codes) ? gate.reason_codes : [];
+    var precisionOnlyCodes = {
+      pt_bmodel_comparison_missing: true,
+      pt_bmodel_drop_exceeds_policy: true,
+      pt_bmodel_comparison_review: true
+    };
+    return !(codes.length && codes.every(function (code) {
+      return !!precisionOnlyCodes[String(code || "")];
+    }));
+  }
+
+  function syncPublishBmodelSelection() {
+    var selected = selectedPublishBmodelOption();
+    var nameEl = document.getElementById("publishConfirmModelName");
+    if (nameEl) nameEl.textContent = selected ? selected.filename : "无可发布精度";
+    var confirm = document.getElementById("btnPublishConfirmOk");
+    var rowView = publishGatePresentation(pendingPublishRow || {});
+    var manifestBlocked = rowView.group === "manifest";
+    confirm.disabled = !selected || manifestBlocked;
+    var selectedStatus = String(selected && selected.validation_status || "").toLowerCase();
+    var inheritsRowRisk = selectedOptionInheritsRowRisk(pendingPublishRow || {}, selected);
+    var isHighRisk = !!selected && (
+      selectedStatus === "exceeded" || (rowView.tone === "blocked" && inheritsRowRisk)
+    );
+    var isRisk = !!selected && !isHighRisk && (
+      (rowView.group === "quality" && inheritsRowRisk) ||
+      (selectedStatus !== "pass" && selectedStatus !== "not_applicable")
+    );
+    confirm.classList.toggle("primary", !!selected && !isHighRisk && !isRisk);
+    confirm.classList.toggle("publish-risk", isRisk);
+    confirm.classList.toggle("publish-danger", isHighRisk);
+    confirm.textContent = manifestBlocked
+      ? "制品清单未通过"
+      : selected
+      ? "确认人工发布 " + String(selected.precision || "").toUpperCase()
+      : "暂无可发布模型";
+    var risk = document.getElementById("publishConfirmRisk");
+    if (risk) {
+      var warning = selected && (selected.quality_warning || selected.blocked_reason) ||
+        (rowView.group === "quality" && inheritsRowRisk ? rowView.reason : "");
+      risk.textContent = warning ? "质量风险：" + warning + "。本次操作将按人工发布记录。" : "";
+      risk.classList.toggle("show", !!warning);
+      risk.classList.toggle("high", selectedStatus === "exceeded" || (rowView.tone === "blocked" && inheritsRowRisk));
+    }
+  }
+
+  function renderPublishBmodelChoices(row) {
+    var options = row.bmodel_options || [];
+    var defaultOption = preferredBmodelOption(row);
+    var list = document.getElementById("publishBmodelChoices");
+    if (!options.length) {
+      list.innerHTML = "<div class=\"publish-empty\">未找到可发布的 BModel 产物</div>";
+      syncPublishBmodelSelection();
+      return;
+    }
+    list.innerHTML = options.map(function (option, index) {
+      var enabled = bmodelOptionPublishable(option);
+      var state = bmodelStatusPresentation(option);
+      var checked = enabled && defaultOption === option;
+      var metrics = "PT mAP50 " + formatBmodelMetric(option.pt_map50) +
+        "<span>BModel mAP50 " + formatBmodelMetric(option.bmodel_map50) + "</span>" +
+        "<span>掉点 " + formatBmodelMetric(option.drop_map50) + "</span>";
+      var recommendation = option.recommended ? "（推荐发布）" : "";
+      return "<label class=\"bmodel-choice" + (enabled ? "" : " is-disabled") + "\">" +
+        "<input type=\"radio\" name=\"publishBmodel\" value=\"" + index + "\"" +
+        (checked ? " checked" : "") + (enabled ? "" : " disabled") + ">" +
+        "<span class=\"bmodel-choice-main\"><span class=\"bmodel-choice-title\">" +
+        esc(String(option.precision || "").toUpperCase() + recommendation + " · " + (option.filename || "BModel")) + "</span>" +
+        "<span class=\"bmodel-choice-meta\">" + esc(option.rel_path || "") + "</span>" +
+        "<span class=\"bmodel-choice-metrics\">" + metrics + "</span>" +
+        ((option.quality_warning || option.blocked_reason) ? "<span class=\"bmodel-choice-reason\">" + esc(option.quality_warning || option.blocked_reason) + "</span>" : "") +
+        "</span><span class=\"bmodel-choice-tag " + state.cls + "\">" + esc(state.text) + "</span></label>";
+    }).join("");
+    list.querySelectorAll('input[name="publishBmodel"]').forEach(function (input) {
+      input.onchange = syncPublishBmodelSelection;
+    });
+    syncPublishBmodelSelection();
+  }
+
+  function closePublishConfirmModal() {
+    document.getElementById("publishConfirmModal").classList.remove("show");
+    pendingPublishRow = null;
+  }
+
+  function openPublishConfirmModal(row) {
+    if (!row) return;
+    var view = publishGatePresentation(row);
+    if (view.group === "legacy") {
+      toast(view.reason, "warn");
+      return;
+    }
+    pendingPublishRow = row;
+    var active = getActiveEnvironment();
+    document.getElementById("publishConfirmTitle").textContent =
+      "发布导出 #" + row.export_id + " · " + (row.task_name || "");
+    document.getElementById("publishConfirmSummary").innerHTML =
+      "<div><span>模型来源</span><strong>" + esc(row.task_name || "—") + " · 训练 #" + esc(row.yolo_train_job_id) + "</strong></div>" +
+      "<div><span>目标环境</span><strong>" + esc(active ? (active.name || active.base_url || "未命名环境") : "未配置") + "</strong></div>" +
+      "<div><span>数据集分类</span><strong>" + esc(row.dataset_category_name || "未分类") + "</strong></div>" +
+      "<div><span>发布模型</span><strong id=\"publishConfirmModelName\">待选择</strong></div>";
+    renderPublishBmodelChoices(row);
+    document.getElementById("publishConfirmModal").classList.add("show");
+  }
+
+  var STEP_STATUS_ICON = {
+    pending: "○",
+    running: "▶",
+    ok: "✓",
+    error: "✗",
+    skipped: "—"
+  };
+
+  function openProgressModal(exportId, presetName) {
+    document.getElementById("progressTitle").textContent =
+      "发布导出 #" + exportId + (presetName ? " · " + presetName : "");
+    document.getElementById("progressStatus").textContent = "正在创建后台任务…";
+    document.getElementById("progressStatus").style.color = "";
+    document.getElementById("progressSteps").innerHTML = "";
+    document.getElementById("progressLog").textContent = "";
+    document.getElementById("btnCloseProgress").disabled = true;
+    document.getElementById("progressModal").classList.add("show");
+  }
+
+  function closeProgressModal() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    publishing = false;
+    document.getElementById("progressModal").classList.remove("show");
+    document.getElementById("btnCloseProgress").disabled = false;
+  }
+
+  async function pollPublishJob(jobId) {
+    var res = await api("/yolo-aicm-publish/publish-jobs/" + encodeURIComponent(jobId));
+    if (!res.ok) {
+      document.getElementById("progressStatus").textContent = "轮询失败：" + errMsg(res);
+      document.getElementById("progressStatus").style.color = "var(--danger)";
+      document.getElementById("btnCloseProgress").disabled = false;
+      publishing = false;
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      return;
+    }
+    var job = res.json.data || {};
+    renderProgressJob(job);
+    if (job.status === "COMPLETED" || job.status === "FAILED") {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+      publishing = false;
+      document.getElementById("btnCloseProgress").disabled = false;
+      var ok = job.result && job.result.ok;
+      if (job.status === "COMPLETED" && ok) {
+        document.getElementById("progressTitle").textContent = "发布成功";
+        toast("发布成功", "ok");
+      } else {
+        document.getElementById("progressTitle").textContent = "发布失败";
+        toast(job.error_message || (job.result && job.result.error_message) || "发布失败", "err");
+      }
+      loadPublishable();
+      if (activeTab === "history") loadPublishHistory();
+    }
+  }
+
+  async function doPublish(exportId, presetName, bmodelOption) {
+    if (!requireToken()) return;
+    if (publishing) {
+      toast("已有发布任务在进行中，请查看进度窗口", "err");
+      return;
+    }
+    var active = getActiveEnvironment();
+    if (!active || !active.ready_to_publish) {
+      toast("请先在「AICM 发布环境」页配置并选择可用的当前环境", "err");
+      goEnvConfigPage();
+      return;
+    }
+    publishing = true;
+    closePublishConfirmModal();
+    openProgressModal(exportId, presetName);
+    document.getElementById("progressStatus").textContent =
+      "正在生成 YOLOv11 标准包并上传 " + (bmodelOption.filename || "BModel");
+    var res = await api("/yolo-aicm-publish/publish", {
+      method: "POST",
+      body: JSON.stringify({
+        export_id: exportId,
+        environment_id: active.id || envBundle.active_environment_id || "",
+        bmodel_precision: bmodelOption.precision,
+        bmodel_rel_path: bmodelOption.rel_path
+      })
+    });
+    if (!res.ok) {
+      publishing = false;
+      document.getElementById("btnCloseProgress").disabled = false;
+      toast("启动发布失败：" + errMsg(res), "err");
+      return;
+    }
+    var job = res.json.data || {};
+    var jobId = job.job_id;
+    if (!jobId) {
+      publishing = false;
+      document.getElementById("btnCloseProgress").disabled = false;
+      toast("未返回任务 ID", "err");
+      return;
+    }
+    renderProgressJob(job);
+    await pollPublishJob(jobId);
+    pollTimer = setInterval(function () { pollPublishJob(jobId); }, 1500);
+  }
+
+  document.getElementById("btnSaveToken").onclick = function () {
+    setToken(document.getElementById("tokenInput").value || "");
+    checkAuth();
+    toast("Token 已保存", "ok");
+    startPage();
+  };
+  window.addEventListener("labelu-auth-required", function (e) {
+    var m = (e && e.detail && e.detail.message) || "请先登录";
+    toast(m, "warn");
+    showListAuthHint();
+  });
+  window.addEventListener("labelu-token-changed", function () {
+    checkAuth();
+    startPage();
+  });
+  async function reloadPublishPage(options) {
+    options = options || {};
+    var btn = options.button || null;
+    setButtonBusy(btn, true, "刷新中");
+    try {
+      await loadEnvironments({ silent: true });
+      if (activeTab === "history") await loadPublishHistory({ silent: true });
+      else await loadPublishable({ silent: true });
+      if (options.feedback) {
+        toast(activeTab === "history"
+          ? "发布页已刷新；请继续看发布记录。"
+          : "发布页已刷新；请继续看当前导出记录与发布前结论。", "ok");
+      }
+    } finally {
+      setButtonBusy(btn, false);
+    }
+  }
+
+  async function startPage() {
+    initPublishPagers();
+    syncPublishHubLabels(activeTab || "publishable");
+    if (!getToken()) {
+      setPublishUiState({ env: "unauth", envError: "", list: "unauth", listError: "" });
+      showListAuthHint();
+      return;
+    }
+    setPublishUiState({ env: "loading", envError: "", list: "loading", listError: "" });
+    await loadDatasetCategories(false);
+    await loadEnvironments({ silent: true });
+    if (activeTab === "history") await loadPublishHistory({ silent: true });
+    else await loadPublishable({ silent: true });
+  }
+  document.getElementById("tabPublishable").onclick = function () { switchTab("publishable"); };
+  document.getElementById("tabHistory").onclick = function () { switchTab("history"); };
+  document.getElementById("btnRefreshList").onclick = function () { reloadPublishPage({ button: this, feedback: true }); };
+  document.getElementById("btnRefreshPublishable").onclick = function () {
+    var btn = this;
+    setButtonBusy(btn, true, "刷新中");
+    loadPublishable({ feedback: true }).finally(function () { setButtonBusy(btn, false); });
+  };
+  document.getElementById("btnRefreshHistory").onclick = function () {
+    var btn = this;
+    setButtonBusy(btn, true, "刷新中");
+    loadPublishHistory({ feedback: true }).finally(function () { setButtonBusy(btn, false); });
+  };
+  document.getElementById("filterPublishableDatasetCategory").onchange = function () {
+    page = 0;
+    loadPublishable({ feedback: true });
+  };
+  document.getElementById("filterPublishableKeyword").oninput = function () {
+    clearTimeout(window.__publishableSearchTimer);
+    page = 0;
+    window.__publishableSearchTimer = setTimeout(function () {
+      loadPublishable();
+    }, 250);
+  };
+  document.querySelectorAll("[data-queue]").forEach(function (button) {
+    button.onclick = function () {
+      activeQueue = button.getAttribute("data-queue") || "all";
+      document.querySelectorAll("[data-queue]").forEach(function (item) {
+        item.classList.toggle("active", item === button);
+      });
+      renderPublishableRows();
+    };
+  });
+  document.getElementById("filterPublishHistoryDatasetCategory").onchange = function () {
+    historyPage = 0;
+    loadPublishHistory({ feedback: true });
+  };
+  document.getElementById("filterPublishHistoryKeyword").oninput = function () {
+    clearTimeout(window.__historySearchTimer);
+    historyPage = 0;
+    window.__historySearchTimer = setTimeout(function () {
+      loadPublishHistory();
+    }, 250);
+  };
+  document.getElementById("btnCloseProgress").onclick = closeProgressModal;
+  document.getElementById("btnPublishConfirmCancel").onclick = closePublishConfirmModal;
+  document.getElementById("publishConfirmModal").onclick = function (e) {
+    if (e.target.id === "publishConfirmModal") closePublishConfirmModal();
+  };
+  document.getElementById("btnPublishConfirmOk").onclick = function () {
+    if (!pendingPublishRow) return;
+    if (!requireToken()) return;
+    var pendingView = publishGatePresentation(pendingPublishRow);
+    if (pendingView.group === "legacy") {
+      toast(pendingView.reason, "warn");
+      closePublishConfirmModal();
+      return;
+    }
+    var active = getActiveEnvironment();
+    if (!active || !active.ready_to_publish) {
+      toast("请先在「AICM 发布环境」页配置并选择可用的当前环境", "err");
+      goEnvConfigPage();
+      return;
+    }
+    var selectedBmodel = selectedPublishBmodelOption();
+    if (!selectedBmodel) {
+      toast("请选择一个已生成的 BModel 精度", "warn");
+      return;
+    }
+    doPublish(
+      pendingPublishRow.export_id,
+      pendingPublishRow.task_name || pendingPublishRow.rect_preset_name || "",
+      selectedBmodel
+    );
+  };
+  document.getElementById("btnCloseHistoryDetail").onclick = function () {
+    document.getElementById("historyDetailModal").classList.remove("show");
+  };
+  document.getElementById("historyDetailModal").onclick = function (e) {
+    if (e.target.id === "historyDetailModal") document.getElementById("historyDetailModal").classList.remove("show");
+  };
+  document.getElementById("btnCloseCandidateDetail").onclick = function () {
+    document.getElementById("candidateDetailModal").classList.remove("show");
+  };
+  document.getElementById("candidateDetailModal").onclick = function (e) {
+    if (e.target.id === "candidateDetailModal") document.getElementById("candidateDetailModal").classList.remove("show");
+  };
+  document.getElementById("progressModal").onclick = function (e) {
+    if (e.target.id === "progressModal" && !publishing) closeProgressModal();
+  };
+
+  document.getElementById("tokenInput").value = getToken();
+  checkAuth();
+  if (window.LabeluPortal && LabeluPortal.whenAuthReady) {
+    LabeluPortal.whenAuthReady(function () {
+      checkAuth();
+      startPage();
+    });
+  } else if (getToken()) {
+    startPage();
+  } else {
+    showListAuthHint();
+  }
+})();
+  </script>
+</body>
+</html>

@@ -1,0 +1,1652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>场景质量标准 Bundle</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --card: #fff;
+      --border: #e5e7eb;
+      --primary: #1677ff;
+      --primary-soft: rgba(22, 119, 255, 0.08);
+      --text: #1f2937;
+      --muted: #6b7280;
+      --danger: #cf1322;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    body[data-lu-page="yolo-quality-policies"] #luPageHero { display: none !important; }
+    .page-wrap { max-width: 1480px; margin: 0 auto; padding: 14px 18px 36px; }
+    .toolbar, .grid, .actions, .mini-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .muted { color: var(--muted); font-size: 13px; line-height: 1.6; }
+    .error-text { color: var(--danger); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .card h3 { margin: 0 0 12px; font-size: 16px; }
+    .grid { align-items: flex-start; }
+    .col-left { flex: 0.86; min-width: 420px; }
+    .col-right { flex: 1.14; min-width: 540px; }
+    .list { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .list th, .list td {
+      text-align: left;
+      padding: 10px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .list th { color: var(--muted); font-weight: 600; }
+    .list tr.is-selected { background: #f7fbff; }
+    .list tr:hover { background: #fafcff; }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      background: #f8fafc;
+      line-height: 1.5;
+    }
+    .pill.ok { color: #237804; border-color: #b7eb8f; background: #f6ffed; }
+    .pill.warn { color: #ad6800; border-color: #ffd591; background: #fff7e6; }
+    .pill.na { color: #666; border-color: #d9d9d9; background: #fafafa; }
+    .pill.active-map { color: #0958d9; border-color: #91caff; background: #e6f4ff; }
+    button.btn, select, input, textarea {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 13px;
+    }
+    button.btn {
+      background: #fff;
+      padding: 8px 14px;
+      cursor: pointer;
+    }
+    button.btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    button.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    input, select, textarea {
+      width: 100%;
+      padding: 8px 10px;
+      background: #fff;
+    }
+    textarea { min-height: 110px; resize: vertical; }
+    .field { margin-bottom: 10px; }
+    .field label { display: block; margin-bottom: 4px; font-size: 12px; color: var(--muted); }
+    .field-help { margin-top: 4px; font-size: 12px; color: var(--muted); }
+    .json-box {
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 12px;
+      overflow: auto;
+      max-height: 420px;
+      white-space: pre-wrap;
+    }
+    .section-title { font-size: 13px; font-weight: 600; margin: 14px 0 8px; }
+    .scene-active-list { display: flex; flex-direction: column; gap: 8px; }
+    .scene-active-item { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .scene-active-item strong { font-size: 13px; }
+    .scene-active-item .muted { width: 100%; margin-left: 0; }
+    .policy-command-center {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-bottom: 14px;
+      padding: 18px 20px;
+      border-radius: 16px;
+      background:
+        radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 24%),
+        linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+    }
+    .policy-command-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px 24px;
+      flex-wrap: wrap;
+    }
+    .policy-command-copy {
+      flex: 1 1 560px;
+      min-width: 280px;
+    }
+    .policy-command-copy h2 {
+      margin: 4px 0 8px;
+      font-size: 28px;
+      line-height: 1.2;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+    }
+    .policy-command-copy .muted {
+      max-width: 920px;
+      font-size: 13px;
+    }
+    .policy-command-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .policy-command-subline {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      border: 1px solid #dbe8ff;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.82);
+    }
+    .policy-workspace-summary {
+      color: #1d4d8f;
+      font-size: 13px;
+      line-height: 1.6;
+      font-weight: 500;
+    }
+    .policy-preset-strip {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      padding: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.9);
+    }
+    .policy-preset-field {
+      flex: 1 1 340px;
+      margin-bottom: 0;
+    }
+    .policy-preset-actions {
+      flex: 0 0 auto;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .policy-layer-strip {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .policy-layer-card {
+      padding: 14px 14px 12px;
+      border: 1px solid #dce5f3;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.92);
+      min-height: 112px;
+    }
+    .policy-layer-card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+      color: #0f172a;
+    }
+    .policy-layer-card span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.65;
+    }
+    .bundle-shell {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .bundle-shell-copy h2 {
+      margin: 4px 0 8px;
+      font-size: 24px;
+      line-height: 1.25;
+      color: #0f172a;
+    }
+    .bundle-eyebrow {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #1677ff;
+    }
+    .bundle-shell-copy .muted {
+      max-width: 980px;
+      font-size: 13px;
+    }
+    .bundle-rail {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .standard-chip {
+      padding: 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #fbfdff;
+      min-height: 96px;
+    }
+    .standard-chip strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+      color: #0f172a;
+    }
+    .standard-chip span {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+    .section-nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .section-nav button {
+      border: 1px solid #cfe0ff;
+      background: #f7faff;
+      color: #174ea6;
+      border-radius: 999px;
+      padding: 7px 12px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .section-nav button.is-active {
+      border-color: #174ea6;
+      background: #174ea6;
+      color: #fff;
+      box-shadow: 0 8px 18px rgba(23, 78, 166, 0.18);
+    }
+    .section-nav--compact {
+      margin-bottom: 12px;
+    }
+    .policy-workspace-grid {
+      gap: 14px;
+    }
+    .policy-list-card,
+    .policy-editor-card {
+      margin-bottom: 0;
+      border-radius: 16px;
+      padding: 16px;
+    }
+    .policy-card-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px 18px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .policy-card-head h3 {
+      margin: 2px 0 4px;
+      font-size: 18px;
+      color: #0f172a;
+    }
+    .policy-card-head-copy {
+      max-width: 420px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .policy-table-wrap {
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+    }
+    .policy-table-wrap .list {
+      min-width: 760px;
+    }
+    .policy-table-wrap .list th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f8fafc;
+    }
+    .policy-table-wrap .list td:nth-child(1) {
+      min-width: 190px;
+    }
+    .policy-table-wrap .list td:nth-child(6) {
+      min-width: 150px;
+    }
+    .policy-editor-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px 16px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .policy-editor-head h3 {
+      margin: 2px 0 4px;
+      font-size: 20px;
+      color: #0f172a;
+    }
+    .policy-editor-head .muted {
+      max-width: 560px;
+    }
+    .policy-editor-actions {
+      justify-content: flex-end;
+      margin-left: auto;
+    }
+    .policy-base-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px 12px;
+      margin-bottom: 14px;
+    }
+    .policy-base-grid .field {
+      margin-bottom: 0;
+    }
+    .policy-base-grid .field--full {
+      grid-column: 1 / -1;
+    }
+    .standard-section {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fbfdff;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .standard-section[hidden] {
+      display: none !important;
+    }
+    .standard-section:last-of-type {
+      margin-bottom: 0;
+    }
+    .standard-section h4 {
+      margin: 4px 0 6px;
+      font-size: 16px;
+      color: #0f172a;
+    }
+    .section-kicker {
+      font-size: 12px;
+      font-weight: 600;
+      color: #1677ff;
+    }
+    .standard-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .standard-grid--single {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .standard-editor {
+      margin-bottom: 0;
+    }
+    .standard-editor textarea {
+      min-height: 138px;
+      font-family: ui-monospace, Consolas, monospace;
+      line-height: 1.5;
+      background: #fff;
+    }
+    .bundle-advanced {
+      margin-top: 12px;
+      border: 1px dashed #dbe3f4;
+      border-radius: 12px;
+      background: #fcfdff;
+      padding: 0;
+    }
+    .bundle-advanced summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 12px 14px;
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+    .bundle-advanced summary::-webkit-details-marker {
+      display: none;
+    }
+    .bundle-advanced-body {
+      padding: 0 14px 14px;
+    }
+    .bundle-advanced h4 {
+      margin: 0 0 6px;
+      font-size: 14px;
+    }
+    .inline-code {
+      font-family: ui-monospace, Consolas, monospace;
+      background: rgba(15, 23, 42, 0.06);
+      padding: 1px 4px;
+      border-radius: 4px;
+    }
+    .policy-support-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .policy-support-card {
+      margin-bottom: 0;
+      border-radius: 14px;
+    }
+    .empty-state {
+      padding: 22px 12px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .compare-summary {
+      margin-bottom: 10px;
+      line-height: 1.7;
+    }
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .compare-table th,
+    .compare-table td {
+      text-align: left;
+      padding: 9px 8px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .compare-table th {
+      color: var(--muted);
+      font-weight: 600;
+      background: #fafafa;
+    }
+    .compare-table tr.is-changed {
+      background: #fffbe6;
+    }
+    .compare-table tr.is-current-edited {
+      background: #f6ffed;
+    }
+    .compare-table td.compare-key {
+      min-width: 180px;
+      font-weight: 600;
+    }
+    .compare-value {
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .compare-muted {
+      color: var(--muted);
+    }
+    .compare-badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    #toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      display: none;
+      background: #111827;
+      color: #fff;
+      padding: 10px 18px;
+      border-radius: 8px;
+      z-index: 9999;
+      max-width: calc(100vw - 32px);
+      text-align: center;
+    }
+    @media (max-width: 980px) {
+      .col-left, .col-right { min-width: 100%; }
+      .policy-command-center { padding: 16px; }
+      .policy-command-copy h2 { font-size: 24px; }
+      .policy-layer-strip,
+      .policy-base-grid,
+      .policy-support-grid,
+      .standard-grid,
+      .standard-grid--single { grid-template-columns: minmax(0, 1fr); }
+      .policy-preset-field,
+      .policy-preset-actions { flex: 1 1 100%; }
+      .policy-preset-actions,
+      .policy-command-actions,
+      .policy-editor-actions { justify-content: flex-start; margin-left: 0; }
+      .policy-table-wrap .list { min-width: 680px; }
+    }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="yolo-quality-policies">
+  <div class="labelu-shell-header" role="banner">
+    <div class="labelu-shell-brand">
+      <a class="labelu-shell-logo" href="/">7GAI进化平台</a>
+      <span class="labelu-shell-page-title">场景质量标准 Bundle</span>
+    </div>
+    <nav class="labelu-shell-nav" aria-label="7GAI进化平台工具导航"></nav>
+  </div>
+  <main class="page-wrap" data-lu-toolkit-main>
+    <div id="luPageHero"></div>
+
+    <section class="card policy-command-center" aria-label="场景质量标准工作区概览">
+      <div class="policy-command-head">
+        <div class="policy-command-copy">
+          <div class="bundle-eyebrow">Policy Command Center</div>
+          <h2>一套场景标准 Bundle，拆成三层业务结论</h2>
+          <div class="muted" id="pageIntro">
+            当前页面按训练任务的全局标签集合生效，集合签名由服务端生成。
+            训练页、模型编译页、模型发布页分别消费训练质量、边端验证、发布门禁三层正式结论。
+          </div>
+        </div>
+        <div class="policy-command-actions">
+          <span class="pill active-map" id="currentPresetTag" style="display:none;"></span>
+          <button type="button" class="btn" id="btnReload">刷新</button>
+          <button type="button" class="btn primary" id="btnRecommend">AI 推荐草稿</button>
+        </div>
+      </div>
+
+      <div class="policy-command-subline">
+        <strong>当前工作场景</strong>
+        <span class="policy-workspace-summary" id="policyWorkspaceSummary">
+          先选择一个或多个全局标签，再在右侧分层编辑器中维护对应策略。
+        </span>
+      </div>
+
+      <div class="policy-preset-strip">
+        <div class="field policy-preset-field">
+          <label for="presetSelect">标签集合</label>
+          <select id="presetSelect" aria-label="标签集合" multiple size="6">
+            <option value="">加载标签中...</option>
+          </select>
+          <div class="field-help" id="presetHelp">可多选；标签顺序不影响质量策略命中，训练类别顺序仍由 data.yaml 决定。</div>
+        </div>
+        <div class="policy-preset-actions">
+          <button type="button" class="btn" id="btnUsePreset">带入关键类别</button>
+          <button type="button" class="btn" id="btnClearPreset">清空标签</button>
+        </div>
+      </div>
+
+      <div class="policy-layer-strip">
+        <div class="policy-layer-card">
+          <strong>训练质量标准</strong>
+          <span>只定义训练阶段的指标门槛、样本量下限、条件达标和泛化要求。</span>
+        </div>
+        <div class="policy-layer-card">
+          <strong>边端验证标准</strong>
+          <span>只定义边端是否必验、run_only 是否可接受、是否要求带标注评估与 PT 到 BModel 容忍线。</span>
+        </div>
+        <div class="policy-layer-card">
+          <strong>发布门禁规则</strong>
+          <span>只定义训练和边端结果如何汇总成可发布、需复核或不可发布。</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="grid policy-workspace-grid">
+      <section class="col-left">
+        <div class="card policy-list-card">
+          <div class="policy-card-head">
+            <div>
+              <div class="bundle-eyebrow">Policy Assets</div>
+              <h3>策略资产列表</h3>
+              <div class="policy-card-head-copy">
+                左侧统一查看当前场景下有哪些正式策略、草稿和已启用版本；右侧只编辑当前选中策略的三层标准。
+              </div>
+            </div>
+            <div class="muted" id="listSummary">加载中...</div>
+          </div>
+          <div class="policy-table-wrap">
+            <table class="list">
+              <thead>
+                <tr>
+                  <th>策略名</th>
+                  <th>场景</th>
+                  <th>标签集合</th>
+                  <th>状态</th>
+                  <th>版本</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="policyRows">
+                <tr><td colspan="6" class="muted">加载中...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <aside class="col-right">
+        <div class="card policy-editor-card">
+          <div class="policy-editor-head">
+            <div>
+              <div class="bundle-eyebrow">Layered Editor</div>
+              <h3>分层编辑器</h3>
+              <div class="muted">
+                编辑器只维护当前策略的三层正式规则。页面不会再把训练、边端、发布三种语义混写在同一块文案里。
+              </div>
+            </div>
+            <div class="actions policy-editor-actions">
+              <button type="button" class="btn primary" id="btnSavePolicy">保存策略</button>
+              <button type="button" class="btn" id="btnActivatePolicy">设为启用</button>
+            </div>
+          </div>
+
+          <div class="policy-base-grid">
+            <div class="field">
+              <label for="policyName">策略名</label>
+              <input id="policyName" placeholder="如 garbage-exposure-ai-draft-v1" />
+            </div>
+            <div class="field">
+              <label for="sceneName">场景名称</label>
+              <input id="sceneName" placeholder="如 垃圾暴露" />
+            </div>
+            <div class="field">
+              <label for="modelFamily">模型族</label>
+              <input id="modelFamily" value="yolov11" />
+            </div>
+            <div class="field">
+              <label for="annotationKind">标注类型</label>
+              <select id="annotationKind"><option value="bbox">bbox</option></select>
+            </div>
+            <div class="field">
+              <label for="policyStatus">状态</label>
+              <select id="policyStatus">
+                <option value="draft">draft</option>
+                <option value="active">active</option>
+              </select>
+            </div>
+            <div class="field field--full">
+              <label for="policySource">来源</label>
+              <select id="policySource">
+                <option value="manual">manual</option>
+                <option value="ai_recommended">ai_recommended</option>
+                <option value="system">system</option>
+              </select>
+            </div>
+          </div>
+          <input id="rectPresetSlug" type="hidden" value="" />
+
+          <div class="section-nav section-nav--compact" aria-label="分层编辑快捷导航">
+            <button type="button" data-scroll-target="trainingStandards">训练质量标准</button>
+            <button type="button" data-scroll-target="edgeStandards">边端验证标准</button>
+            <button type="button" data-scroll-target="releaseStandards">发布门禁规则</button>
+          </div>
+
+          <section class="standard-section" id="trainingStandards">
+            <div class="section-kicker">训练层</div>
+            <h4>训练质量标准</h4>
+            <div class="muted">
+              这里只定义训练阶段的正式规则。训练任务页与模型库页应只消费这一层，不再拼接边端或发布语义。
+            </div>
+            <div class="standard-grid">
+              <div class="field standard-editor">
+                <label for="policyTrainingQualityJson">训练质量规则 JSON</label>
+                <textarea id="policyTrainingQualityJson" placeholder='{"map50_95_pass": 0.7, "map50_warn": 0.6}'></textarea>
+                <div class="field-help">负责训练指标、样本量、条件达标等规则。</div>
+              </div>
+              <div class="field standard-editor">
+                <label for="policyGeneralizationQualityJson">泛化规则 JSON</label>
+                <textarea id="policyGeneralizationQualityJson" placeholder='{"require_test_metrics": true, "max_gap_map50_95": 0.08}'></textarea>
+                <div class="field-help">负责 test 指标与训练/测试差值约束，仍归属于训练层。</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="standard-section" id="edgeStandards">
+            <div class="section-kicker">边端层</div>
+            <h4>边端验证标准</h4>
+            <div class="muted">
+              这里只定义边端验证阶段的正式规则。模型编译页应基于这一层判断可用、可运行但效果待确认、未验证或不可用。
+            </div>
+            <div class="standard-grid standard-grid--single">
+              <div class="field standard-editor">
+                <label for="policyEdgeUsabilityJson">边端验证规则 JSON</label>
+                <textarea id="policyEdgeUsabilityJson" placeholder='{"require_edge_validation": true, "max_pt_to_bmodel_map50_drop": 0.02}'></textarea>
+                <div class="field-help">负责边端验证是否必做、run_only 是否可接受、是否要求带标注评测，以及 PT 到 BModel 的最大 mAP50 绝对掉点（0-1）。</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="standard-section" id="releaseStandards">
+            <div class="section-kicker">发布层</div>
+            <h4>发布门禁规则</h4>
+            <div class="muted">
+              这里只定义发布阶段的汇总规则。模型发布页应只消费这一层，输出可发布、需复核或不可发布。
+            </div>
+            <div class="standard-grid standard-grid--single">
+              <div class="field standard-editor">
+                <label for="policyReleaseReadinessJson">发布门禁规则 JSON</label>
+                <textarea id="policyReleaseReadinessJson" placeholder='{"block_publish_when_training_failed": true, "allow_review_when_generalization_missing": true}'></textarea>
+                <div class="field-help">负责训练失败是否阻断、边端未验证是否阻断、泛化缺失是否进入人工复核。</div>
+              </div>
+            </div>
+          </section>
+
+          <details class="bundle-advanced">
+            <summary>原始 Bundle JSON（高级）</summary>
+            <div class="bundle-advanced-body">
+              <div class="field">
+                <label for="policyJson">原始策略 JSON</label>
+                <textarea id="policyJson" placeholder='{"training_quality": {...}}'></textarea>
+                <div class="field-help">上面的三层编辑区是主入口；这里保留 version、source_summary、reasons、risks 等高级字段的原始 JSON 视图。</div>
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="policy-support-grid">
+          <div class="card policy-support-card">
+            <h3>当前启用映射</h3>
+            <div id="activeSceneSummary" class="muted">加载中...</div>
+          </div>
+
+          <div class="card policy-support-card">
+            <h3>AI 推荐输入</h3>
+            <div class="field">
+              <label for="recommendBenchmark">Benchmark 名称</label>
+              <input id="recommendBenchmark" placeholder="可选，如 固定测试集 v1" />
+            </div>
+            <div class="mini-actions">
+              <div class="field" style="flex:1;min-width:120px;">
+                <label for="recommendImages">图片数</label>
+                <input id="recommendImages" type="number" min="0" />
+              </div>
+              <div class="field" style="flex:1;min-width:120px;">
+                <label for="recommendBoxes">框数</label>
+                <input id="recommendBoxes" type="number" min="0" />
+              </div>
+            </div>
+            <div class="field">
+              <label for="recommendGoal">业务目标</label>
+              <input id="recommendGoal" placeholder="如 偏召回优先 / 误报要低" />
+            </div>
+            <div class="field">
+              <label for="recommendClasses">关键类别（逗号分隔）</label>
+              <input id="recommendClasses" placeholder="如 占道经营,流动摊贩" />
+            </div>
+            <div class="muted">
+              AI 推荐会结合当前标签集合、最近的训练与边端结果以及业务目标，生成结构化质量标准建议。
+            </div>
+          </div>
+
+          <div class="card policy-support-card">
+            <h3>默认值 vs AI 建议</h3>
+            <div id="recommendCompareSummary" class="muted compare-summary">点击“AI 推荐草稿”后，这里会展示系统默认值、AI 建议值，以及当前表单值的逐项对比。</div>
+            <div id="recommendCompareTable"></div>
+          </div>
+
+          <div class="card policy-support-card">
+            <h3>当前详情</h3>
+            <div id="currentSummary" class="muted">尚未选择策略。</div>
+            <div class="section-title">结构化预览</div>
+            <pre class="json-box" id="currentJson">等待选择...</pre>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+  <div id="toast"></div>
+  <script>
+  (function () {
+    "use strict";
+
+    var state = {
+      activePolicyName: "",
+      activePolicyNames: {},
+      selected: null,
+      rows: [],
+      visibleRows: [],
+      labels: [],
+      labelById: {},
+      selectedLabelIds: [],
+      recommendationCompare: null,
+      recommending: false,
+      loadingPolicies: false,
+    };
+    var STANDARD_SECTION_IDS = ["trainingStandards", "edgeStandards", "releaseStandards"];
+
+    function esc(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function toast(text) {
+      var el = document.getElementById("toast");
+      el.textContent = text;
+      el.style.display = "block";
+      clearTimeout(window.__luToastTimer);
+      window.__luToastTimer = setTimeout(function () {
+        el.style.display = "none";
+      }, 2400);
+    }
+
+    function token() {
+      if (window.LabeluPortal && LabeluPortal.getAuthToken) return LabeluPortal.getAuthToken();
+      return localStorage.getItem("token") || "";
+    }
+
+    async function api(path, options) {
+      options = options || {};
+      var headers = options.headers || {};
+      headers["Content-Type"] = "application/json";
+      var t = token();
+      if (t) headers["Authorization"] = /^Bearer /i.test(t) ? t : ("Bearer " + t);
+      var res = await fetch("/api/v1" + path, {
+        method: options.method || "GET",
+        headers: headers,
+        body: options.body ? JSON.stringify(options.body) : undefined,
+        cache: "no-store",
+      });
+      var json = null;
+      try { json = await res.json(); } catch (e) {}
+      return { ok: res.ok, status: res.status, json: json };
+    }
+
+    function setRecommendBusy(busy) {
+      state.recommending = !!busy;
+      var btn = document.getElementById("btnRecommend");
+      if (!btn) return;
+      btn.disabled = !!busy;
+      btn.textContent = busy ? "AI 生成中..." : "AI 推荐草稿";
+    }
+
+    function setPresetHelp(text, isError) {
+      var el = document.getElementById("presetHelp");
+      if (!el) return;
+      el.textContent = text;
+      el.className = "field-help" + (isError ? " error-text" : "");
+    }
+
+    function normalizeLabelIds(values) {
+      var result = [];
+      (values || []).forEach(function (value) {
+        var id = Number(value);
+        if (id > 0 && result.indexOf(id) < 0) result.push(id);
+      });
+      return result;
+    }
+
+    function labelSetKey(values) {
+      return normalizeLabelIds(values).slice().sort(function (a, b) { return a - b; }).join(",");
+    }
+
+    function rowLabelSetKey(row) {
+      return labelSetKey(row && row.label_ids);
+    }
+
+    function sceneDisplayName(values) {
+      var ids = Array.isArray(values) ? normalizeLabelIds(values) : normalizeLabelIds(String(values || "").split(","));
+      if (!ids.length) return "历史预设策略";
+      return ids.map(function (id) {
+        var label = state.labelById[id];
+        return label ? ((label.label_key || label.label_value) + "（" + label.label_value + "）") : ("标签 #" + id);
+      }).join("、");
+    }
+
+    function policyBindingKey(row) {
+      var signature = String(row && row.label_set_signature || "").trim();
+      if (signature) {
+        return "semantic:" + String(row.model_family || "yolov11") + ":" + String(row.annotation_kind || "bbox") + ":" + signature;
+      }
+      return String(row && row.rect_preset_slug || "").trim();
+    }
+
+    function statusMeta(row) {
+      if (row && row.is_active) return { cls: "ok", text: "已启用" };
+      if (String(row && row.status || "").trim() === "active") return { cls: "warn", text: "未生效" };
+      return { cls: "na", text: "草稿" };
+    }
+
+    function setJsonEditorValue(id, value) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.value = JSON.stringify(value || {}, null, 2);
+    }
+
+    function parseJsonEditorValue(id, fallbackValue) {
+      var el = document.getElementById(id);
+      var raw = el ? String(el.value || "").trim() : "";
+      if (!raw) return fallbackValue || {};
+      return JSON.parse(raw);
+    }
+
+    function resolveActiveStandardFromHash(hashValue) {
+      var normalized = String(hashValue || window.location.hash || "").replace(/^#/, "").trim();
+      return STANDARD_SECTION_IDS.indexOf(normalized) >= 0 ? normalized : "";
+    }
+
+    function applyStandardSectionVisibility() {
+      var activeSectionId = resolveActiveStandardFromHash();
+      Array.prototype.forEach.call(document.querySelectorAll(".standard-section"), function (section) {
+        var isVisible = !activeSectionId || section.id === activeSectionId;
+        section.hidden = !isVisible;
+        section.setAttribute("aria-hidden", isVisible ? "false" : "true");
+      });
+      Array.prototype.forEach.call(document.querySelectorAll("[data-scroll-target]"), function (btn) {
+        var targetId = btn.getAttribute("data-scroll-target") || "";
+        var isActive = !!activeSectionId && targetId === activeSectionId;
+        btn.classList.toggle("is-active", isActive);
+        btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+    }
+
+    function focusStandardSection(targetId) {
+      if (!targetId) return;
+      if (window.location.hash !== "#" + targetId) {
+        window.location.hash = targetId;
+        return;
+      }
+      applyStandardSectionVisibility();
+      var el = document.getElementById(targetId);
+      if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    function sectionBundleFromEditors() {
+      return {
+        training_quality: parseJsonEditorValue("policyTrainingQualityJson", {}),
+        generalization_quality: parseJsonEditorValue("policyGeneralizationQualityJson", {}),
+        edge_usability: parseJsonEditorValue("policyEdgeUsabilityJson", {}),
+        release_readiness: parseJsonEditorValue("policyReleaseReadinessJson", {}),
+      };
+    }
+
+    function syncSectionEditorsFromBundle(bundle) {
+      bundle = bundle || {};
+      setJsonEditorValue("policyTrainingQualityJson", bundle.training_quality || {});
+      setJsonEditorValue("policyGeneralizationQualityJson", bundle.generalization_quality || {});
+      setJsonEditorValue("policyEdgeUsabilityJson", bundle.edge_usability || {});
+      setJsonEditorValue("policyReleaseReadinessJson", bundle.release_readiness || {});
+    }
+
+    function syncRawPolicyJsonFromSections() {
+      var rawEl = document.getElementById("policyJson");
+      if (!rawEl) return;
+      var parsed = {};
+      var raw = String(rawEl.value || "").trim();
+      if (raw) {
+        try {
+          parsed = JSON.parse(raw);
+        } catch (e) {
+          parsed = {};
+        }
+      }
+      var bundle = sectionBundleFromEditors();
+      parsed.training_quality = bundle.training_quality;
+      parsed.generalization_quality = bundle.generalization_quality;
+      parsed.edge_usability = bundle.edge_usability;
+      parsed.release_readiness = bundle.release_readiness;
+      rawEl.value = JSON.stringify(parsed, null, 2);
+    }
+
+    function syncSectionEditorsFromRaw() {
+      var rawEl = document.getElementById("policyJson");
+      if (!rawEl) return;
+      var raw = String(rawEl.value || "").trim();
+      if (!raw) {
+        syncSectionEditorsFromBundle({});
+        return;
+      }
+      var parsed = JSON.parse(raw);
+      syncSectionEditorsFromBundle(parsed);
+    }
+
+    function policyPayloadFromForm() {
+      var parsed = {};
+      var raw = (document.getElementById("policyJson").value || "").trim();
+      if (raw) parsed = JSON.parse(raw);
+      var bundle = sectionBundleFromEditors();
+      parsed.training_quality = bundle.training_quality;
+      parsed.generalization_quality = bundle.generalization_quality;
+      parsed.edge_usability = bundle.edge_usability;
+      parsed.release_readiness = bundle.release_readiness;
+      return {
+        policy_name: document.getElementById("policyName").value.trim(),
+        scene_name: document.getElementById("sceneName").value.trim(),
+        label_ids: normalizeLabelIds(state.selectedLabelIds),
+        model_family: document.getElementById("modelFamily").value.trim() || "yolov11",
+        annotation_kind: document.getElementById("annotationKind").value || "bbox",
+        status: document.getElementById("policyStatus").value,
+        source: document.getElementById("policySource").value,
+        version: parsed.version || 1,
+        source_summary: parsed.source_summary || {},
+        training_quality: bundle.training_quality,
+        generalization_quality: bundle.generalization_quality,
+        edge_usability: bundle.edge_usability,
+        release_readiness: bundle.release_readiness,
+        key_classes: parsed.key_classes || [],
+        reasons: parsed.reasons || [],
+        risks: parsed.risks || []
+      };
+    }
+
+    function currentPresetSlug() {
+      return labelSetKey(state.selectedLabelIds);
+    }
+
+    function compareFields() {
+      return [
+        { key: "training_quality.map50_95_pass", label: "训练达标阈值 mAP50-95" },
+        { key: "training_quality.map50_warn", label: "训练预警阈值 mAP50" },
+        { key: "training_quality.min_total_samples", label: "最少样本数" },
+        { key: "training_quality.allow_conditional_pass", label: "允许条件达标" },
+        { key: "generalization_quality.require_test_metrics", label: "要求测试集指标" },
+        { key: "generalization_quality.test_map50_95_warn", label: "泛化预警阈值 test mAP50-95" },
+        { key: "generalization_quality.max_gap_map50_95", label: "训练/测试 mAP50-95 最大差值" },
+        { key: "generalization_quality.max_gap_map50", label: "训练/测试 mAP50 最大差值" },
+        { key: "edge_usability.require_edge_validation", label: "要求边端验证" },
+        { key: "edge_usability.require_eval_when_labeled_images_exist", label: "有标注图时要求评测" },
+        { key: "edge_usability.max_pt_to_bmodel_map50_drop", label: "PT 到 BModel 最大 mAP50 绝对掉点（0-1）" },
+        { key: "release_readiness.block_publish_when_training_failed", label: "训练未达标禁止发布" },
+        { key: "release_readiness.block_publish_when_edge_unverified", label: "边端未验证禁止发布" },
+        { key: "release_readiness.allow_review_when_generalization_missing", label: "泛化缺失允许人工复核" },
+        { key: "key_classes", label: "关键类别阈值" },
+        { key: "reasons", label: "建议理由" }
+      ];
+    }
+
+    function deepGet(obj, path) {
+      if (!obj || !path) return undefined;
+      return path.split(".").reduce(function (acc, key) {
+        if (acc == null) return undefined;
+        return acc[key];
+      }, obj);
+    }
+
+    function normalizeCompareValue(key, value) {
+      if (value == null || value === "") return "";
+      if (key === "key_classes") {
+        if (!Array.isArray(value) || !value.length) return "";
+        return value.map(function (item) {
+          if (!item || typeof item !== "object") return String(item || "");
+          var label = item.label || item.name || "";
+          var threshold = item.min_ap50_95;
+          return label ? (String(label) + (threshold == null ? "" : " >= " + String(threshold))) : JSON.stringify(item);
+        }).filter(Boolean).join("；");
+      }
+      if (Array.isArray(value)) {
+        return value.map(function (item) {
+          return typeof item === "string" ? item : JSON.stringify(item);
+        }).join("；");
+      }
+      if (typeof value === "boolean") return value ? "是" : "否";
+      if (typeof value === "number") return String(Number(value.toFixed ? value.toFixed(4) : value));
+      if (typeof value === "object") return JSON.stringify(value);
+      return String(value);
+    }
+
+    function compareValue(key, obj) {
+      return normalizeCompareValue(key, deepGet(obj, key));
+    }
+
+    function buildCurrentPolicyFromForm() {
+      try {
+        return policyPayloadFromForm();
+      } catch (e) {
+        return state.selected || null;
+      }
+    }
+
+    function renderRecommendationCompare() {
+      var summary = document.getElementById("recommendCompareSummary");
+      var wrap = document.getElementById("recommendCompareTable");
+      var compare = state.recommendationCompare;
+      var selectedName = state.selected && state.selected.policy_name ? String(state.selected.policy_name) : "";
+      var compareName = compare && compare.recommendation && compare.recommendation.policy_name
+        ? String(compare.recommendation.policy_name)
+        : "";
+      if (!compare || !compare.defaultRecommendation || !compare.recommendation || (selectedName && compareName && selectedName !== compareName)) {
+        summary.textContent = "点击“AI 推荐草稿”后，这里会展示系统默认值、AI 建议值，以及当前表单值的逐项对比。";
+        wrap.innerHTML = "";
+        return;
+      }
+
+      var defaultRec = compare.defaultRecommendation;
+      var aiRec = compare.recommendation;
+      var currentRec = buildCurrentPolicyFromForm() || aiRec;
+      var fields = compareFields();
+      var changedCount = 0;
+      var editedCount = 0;
+      var rowsHtml = fields.map(function (field) {
+        var defaultValue = compareValue(field.key, defaultRec);
+        var aiValue = compareValue(field.key, aiRec);
+        var currentValue = compareValue(field.key, currentRec);
+        var changed = defaultValue !== aiValue;
+        var currentEdited = currentValue !== aiValue;
+        if (changed) changedCount += 1;
+        if (currentEdited) editedCount += 1;
+        var rowClass = changed ? "is-changed" : (currentEdited ? "is-current-edited" : "");
+        return (
+          '<tr class="' + rowClass + '">' +
+          '<td class="compare-key">' + esc(field.label) + '</td>' +
+          '<td><div class="compare-value">' + esc(defaultValue || "未设置") + '</div></td>' +
+          '<td><div class="compare-value">' + esc(aiValue || "未设置") + '</div></td>' +
+          '<td><div class="compare-value">' + esc(currentValue || "未设置") + '</div></td>' +
+          '</tr>'
+        );
+      }).join("");
+
+      summary.innerHTML =
+        '<div>本次对比标签集合：<strong>' + esc(sceneDisplayName(aiRec.label_ids)) + '</strong>' +
+        (compare.providerKey ? '，AI 提供方：<span class="inline-code">' + esc(compare.providerKey) + '</span>' : "") +
+        '</div>' +
+        '<div class="compare-badges">' +
+        '<span class="pill warn">AI 调整字段 ' + esc(String(changedCount)) + ' 项</span>' +
+        '<span class="pill ok">当前表单相对 AI 改动 ' + esc(String(editedCount)) + ' 项</span>' +
+        (compare.fallbackUsed ? '<span class="pill na">本次未拿到 AI 结果，已回退系统默认草稿</span>' : '<span class="pill active-map">已拿到 AI 建议</span>') +
+        '</div>' +
+        '<div class="muted" style="margin-top:8px;">黄色表示 AI 相对系统默认值做了调整，绿色表示你当前表单值又相对 AI 建议做了修改。</div>';
+
+      wrap.innerHTML =
+        '<table class="compare-table">' +
+        '<thead><tr><th>字段</th><th>系统默认值</th><th>AI 建议值</th><th>当前表单值</th></tr></thead>' +
+        '<tbody>' + rowsHtml + '</tbody>' +
+        '</table>';
+    }
+
+    function activePolicyNameForRow(row) {
+      var key = policyBindingKey(row);
+      return (state.activePolicyNames && state.activePolicyNames[key]) || "";
+    }
+
+    function activePolicyNameForSlug(labelKey) {
+      var row = state.rows.find(function (item) { return rowLabelSetKey(item) === String(labelKey || ""); });
+      return row ? activePolicyNameForRow(row) : "";
+    }
+
+    function renderWorkspaceSummary() {
+      var el = document.getElementById("policyWorkspaceSummary");
+      if (!el) return;
+      var slug = currentPresetSlug();
+      var total = Array.isArray(state.rows) ? state.rows.length : 0;
+      var visible = Array.isArray(state.visibleRows) ? state.visibleRows.length : 0;
+      if (!slug) {
+        el.textContent = total
+          ? "当前查看全部标签策略；列表中共有 " + total + " 条策略资产。"
+          : "当前还没有可编辑的策略资产，请先选择标签或创建新策略。";
+        return;
+      }
+      var activeName = activePolicyNameForSlug(slug);
+      var parts = [
+        "当前聚焦 " + sceneDisplayName(state.selectedLabelIds),
+        "命中 " + visible + " 条策略资产"
+      ];
+      parts.push(activeName ? "已启用策略 " + activeName : "尚未启用正式策略");
+      parts.push("右侧分层编辑器只维护该场景对应的三层标准");
+      el.textContent = parts.join("；") + "。";
+    }
+
+    function syncPresetTag() {
+      var tag = document.getElementById("currentPresetTag");
+      if (!tag) return;
+      var slug = currentPresetSlug();
+      if (!slug) {
+        tag.style.display = "none";
+        tag.textContent = "";
+        renderWorkspaceSummary();
+        return;
+      }
+      tag.style.display = "";
+      tag.textContent = "当前标签：" + sceneDisplayName(state.selectedLabelIds);
+      renderWorkspaceSummary();
+    }
+
+    function syncFormFromPreset() {
+      var labels = state.selectedLabelIds.map(function (id) { return state.labelById[id]; }).filter(Boolean);
+      if (labels.length && !document.getElementById("sceneName").value.trim()) {
+        document.getElementById("sceneName").value = labels.map(function (item) { return item.label_key || item.label_value; }).join("+");
+      }
+      if (labels.length && (!document.getElementById("recommendClasses").value || !document.getElementById("recommendClasses").value.trim())) {
+        document.getElementById("recommendClasses").value = labels.map(function (item) { return item.label_value; }).join(",");
+      }
+      syncPresetTag();
+    }
+
+    function applyPresetSelection(slug, options) {
+      options = options || {};
+      state.selectedLabelIds = normalizeLabelIds(Array.isArray(slug) ? slug : String(slug || "").split(","));
+      var presetSelect = document.getElementById("presetSelect");
+      if (presetSelect) {
+        Array.prototype.forEach.call(presetSelect.options, function (option) {
+          option.selected = state.selectedLabelIds.indexOf(Number(option.value)) >= 0;
+        });
+      }
+      syncPresetTag();
+      if (options.syncForm !== false) syncFormFromPreset();
+      filterRowsAndRender(options.keepSelection);
+    }
+
+    function renderPresetOptions() {
+      var el = document.getElementById("presetSelect");
+      if (!el) return;
+      var options = [];
+      state.labels.forEach(function (label) {
+        options.push(
+          '<option value="' + esc(label.id) + '">' + esc((label.label_key || label.label_value) + "（" + label.label_value + "）") + '</option>'
+        );
+      });
+      el.innerHTML = options.join("");
+      Array.prototype.forEach.call(el.options, function (option) {
+        option.selected = state.selectedLabelIds.indexOf(Number(option.value)) >= 0;
+      });
+    }
+
+    async function loadPresets() {
+      var res = await api("/annotation-taxonomy/labels?include_disabled=false&size=500");
+      if (!res.ok || !res.json || !res.json.data) {
+        state.labels = [];
+        state.labelById = {};
+        renderPresetOptions();
+        setPresetHelp("加载全局标签失败。", true);
+        return;
+      }
+      var rows = Array.isArray(res.json.data) ? res.json.data : [];
+      rows.sort(function (a, b) {
+        return String(a.label_value || "").localeCompare(String(b.label_value || ""));
+      });
+      state.labels = rows;
+      state.labelById = {};
+      rows.forEach(function (item) {
+        state.labelById[Number(item.id)] = item;
+      });
+      renderPresetOptions();
+      setPresetHelp("可多选；质量策略按无序标签集合匹配，类别顺序仍由训练 data.yaml 冻结。", false);
+    }
+
+    function renderActiveSceneSummary() {
+      var el = document.getElementById("activeSceneSummary");
+      var activeMap = state.activePolicyNames || {};
+      var keys = Object.keys(activeMap).sort();
+      if (!keys.length) {
+        el.textContent = "当前还没有启用中的质量标准。";
+        return;
+      }
+      el.innerHTML =
+        '<div class="scene-active-list">' +
+        keys.map(function (slug) {
+          var activeName = activeMap[slug] || "-";
+          var row = state.rows.find(function (item) { return item.policy_name === activeName; });
+          var isCurrent = row && rowLabelSetKey(row) === currentPresetSlug();
+          return (
+            '<div class="scene-active-item">' +
+            '<span class="pill ' + (isCurrent ? 'active-map' : 'ok') + '">' + esc(row ? sceneDisplayName(row.label_ids) : slug) + '</span>' +
+            '<strong>' + esc(activeName) + '</strong>' +
+            '<div class="muted">' + esc(isCurrent ? "这是当前标签集合正在生效的标准。" : "该标签集合当前启用这条标准。") + '</div>' +
+            '</div>'
+          );
+        }).join("") +
+        '</div>' +
+        '<div class="muted" style="margin-top:8px;">不同标签集合可以同时启用各自的标准，不会互相覆盖。</div>';
+    }
+
+    function fillForm(row, options) {
+      options = options || {};
+      state.selected = row;
+      document.getElementById("policyName").value = row.policy_name || "";
+      document.getElementById("sceneName").value = row.scene_name || "";
+      document.getElementById("rectPresetSlug").value = row.rect_preset_slug || "";
+      document.getElementById("modelFamily").value = row.model_family || "yolov11";
+      document.getElementById("annotationKind").value = row.annotation_kind || "bbox";
+      document.getElementById("policyStatus").value = row.status || "draft";
+      document.getElementById("policySource").value = row.source || "manual";
+      document.getElementById("policyJson").value = JSON.stringify({
+        version: row.version,
+        source_summary: row.source_summary || {},
+        training_quality: row.training_quality || {},
+        generalization_quality: row.generalization_quality || {},
+        edge_usability: row.edge_usability || {},
+        release_readiness: row.release_readiness || {},
+        key_classes: row.key_classes || [],
+        reasons: row.reasons || [],
+        risks: row.risks || []
+      }, null, 2);
+      syncSectionEditorsFromBundle({
+        training_quality: row.training_quality || {},
+        generalization_quality: row.generalization_quality || {},
+        edge_usability: row.edge_usability || {},
+        release_readiness: row.release_readiness || {},
+      });
+      if (options.syncPreset !== false && row.label_ids && rowLabelSetKey(row) !== currentPresetSlug()) {
+        applyPresetSelection(row.label_ids, { syncForm: false, keepSelection: true });
+      }
+      var meta = statusMeta(row);
+      var activeName = activePolicyNameForRow(row);
+      var sceneHint = "";
+      if (activeName && activeName === row.policy_name) {
+        sceneHint = "当前场景已启用本策略。";
+      } else if (activeName) {
+        sceneHint = "当前场景已启用：" + activeName;
+      } else {
+        sceneHint = "当前场景尚未配置启用策略。";
+      }
+      document.getElementById("currentSummary").innerHTML =
+        '<div>当前策略：<strong>' + esc(row.policy_name) + '</strong> ' +
+        '<span class="pill ' + esc(meta.cls) + '">' + esc(meta.text) + '</span></div>' +
+        '<div class="muted" style="margin-top:6px;">场景：' + esc(row.scene_name || "-") +
+        ' / 标签：' + esc(sceneDisplayName(row.label_ids)) + '</div>' +
+        '<div class="muted" style="margin-top:6px;">' + esc(sceneHint) + '</div>';
+      document.getElementById("currentJson").textContent = JSON.stringify(row, null, 2);
+      renderRecommendationCompare();
+    }
+
+    function onPolicyFormChanged() {
+      renderRecommendationCompare();
+    }
+
+    function renderRows() {
+      var tbody = document.getElementById("policyRows");
+      var rows = state.visibleRows || [];
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6"><div class="empty-state">当前筛选下没有质量标准。</div></td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(function (row) {
+        var meta = statusMeta(row);
+        var isSelected = state.selected && state.selected.policy_name === row.policy_name;
+        var activeName = activePolicyNameForRow(row);
+        var actionLabel = row.is_active ? "已生效" : (activeName ? "切换启用" : "启用");
+        return (
+          '<tr class="' + (isSelected ? 'is-selected' : '') + '">' +
+          '<td><strong>' + esc(row.policy_name) + '</strong></td>' +
+          '<td>' + esc(row.scene_name || "-") + '</td>' +
+          '<td>' + esc(sceneDisplayName(row.label_ids)) + '</td>' +
+          '<td><span class="pill ' + esc(meta.cls) + '">' + esc(meta.text) + '</span></td>' +
+          '<td>' + esc(String(row.version || 1)) + '</td>' +
+          '<td class="mini-actions">' +
+          '<button type="button" class="btn" data-act="view" data-name="' + esc(row.policy_name) + '">查看</button>' +
+          '<button type="button" class="btn" data-act="activate" data-name="' + esc(row.policy_name) + '">' + esc(actionLabel) + '</button>' +
+          '</td>' +
+          '</tr>'
+        );
+      }).join("");
+
+      Array.prototype.forEach.call(tbody.querySelectorAll("button[data-act]"), function (btn) {
+        btn.onclick = async function () {
+          var name = btn.getAttribute("data-name");
+          var row = state.rows.find(function (item) { return item.policy_name === name; });
+          if (!row) return;
+          if (btn.getAttribute("data-act") === "view") {
+            fillForm(row);
+            return;
+          }
+          var res = await api("/yolo-quality-policies/activate", {
+            method: "POST",
+            body: { policy_name: name }
+          });
+          if (!res.ok) {
+            toast("启用失败");
+            return;
+          }
+          toast("已启用");
+          await loadPolicies();
+          var nextRow = state.rows.find(function (item) { return item.policy_name === name; });
+          if (nextRow) fillForm(nextRow);
+        };
+      });
+    }
+
+    function renderListSummary() {
+      var el = document.getElementById("listSummary");
+      if (!el) return;
+      var total = state.rows.length;
+      var visible = state.visibleRows.length;
+      var slug = currentPresetSlug();
+      if (!total) {
+        el.textContent = "当前还没有创建任何质量标准。";
+        renderWorkspaceSummary();
+        return;
+      }
+      if (!slug) {
+        el.textContent = "当前显示全部质量标准，共 " + total + " 条。";
+        renderWorkspaceSummary();
+        return;
+      }
+      el.textContent = "当前标签集合下共 " + visible + " 条质量标准；全部标准总数 " + total + " 条。";
+      renderWorkspaceSummary();
+    }
+
+    function filterRowsAndRender(keepSelection) {
+      var slug = currentPresetSlug();
+      state.visibleRows = state.rows.filter(function (row) {
+        if (!slug) return true;
+        return rowLabelSetKey(row) === slug;
+      });
+      renderRows();
+      renderListSummary();
+      renderActiveSceneSummary();
+
+      var selectedName = keepSelection && state.selected ? state.selected.policy_name : "";
+      var selectedRow = selectedName
+        ? state.visibleRows.find(function (item) { return item.policy_name === selectedName; }) || state.rows.find(function (item) { return item.policy_name === selectedName; })
+        : null;
+      var activeName = slug ? activePolicyNameForSlug(slug) : "";
+      var preferred = selectedRow ||
+        (activeName ? state.visibleRows.find(function (item) { return item.policy_name === activeName; }) : null) ||
+        state.visibleRows[0] ||
+        (!slug ? state.rows[0] : null);
+      if (preferred) {
+        fillForm(preferred, { syncPreset: !!slug });
+      } else {
+        state.selected = null;
+        document.getElementById("currentSummary").textContent = "当前筛选下没有可查看的策略。";
+        document.getElementById("currentJson").textContent = "等待选择...";
+        renderRecommendationCompare();
+      }
+    }
+
+    async function loadPolicies() {
+      state.loadingPolicies = true;
+      var res = await api("/yolo-quality-policies");
+      state.loadingPolicies = false;
+      if (!res.ok || !res.json || !res.json.data) {
+        state.rows = [];
+        state.visibleRows = [];
+        document.getElementById("policyRows").innerHTML = '<tr><td colspan="6" class="muted">加载失败。</td></tr>';
+        document.getElementById("listSummary").textContent = "质量标准加载失败。";
+        document.getElementById("activeSceneSummary").textContent = "加载失败。";
+        renderWorkspaceSummary();
+        return;
+      }
+      state.activePolicyName = res.json.data.active_policy_name || "";
+      state.activePolicyNames = res.json.data.active_policy_names || {};
+      state.rows = Array.isArray(res.json.data.policies) ? res.json.data.policies : [];
+      var intro = document.getElementById("pageIntro");
+      if (intro) {
+        intro.textContent =
+          "当前页面维护的是按模型族、标注类型和标签集合签名生效的一套标准 bundle。启用后，训练页 / 模型编译页 / 模型发布页会分别按对应层级判定。当前主存：" +
+          (res.json.data.config_backend_label || "MySQL 治理表（system_config_*）") +
+          "；兼容同步文件：" + (res.json.data.runtime_file || "无");
+      }
+      filterRowsAndRender(true);
+    }
+
+    async function savePolicy() {
+      var payload;
+      try {
+        payload = policyPayloadFromForm();
+      } catch (e) {
+        toast("策略 JSON 格式不正确");
+        return;
+      }
+      if (!payload.policy_name || !payload.scene_name || !payload.label_ids.length) {
+        toast("策略名、场景和标签集合不能为空");
+        return;
+      }
+      var res = await api("/yolo-quality-policies", { method: "POST", body: payload });
+      if (!res.ok) {
+        toast("保存失败");
+        return;
+      }
+      toast("已保存");
+      await loadPolicies();
+      var saved = state.rows.find(function (item) { return item.policy_name === payload.policy_name; });
+      if (saved) fillForm(saved);
+    }
+
+    async function activateCurrent() {
+      var name = document.getElementById("policyName").value.trim();
+      if (!name) {
+        toast("请先选择策略");
+        return;
+      }
+      var res = await api("/yolo-quality-policies/activate", {
+        method: "POST",
+        body: { policy_name: name }
+      });
+      if (!res.ok) {
+        toast("启用失败");
+        return;
+      }
+      toast("已启用");
+      await loadPolicies();
+      var active = state.rows.find(function (item) { return item.policy_name === name; });
+      if (active) fillForm(active);
+    }
+
+    async function recommend() {
+      if (state.recommending) return;
+      var scene = document.getElementById("sceneName").value.trim();
+      var selectedLabelIds = normalizeLabelIds(state.selectedLabelIds);
+      if (!scene || !selectedLabelIds.length) {
+        toast("请先填写场景名称并选择标签");
+        return;
+      }
+      var payload = {
+        scene_name: scene,
+        label_ids: selectedLabelIds,
+        model_family: document.getElementById("modelFamily").value.trim() || "yolov11",
+        annotation_kind: document.getElementById("annotationKind").value || "bbox",
+        benchmark_name: document.getElementById("recommendBenchmark").value.trim() || null,
+        benchmark_image_count: Number(document.getElementById("recommendImages").value || 0) || null,
+        benchmark_box_count: Number(document.getElementById("recommendBoxes").value || 0) || null,
+        include_historical_training: true,
+        include_edge_validation_history: true,
+        include_ai_eval_reports: true,
+        business_goal: document.getElementById("recommendGoal").value.trim() || null,
+        key_classes: (document.getElementById("recommendClasses").value || "")
+          .split(",")
+          .map(function (s) { return s.trim(); })
+          .filter(Boolean),
+        business_constraints: {}
+      };
+      setRecommendBusy(true);
+      toast("AI 正在生成质量标准建议，请稍候...");
+      try {
+        var res = await api("/yolo-quality-policies/recommend", { method: "POST", body: payload });
+        if (!res.ok || !res.json || !res.json.data || !res.json.data.recommendation) {
+          toast("AI 推荐失败");
+          return;
+        }
+        state.recommendationCompare = {
+          defaultRecommendation: res.json.data.default_recommendation || null,
+          recommendation: res.json.data.recommendation || null,
+          fallbackUsed: !!res.json.data.fallback_used,
+          providerKey: res.json.data.provider_key || ""
+        };
+        fillForm(res.json.data.recommendation);
+        toast(res.json.data.fallback_used ? "AI 不可用，已回退默认草稿" : "AI 草稿已生成");
+      } finally {
+        setRecommendBusy(false);
+      }
+    }
+
+    function clearPresetFilter() {
+      applyPresetSelection("", { syncForm: false, keepSelection: false });
+      document.getElementById("currentPresetTag").style.display = "none";
+      toast("已清空标签筛选");
+    }
+
+    function bindSectionJumpButtons() {
+      Array.prototype.forEach.call(document.querySelectorAll("[data-scroll-target]"), function (btn) {
+        btn.onclick = function () {
+          var targetId = btn.getAttribute("data-scroll-target");
+          focusStandardSection(targetId);
+        };
+      });
+    }
+
+    function bindEvents() {
+      bindSectionJumpButtons();
+      document.getElementById("btnReload").onclick = async function () {
+        await loadPresets();
+        await loadPolicies();
+        toast("已刷新");
+      };
+      document.getElementById("btnSavePolicy").onclick = savePolicy;
+      document.getElementById("btnActivatePolicy").onclick = activateCurrent;
+      document.getElementById("btnRecommend").onclick = recommend;
+      document.getElementById("btnUsePreset").onclick = function () {
+        syncFormFromPreset();
+        toast(currentPresetSlug() ? "已带入关键类别" : "请先选择标签");
+      };
+      document.getElementById("btnClearPreset").onclick = clearPresetFilter;
+      document.getElementById("presetSelect").onchange = function () {
+        var values = Array.prototype.map.call(this.selectedOptions, function (option) { return Number(option.value); });
+        applyPresetSelection(values, { syncForm: true, keepSelection: false });
+      };
+      [
+        "policyName",
+        "sceneName",
+        "modelFamily",
+        "annotationKind",
+        "policyStatus",
+        "policySource"
+      ].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("input", onPolicyFormChanged);
+        el.addEventListener("change", onPolicyFormChanged);
+      });
+      [
+        "policyTrainingQualityJson",
+        "policyGeneralizationQualityJson",
+        "policyEdgeUsabilityJson",
+        "policyReleaseReadinessJson"
+      ].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("input", function () {
+          syncRawPolicyJsonFromSections();
+          onPolicyFormChanged();
+        });
+        el.addEventListener("change", function () {
+          syncRawPolicyJsonFromSections();
+          onPolicyFormChanged();
+        });
+      });
+      var rawEl = document.getElementById("policyJson");
+      if (rawEl) {
+        rawEl.addEventListener("change", function () {
+          syncSectionEditorsFromRaw();
+          onPolicyFormChanged();
+        });
+        rawEl.addEventListener("input", onPolicyFormChanged);
+      }
+      window.addEventListener("hashchange", applyStandardSectionVisibility);
+    }
+
+    async function init() {
+      bindEvents();
+      applyStandardSectionVisibility();
+      await loadPresets();
+      await loadPolicies();
+      var firstActivePolicy = state.rows.find(function (row) {
+        return row.is_active && Array.isArray(row.label_ids) && row.label_ids.length;
+      });
+      if (!currentPresetSlug() && firstActivePolicy) {
+        applyPresetSelection(firstActivePolicy.label_ids, { syncForm: false, keepSelection: true });
+      }
+    }
+
+    init();
+  })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,390 @@
+/**
+ * LabelU 独立工具页（extensions/pages）统一紧凑布局，减少留白与筛选区重叠。
+ * 在各页面 labelu_standalone_shell.css 之后引入。
+ */
+
+/* —— 页面边距 —— */
+body.labelu-shell .page-main,
+body.labelu-shell .lu-toolkit-main,
+body.labelu-shell main.page,
+body.labelu-shell .page {
+  padding: 10px 14px 16px;
+}
+
+body.labelu-shell[data-lu-page="ai-labeling"] main {
+  padding: 12px 16px 20px;
+}
+
+/* —— 工作流 Hero —— */
+body.labelu-shell #luPageHero .lu-page-hero {
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  gap: 10px 16px;
+}
+
+body.labelu-shell #luPageHero .lu-page-hero h1 {
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+
+body.labelu-shell #luPageHero .lu-page-hero-desc {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+body.labelu-shell #luPageHero .lu-flow-list {
+  gap: 4px 10px;
+}
+
+@media (min-width: 900px) {
+  body.labelu-shell #luPageHero .lu-flow-list {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+/* —— 登录提示 —— */
+body.labelu-shell .auth-box,
+body.labelu-shell .auth-banner {
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+/* —— 卡片 / 面板 —— */
+body.labelu-shell .card-block,
+body.labelu-shell .card {
+  padding: 10px 12px;
+  margin-bottom: 10px;
+}
+
+body.labelu-shell .card-inner {
+  padding: 10px 12px;
+}
+
+body.labelu-shell .hint-line,
+body.labelu-shell .panel-intro {
+  margin: 0 0 6px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+/* —— Tab —— */
+body.labelu-shell .tabs {
+  margin-bottom: 8px;
+  gap: 2px;
+}
+
+body.labelu-shell .tabs button,
+body.labelu-shell .tab-bar .tab,
+body.labelu-shell .tab {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* —— 工具栏（防重叠） —— */
+body.labelu-shell .toolbar-row {
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+body.labelu-shell .toolbar-left,
+body.labelu-shell .toolbar-right {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+body.labelu-shell .lu-toolbar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+body.labelu-shell .lu-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+body.labelu-shell .lu-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+body.labelu-shell .lu-filter-grid > div,
+body.labelu-shell .lu-filter-grid .filter-field {
+  min-width: 0;
+}
+
+body.labelu-shell .lu-filter-grid label,
+body.labelu-shell .filter-field label,
+body.labelu-shell .field-label {
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+body.labelu-shell .search-input {
+  max-width: 100%;
+  width: 100%;
+}
+
+/* —— 表格 —— */
+body.labelu-shell table.data th,
+body.labelu-shell table.data td,
+body.labelu-shell .data-table th,
+body.labelu-shell .data-table td {
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  vertical-align: middle;
+}
+
+body.labelu-shell .table-wrap {
+  border-radius: 6px;
+}
+
+body.labelu-shell .table-wrap--fill,
+body.labelu-shell .lu-table-fill .table-wrap {
+  max-height: calc(100vh - 248px);
+  min-height: 160px;
+  overflow: auto;
+}
+
+@media (max-width: 900px) {
+  body.labelu-shell .table-wrap--fill,
+  body.labelu-shell .lu-table-fill .table-wrap {
+    max-height: min(58vh, 520px);
+  }
+}
+
+body.labelu-shell .pager {
+  margin-top: 6px;
+  gap: 8px;
+  font-size: 12px;
+}
+
+body.labelu-shell .lu-pager {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  padding: 8px 0 2px;
+  font-size: 12px;
+  color: rgba(18, 19, 22, 0.76);
+}
+
+body.labelu-shell .lu-pager-inner {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  width: 100%;
+}
+
+body.labelu-shell .lu-pager-meta,
+body.labelu-shell .lu-pager-page {
+  flex-shrink: 0;
+  color: rgba(18, 19, 22, 0.82);
+}
+
+body.labelu-shell .lu-pager-meta {
+  min-width: 4.5em;
+}
+
+body.labelu-shell .lu-pager-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+body.labelu-shell .lu-pager-page {
+  min-width: 5.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+body.labelu-shell .lu-pager-size,
+body.labelu-shell .lu-pager-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+body.labelu-shell .lu-pager-size-label,
+body.labelu-shell .lu-pager-jump-label {
+  color: rgba(18, 19, 22, 0.72);
+  font-size: 12px;
+}
+
+body.labelu-shell .lu-pager-size-select,
+body.labelu-shell .lu-pager-jump-input {
+  height: 28px;
+  padding: 2px 6px;
+  border: 1px solid #d7d8dd;
+  border-radius: 6px;
+  font-size: 12px;
+  min-width: 0;
+  background: #fff;
+  color: rgba(18, 19, 22, 0.88);
+}
+
+body.labelu-shell .lu-pager-size-select {
+  width: 58px;
+}
+
+body.labelu-shell .lu-pager-jump-input {
+  width: 52px;
+}
+
+body.labelu-shell .lu-pager-size-unit,
+body.labelu-shell .lu-pager-jump-unit {
+  font-size: 12px;
+  color: rgba(18, 19, 22, 0.72);
+}
+
+body.labelu-shell .lu-pager-btn {
+  height: 28px;
+  padding: 2px 10px;
+  border: 1px solid #d7d8dd;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: rgba(18, 19, 22, 0.82);
+  font-size: 12px;
+  line-height: 1.2;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+body.labelu-shell .lu-pager-btn:hover:not(:disabled) {
+  background: #eef5ff;
+  border-color: #bfdbfe;
+  color: #0d53de;
+}
+
+body.labelu-shell .lu-pager-btn:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  color: rgba(18, 19, 22, 0.4);
+}
+
+body.labelu-shell .lu-pager-jump-btn {
+  min-width: 44px;
+  background: #0d53de;
+  border-color: #0d53de;
+  color: #fff;
+}
+
+body.labelu-shell .lu-pager-jump-btn:hover:not(:disabled) {
+  background: #0238b8;
+  border-color: #0238b8;
+  color: #fff;
+}
+
+/* —— 操作列横排 —— */
+body.labelu-shell .ops-cell,
+body.labelu-shell .lu-row-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  align-items: center;
+}
+
+body.labelu-shell .ops-cell .btn,
+body.labelu-shell .lu-row-actions .btn {
+  padding: 3px 7px;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+body.labelu-shell .cell-dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+/* —— BM1688 导出页 —— */
+body.labelu-shell[data-lu-page="yolo-bm1688"] .page-grid {
+  gap: 10px;
+}
+
+body.labelu-shell[data-lu-page="yolo-bm1688"] .panel-head {
+  padding: 10px 12px;
+}
+
+body.labelu-shell[data-lu-page="yolo-bm1688"] .panel-body {
+  padding: 10px 12px;
+}
+
+body.labelu-shell[data-lu-page="yolo-bm1688"] .config-section {
+  margin-bottom: 12px;
+}
+
+body.labelu-shell[data-lu-page="yolo-bm1688"] .bm-exports .table-wrap,
+body.labelu-shell[data-lu-page="yolo-bm1688"] .table-wrap:not(.table-wrap--fill) {
+  max-height: none;
+  min-height: 0;
+}
+
+body.labelu-shell[data-lu-page="yolo-bm1688"] .toolbar-row {
+  margin-bottom: 8px;
+}
+
+/* —— 预标注双栏 —— */
+body.labelu-shell[data-lu-page="yolo-preannotate"] .page-grid {
+  gap: 10px;
+}
+
+body.labelu-shell[data-lu-page="yolo-preannotate"] .models {
+  max-height: calc(100vh - 320px);
+}
+
+/* —— 评估提示词 —— */
+body.labelu-shell[data-lu-page="yolo-eval-prompts"] .content-grid {
+  gap: 10px;
+}
+
+body.labelu-shell[data-lu-page="yolo-eval-prompts"] .editor-pane {
+  padding: 10px 12px;
+}
+
+body.labelu-shell[data-lu-page="yolo-eval-prompts"] .toolbar-row {
+  padding: 8px 12px;
+}
+
+/* —— 工作流 —— */
+body.labelu-shell[data-lu-page="yolo-workflow"] .card-inner,
+body.labelu-shell[data-lu-page="yolo-workflow"] .toolbar-strip {
+  padding: 10px 12px;
+}
+
+body.labelu-shell[data-lu-page="yolo-workflow"] .workflow-diagram-wrap {
+  padding: 8px 0;
+}
+
+/* —— AI 标注设置 —— */
+body.labelu-shell[data-lu-page="ai-labeling"] .card {
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+
+body.labelu-shell[data-lu-page="ai-labeling"] .topbar {
+  margin-bottom: 10px;
+}
+
+body.labelu-shell[data-lu-page="ai-labeling"] .topbar h1 {
+  font-size: 18px;
+}

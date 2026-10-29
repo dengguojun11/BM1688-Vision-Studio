@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VLX-Seek 1.5 视觉感知工作台</title>
+  <style>
+    :root {
+      --bg: #f4f5f6;
+      --surface: #ffffff;
+      --surface-2: #f8f8f7;
+      --ink: #161817;
+      --muted: #676c69;
+      --line: #dfe2df;
+      --accent: #e6532f;
+      --accent-dark: #bf3d20;
+      --green: #147d63;
+      --danger: #bd2c2c;
+      --shadow: 0 10px 30px rgba(18, 24, 21, .07);
+      font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); min-width: 320px; }
+    button, input, select, textarea { font: inherit; letter-spacing: 0; }
+    button { cursor: pointer; }
+    header {
+      height: 68px; padding: 0 24px; display: flex; align-items: center;
+      justify-content: space-between; gap: 20px; background: var(--surface);
+      border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20;
+    }
+    .brand { display: flex; align-items: center; gap: 13px; min-width: 0; }
+    .brand-mark {
+      width: 36px; height: 36px; display: grid; place-items: center; color: white;
+      background: var(--ink); border-radius: 6px; font-size: 15px; font-weight: 800;
+    }
+    .brand h1 { margin: 0; font-size: 17px; line-height: 1.2; font-weight: 730; }
+    .brand p { margin: 3px 0 0; font-size: 12px; color: var(--muted); }
+    .head-actions { display: flex; align-items: center; gap: 16px; }
+    .status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #999; }
+    .status.ready .status-dot { background: var(--green); box-shadow: 0 0 0 4px rgba(20,125,99,.11); }
+    .status.error .status-dot { background: var(--danger); }
+    .segmented { display: flex; padding: 3px; background: #eef0ee; border-radius: 6px; }
+    .segmented button { border: 0; background: transparent; padding: 6px 10px; border-radius: 4px; color: var(--muted); font-size: 12px; }
+    .segmented button.active { background: white; color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.09); }
+    main { height: calc(100vh - 68px); display: grid; grid-template-columns: 310px minmax(380px, 1fr) 360px; }
+    aside, .result-panel { background: var(--surface); overflow-y: auto; }
+    aside { border-right: 1px solid var(--line); padding: 22px; }
+    .result-panel { border-left: 1px solid var(--line); padding: 22px; }
+    .section-title { font-size: 12px; text-transform: uppercase; color: var(--muted); font-weight: 700; margin: 0 0 10px; }
+    .field { margin-bottom: 18px; }
+    label { display: block; font-size: 13px; font-weight: 650; margin-bottom: 8px; }
+    select, textarea, input[type="text"], input[type="number"] {
+      width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--surface);
+      padding: 10px 11px; color: var(--ink); outline: none;
+    }
+    select:focus, textarea:focus, input:focus { border-color: #8b918d; box-shadow: 0 0 0 3px rgba(22,24,23,.06); }
+    textarea { min-height: 102px; resize: vertical; line-height: 1.5; }
+    .hint { margin-top: 7px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+    .run {
+      width: 100%; border: 0; border-radius: 6px; background: var(--accent); color: white;
+      padding: 12px 16px; font-weight: 700; transition: background .18s, transform .18s;
+    }
+    .run:hover { background: var(--accent-dark); }
+    .run:active { transform: translateY(1px); }
+    .run:disabled { cursor: not-allowed; background: #b5b8b6; }
+    .workspace { min-width: 0; padding: 24px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+    .workspace-bar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    .workspace-bar h2 { margin: 0; font-size: 15px; font-weight: 700; }
+    .workspace-actions { display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
+    .file-meta { color: var(--muted); font-size: 12px; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .replace-button { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 7px 10px; font-size: 12px; font-weight: 650; white-space: nowrap; cursor: pointer; }
+    .canvas-wrap {
+      flex: 1; min-height: 340px; display: grid; place-items: center; position: relative;
+      border: 1px solid var(--line); border-radius: 8px; background-color: #e8ebe8;
+      background-image: linear-gradient(45deg, #dfe2df 25%, transparent 25%), linear-gradient(-45deg, #dfe2df 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #dfe2df 75%), linear-gradient(-45deg, transparent 75%, #dfe2df 75%);
+      background-size: 18px 18px; background-position: 0 0, 0 9px, 9px -9px, -9px 0;
+      overflow: hidden;
+    }
+    .canvas-wrap.dragover { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--accent); }
+    .empty { text-align: center; padding: 30px; color: var(--muted); }
+    .empty-icon { width: 54px; height: 54px; margin: 0 auto 14px; border: 1px solid #bfc4c0; border-radius: 50%; display: grid; place-items: center; font-size: 26px; background: rgba(255,255,255,.75); color: var(--ink); }
+    .empty strong { display: block; color: var(--ink); margin-bottom: 6px; font-size: 15px; }
+    .file-button { display: inline-block; margin-top: 16px; padding: 9px 14px; border-radius: 6px; background: var(--ink); color: white; font-size: 13px; font-weight: 650; cursor: pointer; }
+    #fileInput { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    #imageStage { position: relative; max-width: 100%; max-height: 100%; display: none; user-select: none; }
+    #preview { display: block; max-width: 100%; max-height: calc(100vh - 170px); object-fit: contain; }
+    #drawLayer { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+    .draw-tip { position: absolute; left: 12px; bottom: 12px; background: rgba(22,24,23,.86); color: white; padding: 7px 10px; border-radius: 5px; font-size: 11px; display: none; }
+    .result-panel h2 { margin: 0 0 18px; font-size: 15px; }
+    .result-head { display: flex; align-items: center; justify-content: space-between; }
+    .close-result { display: none; width: 30px; height: 30px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); color: var(--ink); font-size: 21px; line-height: 1; }
+    .answer { min-height: 108px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 16px 0; line-height: 1.65; font-size: 14px; white-space: pre-wrap; }
+    .answer.placeholder { color: var(--muted); }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); margin: 18px 0; border: 1px solid var(--line); }
+    .metric { background: var(--surface); padding: 12px 8px; text-align: center; min-width: 0; }
+    .metric strong { display: block; font-size: 15px; }
+    .metric span { display: block; margin-top: 3px; font-size: 10px; color: var(--muted); }
+    .box-list { border-top: 1px solid var(--line); }
+    .box-row { padding: 11px 0; display: grid; grid-template-columns: 24px 1fr; gap: 9px; border-bottom: 1px solid var(--line); font-size: 12px; }
+    .box-index { width: 22px; height: 22px; background: var(--accent); color: white; border-radius: 4px; display: grid; place-items: center; font-weight: 700; }
+    .coords { color: var(--muted); margin-top: 3px; font-variant-numeric: tabular-nums; }
+    details { margin-top: 18px; }
+    summary { font-size: 12px; color: var(--muted); cursor: pointer; }
+    pre { margin: 10px 0 0; padding: 12px; background: #f1f2f1; border-radius: 6px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .loading { position: absolute; inset: 0; display: none; place-items: center; background: rgba(244,245,246,.82); backdrop-filter: blur(3px); z-index: 5; }
+    .loading.active { display: grid; }
+    .loader-box { text-align: center; color: var(--ink); font-size: 13px; }
+    .spinner { width: 32px; height: 32px; border: 3px solid #ccd0cd; border-top-color: var(--accent); border-radius: 50%; margin: 0 auto 12px; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-banner { display: none; margin-bottom: 14px; border-left: 3px solid var(--danger); padding: 10px 12px; background: #fff2f0; color: #82231e; font-size: 12px; line-height: 1.5; }
+    @media (max-width: 1080px) {
+      main { grid-template-columns: 270px minmax(350px, 1fr); }
+      .result-panel { position: fixed; right: 0; top: 68px; bottom: 0; width: 360px; z-index: 12; box-shadow: var(--shadow); transform: translateX(100%); transition: transform .25s; }
+      .result-panel.open { transform: translateX(0); }
+      .close-result { display: block; }
+    }
+    @media (max-width: 720px) {
+      header { padding: 0 14px; height: 62px; }
+      .brand p, .status span { display: none; }
+      main { display: block; height: auto; }
+      aside { border-right: 0; border-bottom: 1px solid var(--line); padding: 16px; }
+      .workspace { height: 560px; padding: 16px; }
+      .result-panel { top: 62px; width: min(92vw, 380px); }
+      .field { margin-bottom: 13px; }
+      textarea { min-height: 76px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-mark">VLX</div>
+      <div><h1>VLX-Seek 1.5</h1><p data-i18n="subtitle">细粒度视觉感知工作台 · 10B</p></div>
+    </div>
+    <div class="head-actions">
+      <div id="status" class="status"><i class="status-dot"></i><span id="statusText">正在连接服务</span></div>
+      <div class="segmented" aria-label="Language">
+        <button id="zhBtn" class="active" type="button">中文</button><button id="enBtn" type="button">EN</button>
+      </div>
+    </div>
+  </header>
+  <main>
+    <aside>
+      <p class="section-title" data-i18n="settings">任务设置</p>
+      <div class="field">
+        <label for="task" data-i18n="task">感知任务</label>
+        <select id="task">
+          <option value="detection">开放词汇检测</option>
+          <option value="grounding_single">单目标定位</option>
+          <option value="counting">目标计数</option>
+          <option value="reasoning_detection">推理检测</option>
+          <option value="brief_region_caption">区域描述</option>
+          <option value="region_ocr">区域文字识别</option>
+          <option value="vqa">通用视觉问答</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="prompt" data-i18n="prompt">问题或目标描述</label>
+        <textarea id="prompt" placeholder="例如：骑电动车的人">骑电动车的人</textarea>
+        <div id="promptHint" class="hint" data-i18n="multiHint">检测多个类别时用英文分号分隔，例如：行人; 汽车</div>
+      </div>
+      <div id="regionField" class="field" style="display:none">
+        <label data-i18n="region">目标区域</label>
+        <input id="regionBox" type="text" readonly placeholder="请在图片上拖动框选">
+        <div class="hint" data-i18n="regionHint">在中间图片上按住并拖动，框选需要描述或识别文字的区域。</div>
+      </div>
+      <div class="field">
+        <label for="tokens" data-i18n="maxTokens">最大输出长度</label>
+        <input id="tokens" type="number" min="32" max="1024" step="32" value="384">
+      </div>
+      <button id="runBtn" class="run" type="button" disabled data-i18n="run">开始分析</button>
+    </aside>
+    <section class="workspace">
+      <div class="workspace-bar"><h2 data-i18n="source">输入图像</h2><div class="workspace-actions"><span id="fileMeta" class="file-meta">尚未选择图片</span><label class="replace-button" for="fileInput" data-i18n="replace">更换图片</label></div></div>
+      <div id="canvasWrap" class="canvas-wrap">
+        <div id="empty" class="empty">
+          <div class="empty-icon">↑</div><strong data-i18n="dropTitle">上传一张图片</strong>
+          <span data-i18n="dropText">拖放 JPG、PNG 或 WEBP 到这里</span><br>
+          <label class="file-button" for="fileInput" data-i18n="choose">选择图片</label>
+        </div>
+        <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp">
+        <div id="imageStage"><img id="preview" alt="Preview"><canvas id="drawLayer"></canvas></div>
+        <div id="drawTip" class="draw-tip" data-i18n="drawTip">拖动鼠标框选目标区域</div>
+        <div id="loading" class="loading"><div class="loader-box"><div class="spinner"></div><span id="loadingText">模型正在分析图像</span></div></div>
+      </div>
+    </section>
+    <section id="resultPanel" class="result-panel">
+      <div class="result-head"><h2 data-i18n="result">识别结果</h2><button id="closeResult" class="close-result" type="button" title="关闭" aria-label="关闭">×</button></div>
+      <div id="errorBanner" class="error-banner"></div>
+      <div id="answer" class="answer placeholder" data-i18n="resultEmpty">完成分析后，模型回答和框选目标会显示在这里。</div>
+      <div class="metrics">
+        <div class="metric"><strong id="elapsed">--</strong><span data-i18n="elapsed">耗时（秒）</span></div>
+        <div class="metric"><strong id="proposalCount">--</strong><span data-i18n="proposals">候选区域</span></div>
+        <div class="metric"><strong id="boxCount">--</strong><span data-i18n="targets">命中目标</span></div>
+      </div>
+      <p class="section-title" data-i18n="coordinates">目标坐标</p>
+      <div id="boxList" class="box-list"><div class="hint" data-i18n="noBoxes">暂无框选结果</div></div>
+      <details><summary data-i18n="raw">查看模型原始输出</summary><pre id="rawAnswer">--</pre></details>
+    </section>
+  </main>
+  <script>
+    const $ = id => document.getElementById(id);
+    const I18N = {
+      zh: { subtitle:'细粒度视觉感知工作台 · 10B', settings:'任务设置', task:'感知任务', prompt:'问题或目标描述', multiHint:'检测多个类别时用英文分号分隔，例如：行人; 汽车', region:'目标区域', regionHint:'在中间图片上按住并拖动，框选需要描述或识别文字的区域。', maxTokens:'最大输出长度', run:'开始分析', gpuHint:'推理在两张 NVIDIA GPU 上运行，同一时间串行处理一个请求。', source:'输入图像', replace:'更换图片', dropTitle:'上传一张图片', dropText:'拖放 JPG、PNG 或 WEBP 到这里', choose:'选择图片', drawTip:'拖动鼠标框选目标区域', result:'识别结果', resultEmpty:'完成分析后，模型回答和框选目标会显示在这里。', elapsed:'耗时（秒）', proposals:'候选区域', targets:'命中目标', coordinates:'目标坐标', noBoxes:'暂无框选结果', raw:'查看模型原始输出', ready:'模型已就绪', loading:'模型正在加载', serviceError:'服务异常', analyzing:'模型正在分析图像', selectFirst:'请先选择图片', drawFirst:'请先在图片上框选目标区域', noTarget:'模型未返回匹配目标', fileNone:'尚未选择图片' },
+      en: { subtitle:'Fine-grained visual perception · 10B', settings:'Task settings', task:'Perception task', prompt:'Question or target', multiHint:'Separate multiple detection categories with semicolons, e.g. person; car', region:'Target region', regionHint:'Drag on the image to select the region to describe or read.', maxTokens:'Maximum output length', run:'Analyze', gpuHint:'Inference runs across two NVIDIA GPUs. Requests are processed one at a time.', source:'Input image', replace:'Replace image', dropTitle:'Upload an image', dropText:'Drop a JPG, PNG or WEBP here', choose:'Choose image', drawTip:'Drag to select a target region', result:'Result', resultEmpty:'The answer and grounded targets will appear here.', elapsed:'Time (sec)', proposals:'Proposals', targets:'Targets', coordinates:'Target coordinates', noBoxes:'No grounded targets', raw:'View raw model output', ready:'Model ready', loading:'Loading model', serviceError:'Service error', analyzing:'Analyzing image', selectFirst:'Choose an image first', drawFirst:'Draw a target region first', noTarget:'No matching target returned', fileNone:'No image selected' }
+    };
+    const taskOptions = {
+      zh: [['detection','开放词汇检测'],['grounding_single','单目标定位'],['counting','目标计数'],['reasoning_detection','推理检测'],['brief_region_caption','区域描述'],['region_ocr','区域文字识别'],['vqa','通用视觉问答']],
+      en: [['detection','Open-vocabulary detection'],['grounding_single','Single-object grounding'],['counting','Object counting'],['reasoning_detection','Reasoning detection'],['brief_region_caption','Region captioning'],['region_ocr','Region OCR'],['vqa','General VQA']]
+    };
+    const defaults = { detection:['骑电动车的人','person riding an electric bicycle'], grounding_single:['画面中穿白色衣服的人','the person wearing white'], counting:['行人','pedestrian'], reasoning_detection:['没有佩戴安全帽的工人','workers without safety helmets'], brief_region_caption:['请描述框选区域','Describe the selected region'], region_ocr:['读取框选区域中的文字','Read the text in the selected region'], vqa:['这张图片中发生了什么？','What is happening in this image?'] };
+    let lang = 'zh', file = null, ready = false, selection = null, drawing = null, renderedResult = false;
+    function t(key){ return I18N[lang][key] || key; }
+    function setLang(next){
+      lang = next; $('zhBtn').classList.toggle('active', next==='zh'); $('enBtn').classList.toggle('active', next==='en');
+      document.documentElement.lang = next==='zh'?'zh-CN':'en';
+      document.querySelectorAll('[data-i18n]').forEach(el => el.textContent = t(el.dataset.i18n));
+      const current = $('task').value; $('task').innerHTML = taskOptions[lang].map(([v,n])=>`<option value="${v}">${n}</option>`).join(''); $('task').value=current;
+      $('prompt').value = defaults[current][next==='zh'?0:1]; updateStatusText();
+      if(!file) $('fileMeta').textContent=t('fileNone');
+    }
+    function updateStatusText(){ const s=$('status'); $('statusText').textContent = s.classList.contains('ready')?t('ready'):s.classList.contains('error')?t('serviceError'):t('loading'); }
+    $('zhBtn').onclick=()=>setLang('zh'); $('enBtn').onclick=()=>setLang('en');
+    $('closeResult').onclick=()=>$('resultPanel').classList.remove('open');
+    $('task').onchange=()=>{ const task=$('task').value, region=['brief_region_caption','region_ocr'].includes(task); $('regionField').style.display=region?'block':'none'; $('drawTip').style.display=region&&file?'block':'none'; $('prompt').value=defaults[task][lang==='zh'?0:1]; $('tokens').value=task==='reasoning_detection'?768:task==='vqa'?512:384; drawOverlay(); };
+    async function pollHealth(){
+      try { const r=await fetch('/api/health'); const data=await r.json(); const s=$('status'); s.className='status '+(data.phase==='ready'?'ready':data.phase==='error'?'error':''); ready=data.phase==='ready'; updateStatusText(); $('runBtn').disabled=!ready||!file; if(data.phase!=='ready') setTimeout(pollHealth,2500); }
+      catch { $('status').className='status error'; ready=false; updateStatusText(); setTimeout(pollHealth,3000); }
+    }
+    function useFile(next){
+      if(!next || !next.type.startsWith('image/')) return; file=next; selection=null; renderedResult=false; const url=URL.createObjectURL(next); $('preview').src=url; $('preview').onload=()=>{ $('empty').style.display='none'; $('imageStage').style.display='block'; $('fileMeta').textContent=`${next.name} · ${$('preview').naturalWidth} × ${$('preview').naturalHeight}`; resizeCanvas(); $('drawTip').style.display=['brief_region_caption','region_ocr'].includes($('task').value)?'block':'none'; }; $('runBtn').disabled=!ready;
+    }
+    $('fileInput').onchange=e=>useFile(e.target.files[0]);
+    const wrap=$('canvasWrap'); ['dragenter','dragover'].forEach(n=>wrap.addEventListener(n,e=>{e.preventDefault();wrap.classList.add('dragover')})); ['dragleave','drop'].forEach(n=>wrap.addEventListener(n,e=>{e.preventDefault();wrap.classList.remove('dragover')})); wrap.addEventListener('drop',e=>useFile(e.dataTransfer.files[0]));
+    function resizeCanvas(){ const c=$('drawLayer'), img=$('preview'); c.width=img.clientWidth*devicePixelRatio; c.height=img.clientHeight*devicePixelRatio; drawOverlay(); }
+    window.addEventListener('resize',resizeCanvas);
+    function pointerPos(e){ const r=$('drawLayer').getBoundingClientRect(); return {x:Math.max(0,Math.min(r.width,e.clientX-r.left)),y:Math.max(0,Math.min(r.height,e.clientY-r.top))}; }
+    $('drawLayer').onpointerdown=e=>{ if(!['brief_region_caption','region_ocr'].includes($('task').value)) return; e.currentTarget.setPointerCapture(e.pointerId); drawing={start:pointerPos(e),end:pointerPos(e)}; drawOverlay(); };
+    $('drawLayer').onpointermove=e=>{ if(drawing){drawing.end=pointerPos(e);drawOverlay();} };
+    $('drawLayer').onpointerup=e=>{ if(!drawing)return; drawing.end=pointerPos(e); const img=$('preview'), r=$('drawLayer').getBoundingClientRect(), a=drawing.start,b=drawing.end; const x1=Math.min(a.x,b.x)*img.naturalWidth/r.width,y1=Math.min(a.y,b.y)*img.naturalHeight/r.height,x2=Math.max(a.x,b.x)*img.naturalWidth/r.width,y2=Math.max(a.y,b.y)*img.naturalHeight/r.height; if(x2-x1>4&&y2-y1>4) selection=[Math.round(x1),Math.round(y1),Math.round(x2),Math.round(y2)]; drawing=null; $('regionBox').value=selection?`[${selection.join(', ')}]`:''; drawOverlay(); };
+    function drawOverlay(){ const c=$('drawLayer'); if(!c.width)return; const ctx=c.getContext('2d'), ratio=devicePixelRatio; ctx.clearRect(0,0,c.width,c.height); ctx.scale(ratio,ratio); let rect=null; if(drawing){rect=[drawing.start.x,drawing.start.y,drawing.end.x,drawing.end.y]} else if(selection&&['brief_region_caption','region_ocr'].includes($('task').value)){ const img=$('preview'),r=c.getBoundingClientRect(); rect=[selection[0]*r.width/img.naturalWidth,selection[1]*r.height/img.naturalHeight,selection[2]*r.width/img.naturalWidth,selection[3]*r.height/img.naturalHeight]; } if(rect){const [a,b,x,y]=rect;ctx.fillStyle='rgba(230,83,47,.13)';ctx.strokeStyle='#e6532f';ctx.lineWidth=3;ctx.fillRect(Math.min(a,x),Math.min(b,y),Math.abs(x-a),Math.abs(y-b));ctx.strokeRect(Math.min(a,x),Math.min(b,y),Math.abs(x-a),Math.abs(y-b));} ctx.setTransform(1,0,0,1,0,0); }
+    function showError(message){ $('errorBanner').textContent=message; $('errorBanner').style.display='block'; $('resultPanel').classList.add('open'); }
+    $('runBtn').onclick=async()=>{
+      if(!file){showError(t('selectFirst'));return;} const task=$('task').value; if(['brief_region_caption','region_ocr'].includes(task)&&!selection){showError(t('drawFirst'));return;}
+      $('errorBanner').style.display='none'; $('loading').classList.add('active'); $('loadingText').textContent=t('analyzing'); $('runBtn').disabled=true;
+      const fd=new FormData(); fd.append('image',file); fd.append('task',task); fd.append('text',$('prompt').value); fd.append('lang',lang); fd.append('max_new_tokens',$('tokens').value); if(selection&&['brief_region_caption','region_ocr'].includes(task))fd.append('boxes_json',JSON.stringify([selection]));
+      try { const r=await fetch('/api/infer',{method:'POST',body:fd}); const data=await r.json(); if(!r.ok)throw new Error(data.detail||`HTTP ${r.status}`); renderedResult=true; $('preview').src=data.annotated_image; $('preview').onload=()=>resizeCanvas(); $('answer').classList.remove('placeholder'); $('answer').textContent=data.answer||t('noTarget'); $('elapsed').textContent=data.elapsed_seconds; $('proposalCount').textContent=data.proposal_count; $('boxCount').textContent=data.boxes.length; $('rawAnswer').textContent=data.raw_answer||'--'; $('boxList').innerHTML=data.boxes.length?data.boxes.map((b,i)=>`<div class="box-row"><span class="box-index">${i+1}</span><div><strong>${escapeHtml(b.label)}</strong><div class="coords">[${Math.round(b.xmin)}, ${Math.round(b.ymin)}, ${Math.round(b.xmax)}, ${Math.round(b.ymax)}]</div></div></div>`).join(''):`<div class="hint">${t('noBoxes')}</div>`; $('resultPanel').classList.add('open'); }
+      catch(e){showError(e.message);} finally{$('loading').classList.remove('active');$('runBtn').disabled=!ready;}
+    };
+    function escapeHtml(value){ const d=document.createElement('div'); d.textContent=value??''; return d.innerHTML; }
+    setLang('zh'); pollHealth();
+  </script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+#!/usr/bin/env sh
+# LabelU 裸库 pre-receive：禁止未经审批直接 push 到 main（方案 B）
+# 安装：bash scripts/install_git_hooks.sh [/data/labeIU/repos/labelU.git]
+#
+# 负责人合并 main 前在裸库根创建 .allow-main-push（merge_feature_to_main.sh 会自动处理）
+
+set -eu
+
+GIT_DIR="${GIT_DIR:-$(git rev-parse --git-dir)}"
+ALLOW_FILE="${GIT_DIR}/.allow-main-push"
+
+deny_main() {
+  reason="$1"
+  printf '%s\n' "$reason" >&2
+  printf '%s\n' "请 push 功能分支（如 feat/你的名字-功能简述），由负责人 review 后合并到 main。" >&2
+  printf '%s\n' "负责人：bash scripts/merge_feature_to_main.sh <分支名>" >&2
+  exit 1
+}
+
+while read -r oldrev newrev refname; do
+  case "$refname" in
+    refs/heads/main)
+      if [ ! -f "$ALLOW_FILE" ]; then
+        if [ "$newrev" = "0000000000000000000000000000000000000000" ]; then
+          deny_main "ERROR: 禁止删除 main 分支。"
+        fi
+        deny_main "ERROR: 禁止直接 push 到 main（未检测到 .allow-main-push）。"
+      fi
+      ;;
+    refs/tags/*)
+      ;;
+    refs/heads/*)
+      ;;
+    *)
+      printf 'WARN: 忽略未知 ref: %s\n' "$refname" >&2
+      ;;
+  esac
+done
+
+exit 0

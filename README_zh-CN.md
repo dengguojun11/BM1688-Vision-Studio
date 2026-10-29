@@ -1,0 +1,181 @@
+<div align="center">
+<article style="display: flex; flex-direction: column; align-items: center; justify-content: center;">
+    <p align="center"><img width="300" src="https://user-images.githubusercontent.com/25022954/209616423-9ab056be-5d62-4eeb-b91d-3b20f64cfcf8.svg" /></p>
+    <h1 style="width: 100%; text-align: center;"></h1>
+    <p align="center">
+        简体中文 | <a href="./README.md" >English</a>
+    </p>
+</article>
+    
+   
+</div>
+
+## 7G_AI_labelU / 7GAI 进化平台
+
+本仓库的工程名称为 `7G_AI_labelU`，产品界面名称为“7GAI 进化平台”。
+
+## 产品介绍
+
+LabelU是一款综合性的数据标注平台，专为处理多模态数据而设计。该平台旨在通过提供丰富的标注工具和高效的工作流程，帮助用户更轻松地处理图像、视频和音频数据的标注任务，满足各种复杂的数据分析和模型训练需求。
+
+## 特色功能
+
+### 多功能图像标注工具
+LabelU为图像标注提供了全面的工具集，包括2D框、语义分割、多段线、关键点等多种标注方式。这些工具能够灵活应对诸如目标检测、场景分析、图像识别、机器翻译等各种图像处理任务，帮助用户高效完成图像的标识、注释和分析。
+
+### 强大的视频标注功能
+视频标注方面，LabelU展现了强大的处理能力，支持视频分割、视频分类以及视频信息提取等功能。非常适合应用于视频检索、视频摘要、行为识别等任务，使用户能够轻松处理长时段视频，精准提取关键信息，支持复杂场景分析，为后续的模型训练提供高质量的标注数据。
+
+### 高效的音频标注工具
+音频标注工具是LabelU的另一大特色。该工具具备高效、精准的音频分析能力，支持音频分割、音频分类和音频信息提取。通过将复杂的声音信息直观化展示，LabelU简化了音频数据的处理流程，助力更准确的模型开发。
+
+### 人工智能辅助标注
+LabelU 支持预标注数据的一键载入，用户可以根据实际需要对其进行细化和调整。这一特性提高了标注的效率和准确性。
+
+### AI 自动标注
+LabelU 集成了 AI 模型服务，支持图像数据的自动标注。在标注页面点击「AI 标注」按钮即可让模型自动检测和分割目标，也支持对整个任务的所有未标注样本进行批量标注，并可实时查看进度。项目内置提供了三个参考模型服务：
+
+- **Florence-2** — 轻量级，CPU 友好（约 4GB 显存）
+- **GroundingDINO + EfficientSAM** — 高质量检测 + 分割（约 4GB 显存）
+- **SAM 3** — 最新一代统一模型（约 8GB 显存，需要高端 GPU）
+
+详见 [`model_server/README.md`](./model_server/README.md) 了解部署方式。
+
+### YOLO 训练与算能部署（扩展页）
+
+独立工具页（`/yolo-training`、`/yolo-preannotate`、`/yolo-bm1688-exports` 等）由 `frontend/extensions/` 提供，顶栏可在各工具间切换。常用环境变量：`YOLO_TRAIN_ENABLED`、`TASK_SUPERUSER_USERNAMES`（见 [`frontend/extensions/README.md`](./frontend/extensions/README.md)）。
+
+### S3 数据源导入
+LabelU 支持从 S3 兼容对象存储（AWS S3、MinIO 等）直接导入标注数据。在任务设置中配置数据源连接，浏览和预览文件，然后一键导入选定文件或路径下的所有文件。
+
+
+https://github.com/user-attachments/assets/f90e5a66-ab4d-456e-af4d-e6408a623812
+
+
+https://github.com/user-attachments/assets/0fa5bc39-20ba-46b6-9839-379a49f692cf
+
+
+## 特性
+
+- 简易，提供多种图像标注工具，通过简单可视化配置即可标注。
+- 灵活，多种工具可自由组合使用，满足大部分图像，视频，音频的标注需求。
+- 通用，支持导出多种数据格式，包括 JSON，COCO，MASK。
+
+## 快速开始
+
+- <a href="https://opendatalab.github.io/labelU-Kit/">
+    <button>体验标注工具</button>
+</a>
+
+- <a href="https://labelu.shlab.tech/">
+    <button>体验在线版</button>
+</a>
+
+### 本地部署
+
+1. 安装 [Miniconda](https://docs.conda.io/en/latest/miniconda.html)，选择对应的操作系统类型并下载安装。
+
+> **注：** 如果你的系统是 MacOS intel 芯片，请安装 [intel x86_64 版本的 Miniconda](https://repo.anaconda.com/miniconda/)。
+
+2. 安装完毕后，在终端运行以下命令（过程中的提示选择默认 `y` 即可）：
+
+```bash
+conda create -n labelu python=3.11
+```
+
+> **注：** Windows 平台可在 Anaconda Prompt 程序中运行以上命令。
+
+3. 激活环境：
+
+```bash
+conda activate labelu
+```
+
+4. 安装 LabelU：
+
+```bash
+pip install labelu
+```
+
+> 安装测试版本：`pip install labelu==<测试版本号>`
+
+或安装带 `mysqlclient` 的版本：
+
+```bash
+pip install labelu[mysql]
+
+# 或手动安装mysqlclient
+# pip install labelu mysqlclient
+```
+
+5. 运行：
+
+```bash
+labelu
+```
+
+> 如果从 1.x 版本升级，同时需要使用 MySQL 数据库，请运行以下命令从 内置的 SQLite 数据库迁移数据到 MySQL 数据库：
+
+```bash
+DATABASE_URL=mysql://<username>:<password>@<host>/<your dbname> labelu migrate_to_mysql
+```
+
+1. 打开浏览器，访问 [http://localhost:8000/](http://localhost:8000/) 。
+
+### 本地开发
+
+```bash
+# 安装 uv
+# https://docs.astral.sh/uv/getting-started/installation/
+
+# 克隆项目
+git clone https://github.com/opendatalab/labelU.git
+cd labelU
+
+# 创建虚拟环境并安装所有依赖包 (Python >= 3.11)
+uv sync
+
+# 复制环境变量示例文件并根据实际情况修改
+cp .env.example .env
+# 编辑 .env 并设置以下变量：
+#   PASSWORD_SECRET_KEY  - JWT 密钥，可通过以下命令生成：openssl rand -hex 32
+#   MEDIA_HOST           - 媒体服务器地址（默认：http://localhost:8000）
+#   DATABASE_URL         - 数据库连接地址（默认：sqlite:///data/labelu.sqlite）
+
+# 单仓库已含前端源码时，安装 Kit 依赖并启动（开发）
+cd frontend/labelU-Kit && pnpm install && cd ../..
+labelu --host 127.0.0.1 --port 8002
+
+# 服务器发版：git pull 后
+sudo ./deploy.sh update
+```
+
+前端源码在 **`frontend/labelU-Kit/`** + **`frontend/extensions/`**（同一 git 仓库）。首次纳入仓库见 `bash scripts/vendor_kit_into_repo.sh`。
+
+详见 [frontend/README.md](./frontend/README.md)。
+
+## 快速上手
+
+- [使用说明](https://opendatalab.github.io/labelU)
+
+## 标注格式
+
+- [格式说明](https://opendatalab.github.io/labelU/#/schema)
+
+## 技术交流
+
+欢迎加入 Opendatalab 官方微信群！
+
+<p align="center">
+  <img width="400" height="400" alt="20260228-175257" src="https://github.com/user-attachments/assets/8c2a5c23-1a09-4548-b2be-23e75cbc9530" />
+</p>
+
+## 友情链接
+
+- [LabelU-kit](https://github.com/opendatalab/labelU-Kit) Web 前端标注套件（LabelU基于此套件开发）
+- [LabelLLM](https://github.com/opendatalab/LabelLLM) 开源LLM对话标注平台
+- [Miner U](https://github.com/opendatalab/MinerU) 一站式高质量数据提取工具
+
+## 开源许可证
+
+该项目使用 [Apache 2.0 license](./LICENSE).

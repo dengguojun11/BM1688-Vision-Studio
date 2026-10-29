@@ -1,0 +1,40 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+.vscode/launch.json
+
+temp
+
+# dependencies
+node_modules
+.DS_Store
+
+# lock file（pnpm-lock.yaml 纳入 git，供 deploy CI=frozen 安装）
+# package-lock.json
+yarn.lock
+gptcommit.toml
+.husky/prepare-commit-msg
+
+.idea
+
+# testing
+/coverage
+
+# production
+build
+dist
+es
+
+# misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.script.test.js
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+/packages/server/public

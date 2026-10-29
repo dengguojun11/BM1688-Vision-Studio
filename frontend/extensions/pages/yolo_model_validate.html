@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PT 单图试跑</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #06111d;
+      --bg-soft: #0d1d31;
+      --panel: rgba(9, 23, 40, 0.88);
+      --panel-strong: rgba(8, 18, 34, 0.94);
+      --panel-light: rgba(255, 255, 255, 0.08);
+      --line: rgba(158, 186, 219, 0.18);
+      --line-strong: rgba(158, 186, 219, 0.3);
+      --text: #ecf4ff;
+      --muted: #9fb2ca;
+      --brand: #4ac2ff;
+      --brand-strong: #1f8fff;
+      --brand-soft: rgba(74, 194, 255, 0.12);
+      --accent: #8ef3c8;
+      --danger: #ff6b78;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body.labelu-shell {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 8% 10%, rgba(31, 143, 255, 0.26), transparent 24%),
+        radial-gradient(circle at 92% 14%, rgba(142, 243, 200, 0.18), transparent 22%),
+        linear-gradient(135deg, #05101b 0%, #0a182a 42%, #07111b 100%);
+    }
+    .labelu-shell-header {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      background: rgba(2, 9, 16, 0.42);
+      backdrop-filter: blur(14px);
+    }
+    .labelu-shell-brand {
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      font-size: 12px;
+      color: #9bdcff;
+    }
+    .auth-box {
+      background: rgba(255, 246, 221, 0.92);
+      border-bottom: 1px solid #f0d594;
+      padding: 12px 20px;
+      font-size: 13px;
+      display: none;
+      color: #5e4610;
+    }
+    .page-main {
+      max-width: 1580px;
+      margin: 0 auto;
+      padding: 22px 22px 34px;
+    }
+    .hero {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.8fr);
+      gap: 22px;
+      margin-bottom: 18px;
+      padding: 30px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background:
+        linear-gradient(135deg, rgba(19, 38, 64, 0.96) 0%, rgba(8, 20, 36, 0.96) 62%, rgba(6, 16, 29, 0.98) 100%);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: -20% auto auto -8%;
+      width: 320px;
+      height: 320px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(74, 194, 255, 0.28) 0%, rgba(74, 194, 255, 0) 70%);
+      pointer-events: none;
+    }
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -120px;
+      top: -80px;
+      width: 340px;
+      height: 340px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(142, 243, 200, 0.16) 0%, rgba(142, 243, 200, 0) 72%);
+      pointer-events: none;
+    }
+    .hero-copy,
+    .hero-actions {
+      position: relative;
+      z-index: 1;
+    }
+    .hero-copy {
+      max-width: 860px;
+    }
+    .hero-kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #aee4ff;
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .hero h1 {
+      margin: 16px 0 0;
+      font-size: clamp(34px, 4.2vw, 56px);
+      line-height: 1.02;
+      letter-spacing: -0.04em;
+      font-weight: 800;
+    }
+    .hero p {
+      margin: 12px 0 0;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    .hero-meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 18px;
+    }
+    .hero-meta-item {
+      min-width: 150px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .hero-meta-item .label {
+      display: block;
+      font-size: 11px;
+      color: #87a1be;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .hero-meta-item .value {
+      display: block;
+      margin-top: 7px;
+      font-size: 18px;
+      font-weight: 700;
+      color: #f5f9ff;
+    }
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    .meta-line {
+      margin: 16px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.8;
+      max-width: 920px;
+    }
+    .chip-list {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 14px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 32px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(255, 255, 255, 0.06);
+      color: #d8eeff;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .hero-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      justify-content: space-between;
+      min-height: 100%;
+    }
+    .action-card {
+      padding: 18px;
+      border-radius: 22px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0.03) 100%);
+    }
+    .action-card h3 {
+      margin: 0;
+      font-size: 13px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #a2b8d4;
+    }
+    .action-card p {
+      margin: 10px 0 0;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #bfd0e4;
+    }
+    .panel-shell {
+      background: linear-gradient(180deg, rgba(8, 18, 32, 0.92) 0%, rgba(7, 15, 27, 0.96) 100%);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .panel-toolbar {
+      display: flex;
+      gap: 18px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 22px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
+      flex-wrap: wrap;
+    }
+    .toolbar-group { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .toolbar-note {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.8;
+      text-align: right;
+      max-width: 320px;
+    }
+    .toolbar-field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      min-width: 116px;
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .toolbar-field label {
+      font-size: 11px;
+      color: #9ab0c9;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .toolbar-field input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      font-size: 14px;
+      background: rgba(5, 15, 28, 0.7);
+      color: #f5f9ff;
+      outline: none;
+    }
+    .btn {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text);
+      border-radius: 14px;
+      padding: 13px 18px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform .18s ease, border-color .18s ease, background .18s ease;
+    }
+    .btn:hover { transform: translateY(-1px); border-color: rgba(255, 255, 255, 0.24); }
+    .btn.primary {
+      background: linear-gradient(135deg, var(--brand-strong) 0%, var(--brand) 100%);
+      border-color: rgba(74, 194, 255, 0.38);
+      color: #04111f;
+      box-shadow: 0 12px 28px rgba(31, 143, 255, 0.28);
+    }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 22px;
+      padding: 22px;
+    }
+    .compare-card {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(12, 26, 46, 0.94) 0%, rgba(8, 18, 33, 0.98) 100%);
+      overflow: hidden;
+      min-height: 680px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    .compare-card.result-card {
+      background: linear-gradient(180deg, rgba(11, 32, 48, 0.96) 0%, rgba(7, 20, 31, 0.98) 100%);
+    }
+    .compare-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 20px 22px;
+      border-bottom: 1px solid var(--line);
+    }
+    .compare-head h2 {
+      margin: 4px 0 0;
+      font-size: 28px;
+      letter-spacing: -0.03em;
+    }
+    .compare-head p { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+    .compare-tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      color: #9bdcff;
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+    .preview-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+      background:
+        radial-gradient(circle at top, rgba(74, 194, 255, 0.14), rgba(74, 194, 255, 0) 38%),
+        linear-gradient(180deg, rgba(17, 34, 58, 0.82) 0%, rgba(7, 17, 28, 0.96) 100%);
+      min-height: 460px;
+      position: relative;
+    }
+    .preview-wrap.preview-source {
+      cursor: pointer;
+      transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .preview-wrap.preview-source:hover {
+      transform: translateY(-1px);
+    }
+    .preview-wrap.is-empty {
+      border: 1.5px dashed rgba(155, 220, 255, 0.34);
+      border-radius: 24px;
+      margin: 22px;
+    }
+    .preview-wrap.preview-source.is-empty:hover,
+    .preview-wrap.preview-source.is-dragover {
+      border-color: rgba(74, 194, 255, 0.92);
+      box-shadow: 0 0 0 1px rgba(74, 194, 255, 0.32), 0 18px 38px rgba(31, 143, 255, 0.16);
+    }
+    .preview-wrap.preview-source.is-dragover {
+      background:
+        radial-gradient(circle at top, rgba(74, 194, 255, 0.26), rgba(74, 194, 255, 0) 42%),
+        linear-gradient(180deg, rgba(19, 41, 69, 0.92) 0%, rgba(8, 19, 31, 0.98) 100%);
+    }
+    .preview-wrap img {
+      max-width: 100%;
+      max-height: 560px;
+      border-radius: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 22px 44px rgba(0, 0, 0, 0.34);
+      display: block;
+    }
+    .empty-note {
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.9;
+    }
+    .detail-panel {
+      padding: 20px 22px 22px;
+      border-top: 1px solid var(--line);
+      background: rgba(4, 11, 20, 0.4);
+    }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+    .detail-item {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .detail-item .k {
+      font-size: 11px;
+      color: #8ea4c0;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+    .detail-item .v {
+      margin-top: 10px;
+      font-size: 36px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+    .detection-list {
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.03);
+      overflow: hidden;
+    }
+    .detection-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 16px;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .detection-row:last-child { border-bottom: none; }
+    .detection-row strong {
+      font-size: 14px;
+      font-weight: 700;
+      color: #eff7ff;
+    }
+    .detection-row em {
+      font-style: normal;
+      color: #9ddcff;
+      font-weight: 700;
+    }
+    .detection-main { min-width: 0; }
+    .detection-attrs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      margin-top: 8px;
+      color: #b9c8d8;
+      line-height: 1.6;
+    }
+    .detection-attrs span { white-space: nowrap; }
+    .hint {
+      margin-top: 14px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(74, 194, 255, 0.08);
+      border: 1px solid rgba(74, 194, 255, 0.14);
+      color: #b7dfff;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    .error-box {
+      margin: 16px 0;
+      padding: 14px 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(255, 107, 120, 0.34);
+      background: rgba(91, 14, 26, 0.4);
+      color: var(--danger);
+      display: none;
+    }
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      min-width: 220px;
+      max-width: 86vw;
+      padding: 12px 16px;
+      border-radius: 12px;
+      background: rgba(23, 33, 43, 0.92);
+      color: #fff;
+      display: none;
+      z-index: 40;
+    }
+    .toast.ok { background: rgba(18, 128, 92, 0.95); }
+    .toast.err { background: rgba(196, 54, 67, 0.95); }
+    @media (max-width: 1080px) {
+      .hero { grid-template-columns: 1fr; padding: 24px; }
+      .hero-actions { min-height: auto; }
+      .toolbar { justify-content: flex-start; }
+      .compare-grid { grid-template-columns: 1fr; }
+      .compare-card { min-height: 560px; }
+      .detail-item .v { font-size: 30px; }
+    }
+    /* PT 单图试跑采用工程控制台布局，旧 Hero 样式不再参与页面结构。 */
+    :root {
+      --bg: #f4f6f8;
+      --panel: #ffffff;
+      --line: #d9dee7;
+      --line-strong: #c5ccd8;
+      --text: #172033;
+      --muted: #667085;
+      --brand: #2563eb;
+      --brand-strong: #1d4ed8;
+      --brand-soft: #eff6ff;
+      --accent: #16845b;
+      --danger: #b42318;
+      --shadow: 0 8px 20px rgba(16, 24, 40, 0.06);
+    }
+    body.labelu-shell { color: var(--text); background: var(--bg); }
+    .labelu-shell-header {
+      border-bottom: 1px solid var(--line);
+      background: #ffffff;
+      backdrop-filter: none;
+    }
+    .labelu-shell-brand { color: #344054; letter-spacing: 0; text-transform: none; font-weight: 700; }
+    .page-main { max-width: 1540px; padding: 16px 20px 28px; }
+    .run-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 12px;
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: var(--shadow);
+    }
+    .run-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .run-kicker {
+      display: inline-flex;
+      align-items: center;
+      min-height: 24px;
+      padding: 2px 8px;
+      border: 1px solid #b9cdfa;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: #1d4ed8;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .run-header h1 { margin: 0; font-size: 21px; line-height: 1.35; letter-spacing: 0; }
+    .run-subtitle { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+    .run-context { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .run-context-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 28px;
+      padding: 4px 8px;
+      border: 1px solid #e1e6ee;
+      border-radius: 6px;
+      background: #f8fafc;
+      color: #475467;
+      font-size: 12px;
+    }
+    .run-context-item strong { color: #172033; font-weight: 650; }
+    .run-actions { display: flex; align-items: center; gap: 8px; }
+    .run-warning {
+      grid-column: 1 / -1;
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      padding-top: 11px;
+      border-top: 1px solid #edf0f4;
+      color: #7a4f01;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .run-warning strong { white-space: nowrap; }
+    .class-context { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .class-context .meta-line { margin: 0; max-width: none; color: #475467; font-size: 12px; }
+    .class-context .chip-list { margin: 0; }
+    .chip { min-height: 24px; padding: 2px 8px; border-color: #d9e2ef; border-radius: 999px; background: #f7f9fc; color: #344054; font-size: 11px; }
+    .btn {
+      min-height: 34px;
+      padding: 7px 12px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #ffffff;
+      color: #344054;
+      font-size: 13px;
+      box-shadow: none;
+    }
+    .btn:hover { transform: none; border-color: #98a2b3; background: #f8fafc; }
+    .btn.primary { border-color: #1d4ed8; background: #2563eb; color: #ffffff; box-shadow: none; }
+    .panel-shell { border: 0; border-radius: 0; background: transparent; box-shadow: none; overflow: visible; }
+    .panel-toolbar {
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: var(--shadow);
+    }
+    .toolbar-group { gap: 8px; }
+    .toolbar-field {
+      min-width: 118px;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+    .toolbar-field label { color: #475467; letter-spacing: 0; text-transform: none; }
+    .toolbar-field input {
+      min-height: 34px;
+      padding: 6px 9px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: #ffffff;
+      color: #172033;
+    }
+    .toolbar-note { max-width: none; color: #667085; line-height: 1.5; }
+    .compare-grid { grid-template-columns: 1fr 1fr; gap: 12px; padding: 0; }
+    .compare-card,
+    .compare-card.result-card {
+      min-height: 620px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #ffffff;
+      box-shadow: var(--shadow);
+    }
+    .compare-head { padding: 12px 14px; border-bottom: 1px solid #e6eaf0; }
+    .compare-head h2 { margin: 2px 0 0; color: #172033; font-size: 17px; letter-spacing: 0; }
+    .compare-head p { margin: 4px 0 0; color: #667085; font-size: 12px; }
+    .compare-tag { min-height: 20px; padding: 1px 6px; border-color: #d9e2ef; border-radius: 4px; background: #f7f9fc; color: #475467; letter-spacing: 0; text-transform: none; }
+    .preview-wrap {
+      min-height: 390px;
+      padding: 16px;
+      background: #f6f8fb;
+    }
+    .preview-wrap.is-empty { margin: 12px; border-color: #9fb1ca; border-radius: 6px; }
+    .preview-wrap.preview-source.is-empty:hover,
+    .preview-wrap.preview-source.is-dragover { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12); }
+    .preview-wrap.preview-source.is-dragover { background: #eff6ff; }
+    .preview-wrap img { max-height: 500px; border: 1px solid #d9dee7; border-radius: 4px; box-shadow: none; }
+    .empty-note { color: #667085; line-height: 1.7; }
+    .detail-panel { padding: 12px 14px 14px; border-top: 1px solid #e6eaf0; background: #ffffff; }
+    .detail-grid { gap: 8px; margin-bottom: 8px; }
+    .detail-item { padding: 10px 12px; border-color: #e1e6ee; border-radius: 6px; background: #f8fafc; }
+    .detail-item .k { color: #667085; letter-spacing: 0; text-transform: none; }
+    .detail-item .v { margin-top: 5px; color: #172033; font-size: 24px; letter-spacing: 0; }
+    .detection-list { border-color: #e1e6ee; border-radius: 6px; background: #ffffff; }
+    .detection-row { padding: 9px 11px; border-bottom-color: #edf0f4; }
+    .detection-row strong { color: #172033; }
+    .detection-row em { color: #1d4ed8; }
+    .detection-attrs { color: #667085; }
+    .hint { margin-top: 0; padding: 9px 11px; border-color: #cfe0ff; border-radius: 6px; background: #f5f8ff; color: #475467; font-size: 12px; }
+    .error-box { margin: 0 0 12px; border-radius: 6px; background: #fff1f0; color: var(--danger); }
+    @media (max-width: 900px) {
+      .page-main { padding: 12px; }
+      .run-header { grid-template-columns: 1fr; }
+      .run-actions { justify-content: flex-start; }
+      .run-warning, .class-context { grid-column: 1; }
+      .compare-grid { grid-template-columns: 1fr; }
+      .compare-card, .compare-card.result-card { min-height: 520px; }
+    }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="yolo-model-validate" data-lu-auth-redirect="off">
+  <header class="labelu-shell-header">
+    <div class="labelu-shell-brand">7GAI进化平台 · PT 单图试跑</div>
+    <nav class="labelu-shell-nav"></nav>
+  </header>
+
+  <div class="auth-box" id="authBox">
+    当前未登录。请先前往主站登录。
+    <a data-lu-login-link href="/login">去登录</a>
+  </div>
+
+  <main class="page-main">
+    <section class="run-header" aria-labelledby="modelValidateTitle">
+      <div>
+        <div class="run-title-row">
+          <span class="run-kicker">PT 单图推理</span>
+          <h1 id="modelValidateTitle">PT 单图试跑</h1>
+        </div>
+        <p class="run-subtitle" id="modelValidateSubtitle">正在读取训练作业与模型信息...</p>
+        <div class="run-context">
+          <span class="run-context-item">模型 <strong id="heroJobValue">best.pt / PT</strong></span>
+          <span class="run-context-item">输入 <strong>单张 JPG / PNG</strong></span>
+          <span class="run-context-item">输出 <strong>原图 / 推理结果</strong></span>
+        </div>
+      </div>
+      <div class="run-actions">
+        <button type="button" class="btn" id="btnChooseImage">选择图片</button>
+        <button type="button" class="btn primary" id="btnRunValidation" disabled>开始识别</button>
+      </div>
+      <div class="run-warning">
+        <strong>结果边界</strong>
+        <span>本页仅验证 PT 单图推理结果，不代表 BM1688 编译成功、板端可用或具备发布资格。</span>
+      </div>
+      <div class="class-context">
+        <p class="meta-line" id="modelValidateClassSummary">训练类别：加载中...</p>
+        <div class="chip-list" id="modelValidateClassChips"></div>
+      </div>
+    </section>
+
+    <div class="error-box" id="pageError"></div>
+
+    <div class="panel-shell">
+      <div class="panel-toolbar">
+        <div class="toolbar-group">
+          <div class="toolbar-field">
+            <label for="fieldConf">置信度</label>
+            <input id="fieldConf" type="number" min="0" max="1" step="0.01" value="0.25" />
+          </div>
+          <div class="toolbar-field">
+            <label for="fieldImgsz">输入尺寸</label>
+            <input id="fieldImgsz" type="number" min="32" step="32" value="640" />
+          </div>
+        </div>
+        <div class="toolbar-note">修改参数后可手动重新试跑</div>
+      </div>
+
+      <div class="compare-grid">
+        <section class="compare-card">
+          <div class="compare-head">
+            <div>
+              <span class="compare-tag">输入</span>
+              <h2>原图</h2>
+              <p>上传后先在这里预览，再手动点击识别。</p>
+            </div>
+          </div>
+          <div class="preview-wrap preview-source is-empty" id="sourcePreviewWrap">
+            <div class="empty-note" id="sourceEmptyNote">
+              还没有选择图片。<br />
+              支持单张 JPG / PNG。
+            </div>
+            <img id="sourcePreviewImage" alt="原图预览" style="display:none;" />
+          </div>
+          <div class="detail-panel">
+            <div class="hint">推荐流程：先上传图片确认原图，再点击“开始识别”。这样左右对比更直观，也避免误触发请求。</div>
+          </div>
+        </section>
+
+        <section class="compare-card result-card">
+          <div class="compare-head">
+            <div>
+              <span class="compare-tag">PT 输出</span>
+              <h2>识别结果</h2>
+              <p>结果图会保持和原图同尺寸回显，便于直接对比。</p>
+            </div>
+          </div>
+          <div class="preview-wrap is-empty" id="resultPreviewWrap">
+            <div class="empty-note" id="resultEmptyNote">
+              还没有识别结果。<br />
+              点击“开始识别”后在这里展示带框结果图。
+            </div>
+            <img id="resultPreviewImage" alt="识别结果预览" style="display:none;" />
+          </div>
+          <div class="detail-panel">
+            <div class="detail-grid">
+              <div class="detail-item">
+                <div class="k" id="resultCountLabel">检测框数量</div>
+                <div class="v" id="resultSummaryCount">0</div>
+              </div>
+              <div class="detail-item">
+                <div class="k">最高置信度</div>
+                <div class="v" id="resultSummaryConfidence">0.00</div>
+              </div>
+            </div>
+            <div class="detection-list" id="resultDetections">
+              <div class="detection-row"><span>暂无结果</span><span>-</span></div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <input id="validateImageInput" type="file" accept="image/png,image/jpeg,image/jpg" hidden />
+  <div class="toast" id="toast"></div>
+
+  <script>
+  (function () {
+    var state = {
+      taskId: "",
+      jobId: "",
+      taskName: "",
+      taskRectClasses: [],
+      jobType: "yolo_detection",
+      selectedFile: null,
+      selectedSourceDataUrl: "",
+    };
+
+    function authToken() {
+      return window.LabeluPortal && window.LabeluPortal.getAuthToken ? window.LabeluPortal.getAuthToken() : "";
+    }
+
+    function syncAuthState() {
+      if (window.LabeluPortal && window.LabeluPortal.syncAuthBox) {
+        return !!window.LabeluPortal.syncAuthBox();
+      }
+      var hasToken = !!authToken();
+      var authBox = document.getElementById("authBox");
+      if (authBox) authBox.style.display = hasToken ? "none" : "";
+      return hasToken;
+    }
+
+    function toast(message, kind) {
+      var el = document.getElementById("toast");
+      el.textContent = message || "";
+      el.className = "toast" + (kind ? " " + kind : "");
+      el.style.display = "block";
+      clearTimeout(el._timer);
+      el._timer = setTimeout(function () { el.style.display = "none"; }, 2200);
+    }
+
+    function showError(message) {
+      var box = document.getElementById("pageError");
+      box.textContent = message || "";
+      box.style.display = message ? "block" : "none";
+    }
+
+    function esc(value) {
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    async function apiJson(path, options) {
+      var opts = options || {};
+      var headers = opts.headers || {};
+      var token = authToken();
+      if (token) headers.Authorization = token;
+      if (!(opts.body instanceof FormData)) {
+        headers["Content-Type"] = headers["Content-Type"] || "application/json";
+      }
+      var resp = await fetch("/api/v1" + path, {
+        method: opts.method || "GET",
+        headers: headers,
+        body: opts.body,
+        credentials: "same-origin",
+      });
+      if (resp.status === 401 || resp.status === 403) {
+        if (window.LabeluPortal && window.LabeluPortal.setAuthToken) window.LabeluPortal.setAuthToken("");
+        syncAuthState();
+        throw new Error("未登录或会话已失效");
+      }
+      var text = await resp.text();
+      var json = text ? JSON.parse(text) : {};
+      if (!resp.ok) throw new Error((json && json.msg) || ("HTTP " + resp.status));
+      return json.data;
+    }
+
+    function readFileAsDataUrl(file) {
+      return new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(String(reader.result || "")); };
+        reader.onerror = function () { reject(new Error("原图读取失败")); };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function setImagePreview(imgId, wrapId, emptyId, src) {
+      var img = document.getElementById(imgId);
+      var wrap = document.getElementById(wrapId);
+      var empty = document.getElementById(emptyId);
+      if (src) {
+        img.src = src;
+        img.style.display = "block";
+        empty.style.display = "none";
+        wrap.classList.remove("is-empty");
+      } else {
+        img.removeAttribute("src");
+        img.style.display = "none";
+        empty.style.display = "";
+        wrap.classList.add("is-empty");
+      }
+    }
+
+    function isPlateKeypointJob(jobType) {
+      return jobType === "plate_detection" || jobType === "plate_recognition";
+    }
+
+    function poseModelSource(source) {
+      var raw = String(source || "plate_detection_best.pt");
+      if (/\s\/\sPose$/i.test(raw)) return raw;
+      return raw.split(/[\\/]/).pop() + " / Pose";
+    }
+
+    function renderDetections(detections) {
+      var root = document.getElementById("resultDetections");
+      if (!detections || !detections.length) {
+        root.innerHTML = '<div class="detection-row"><strong>未检测到目标</strong><em>0</em></div>';
+        return;
+      }
+      root.innerHTML = detections.map(function (item) {
+        var isPlateKeypoint = isPlateKeypointJob(state.jobType);
+        var isPlateRecognition = state.jobType === "plate_recognition";
+        var attrs = [];
+        if (isPlateKeypoint) {
+          attrs.push("四角点 " + (Array.isArray(item.corners) ? item.corners.length : 0) + "/4");
+        }
+        if (state.jobType === "plate_detection" && Array.isArray(item.corners)) {
+          var cornerNames = ["左上", "右上", "右下", "左下"];
+          item.corners.slice(0, 4).forEach(function (corner, index) {
+            attrs.push(
+              cornerNames[index] +
+              " x " + Number(corner.x || 0).toFixed(1) +
+              " / y " + Number(corner.y || 0).toFixed(1) +
+              " / 置信度 " + Number(corner.confidence || 0).toFixed(2)
+            );
+          });
+        }
+        if (isPlateRecognition) {
+          attrs.push("号码 " + esc(item.plate_number || "未识别") + " (" + Number(item.plate_number_confidence || 0).toFixed(2) + ")");
+          attrs.push("颜色 " + esc(item.color || "未识别") + " (" + Number(item.color_confidence || 0).toFixed(2) + ")");
+          attrs.push("类型 " + esc(item.plate_type || "未识别") + " (" + Number(item.plate_type_confidence || 0).toFixed(2) + ")");
+        }
+        return '' +
+          '<div class="detection-row">' +
+            '<div class="detection-main">' +
+              '<strong>' + esc(item.label) + '</strong>' +
+              (attrs.length ? '<div class="detection-attrs"><span>' + attrs.join('</span><span>') + '</span></div>' : '') +
+            '</div>' +
+            '<em>' + Number(item.confidence || 0).toFixed(2) + '</em>' +
+          '</div>';
+      }).join("");
+    }
+
+    function renderClassNames(classNames) {
+      var summary = document.getElementById("modelValidateClassSummary");
+      var root = document.getElementById("modelValidateClassChips");
+      var classes = Array.isArray(classNames) ? classNames.filter(function (item) {
+        return String(item || "").trim() !== "";
+      }) : [];
+      if (!classes.length) {
+        summary.textContent = "训练类别：暂未读取到";
+        root.innerHTML = "";
+        return;
+      }
+      summary.textContent = "训练类别：" + classes.join(" / ");
+      root.innerHTML = classes.map(function (item) {
+        return '<span class="chip">' + esc(item) + "</span>";
+      }).join("");
+    }
+
+    function isSupportedImageFile(file) {
+      if (!file) return false;
+      if (file.type && /^image\/(png|jpeg)$/i.test(file.type)) return true;
+      return /\.(png|jpe?g)$/i.test(String(file.name || ""));
+    }
+
+    function setSourceDragState(active) {
+      document.getElementById("sourcePreviewWrap").classList.toggle("is-dragover", !!active);
+    }
+
+    async function applySelectedFile(file) {
+      if (!file) return;
+      if (!isSupportedImageFile(file)) {
+        throw new Error("请选择 JPG 或 PNG 图片");
+      }
+      state.selectedFile = file;
+      state.selectedSourceDataUrl = await readFileAsDataUrl(file);
+      setImagePreview("sourcePreviewImage", "sourcePreviewWrap", "sourceEmptyNote", state.selectedSourceDataUrl);
+      document.getElementById("btnRunValidation").disabled = false;
+      showError("");
+    }
+
+    async function previewAndValidateFile(file) {
+      await applySelectedFile(file);
+      await runValidation();
+    }
+
+    async function handleFileChange(event) {
+      var file = event.target.files && event.target.files[0];
+      await previewAndValidateFile(file);
+      if (event.target) event.target.value = "";
+    }
+
+    async function loadJobMeta() {
+      if (!state.taskId || !state.jobId) {
+        showError("缺少 task_id 或 job_id，无法打开 PT 单图试跑页。");
+        return;
+      }
+      var data = await apiJson("/tasks/" + encodeURIComponent(state.taskId) + "/yolo-train-jobs/" + encodeURIComponent(state.jobId));
+      state.taskName = data.task_name || ("任务 #" + state.taskId);
+      state.taskRectClasses = Array.isArray(data.task_rect_classes) ? data.task_rect_classes : [];
+      state.jobType = data.job_type || "yolo_detection";
+      document.getElementById("modelValidateTitle").textContent = "PT 单图试跑 · " + state.taskName;
+      var isPlateRecognition = state.jobType === "plate_recognition";
+      var isPlateDetection = state.jobType === "plate_detection";
+      document.getElementById("modelValidateSubtitle").textContent = isPlateRecognition
+        ? "模型来源：作业 #" + state.jobId + " · 联合使用 Pose、OCR、颜色和类型四个组件做单图识别。"
+        : (isPlateDetection
+          ? "模型来源：作业 #" + state.jobId + " · 使用车牌检测与四角点定位模型做单图识别。"
+          : "模型来源：作业 #" + state.jobId + " · 使用该训练作业的 best.pt 做单图即时识别。");
+      document.getElementById("heroJobValue").textContent = isPlateRecognition
+        ? "4-component PT"
+        : (isPlateDetection ? poseModelSource(data.weights_path) : ("best.pt / PT · Job #" + state.jobId));
+      document.getElementById("resultCountLabel").textContent = isPlateKeypointJob(state.jobType) ? "车牌数量" : "检测框数量";
+      renderClassNames(state.taskRectClasses);
+      if (data.imgsz) document.getElementById("fieldImgsz").value = String(data.imgsz);
+    }
+
+    async function runValidation() {
+      if (!state.selectedFile) {
+        toast("请先选择一张图片", "err");
+        return;
+      }
+      showError("");
+      var btn = document.getElementById("btnRunValidation");
+      btn.disabled = true;
+      btn.textContent = "识别中...";
+      try {
+        var form = new FormData();
+        form.append("file", state.selectedFile);
+        form.append("conf", document.getElementById("fieldConf").value || "0.25");
+        form.append("imgsz", document.getElementById("fieldImgsz").value || "640");
+        var data = await apiJson(
+          "/tasks/" + encodeURIComponent(state.taskId) + "/yolo-train-jobs/" + encodeURIComponent(state.jobId) + "/validate-image",
+          { method: "POST", body: form }
+        );
+        setImagePreview("resultPreviewImage", "resultPreviewWrap", "resultEmptyNote", data.result_image_data_url || "");
+        document.getElementById("resultSummaryCount").textContent = String(data.box_count || 0);
+        document.getElementById("resultSummaryConfidence").textContent = Number(data.max_confidence || 0).toFixed(2);
+        if (data.job_type) state.jobType = data.job_type;
+        if (data.model_source) {
+          document.getElementById("heroJobValue").textContent = state.jobType === "plate_detection"
+            ? poseModelSource(data.model_source)
+            : data.model_source;
+        }
+        renderDetections(data.detections || []);
+        toast("识别完成", "ok");
+      } catch (err) {
+        showError((err && err.message) || "PT 单图试跑失败");
+        toast((err && err.message) || "PT 单图试跑失败", "err");
+      } finally {
+        btn.disabled = !state.selectedFile;
+        btn.textContent = "开始识别";
+      }
+    }
+
+    function bindEvents() {
+      var input = document.getElementById("validateImageInput");
+      var sourcePreviewWrap = document.getElementById("sourcePreviewWrap");
+
+      function openImagePicker() {
+        input.value = "";
+        input.click();
+      }
+
+      document.getElementById("sourceEmptyNote").innerHTML =
+        "点击这里上传图片，或将图片拖入此区域。<br />仅支持单张 JPG / PNG。";
+      document.getElementById("btnChooseImage").onclick = function () {
+        openImagePicker();
+      };
+      document.getElementById("sourceEmptyNote").innerHTML =
+        "\u70b9\u51fb\u8fd9\u91cc\u4e0a\u4f20\u56fe\u7247\uff0c\u6216\u5c06\u56fe\u7247\u62d6\u5165\u6b64\u533a\u57df\u3002<br />\u4ec5\u652f\u6301\u5355\u5f20 JPG / PNG\uff0c\u4e0a\u4f20\u540e\u4f1a\u81ea\u52a8\u5f00\u59cb\u8bc6\u522b\u3002";
+      document.querySelector(".compare-card .compare-head p").textContent =
+        "\u4e0a\u4f20\u540e\u5de6\u4fa7\u4f1a\u5148\u56de\u663e\u539f\u56fe\uff0c\u540c\u65f6\u81ea\u52a8\u53d1\u8d77\u8bc6\u522b\u3002";
+      document.querySelector(".compare-card .hint").textContent =
+        "\u652f\u6301\u70b9\u51fb\u4e0a\u4f20\u6216\u62d6\u62fd\u4e0a\u4f20\uff0c\u9009\u56fe\u540e\u4f1a\u81ea\u52a8\u8bc6\u522b\u3002\u5982\u679c\u4f60\u8c03\u6574\u4e86\u7f6e\u4fe1\u5ea6\u6216\u8f93\u5165\u5c3a\u5bf8\uff0c\u4e5f\u53ef\u518d\u70b9\u4e00\u6b21\u201c\u5f00\u59cb\u8bc6\u522b\u201d\u624b\u52a8\u91cd\u8dd1\u3002";
+      sourcePreviewWrap.addEventListener("click", function () {
+        openImagePicker();
+      });
+      input.addEventListener("change", function (event) {
+        handleFileChange(event).catch(function (err) {
+          showError((err && err.message) || "原图读取失败");
+        });
+      });
+      sourcePreviewWrap.addEventListener("dragenter", function (event) {
+        event.preventDefault();
+        setSourceDragState(true);
+      });
+      sourcePreviewWrap.addEventListener("dragover", function (event) {
+        event.preventDefault();
+        setSourceDragState(true);
+      });
+      sourcePreviewWrap.addEventListener("dragleave", function (event) {
+        if (!sourcePreviewWrap.contains(event.relatedTarget)) {
+          setSourceDragState(false);
+        }
+      });
+      sourcePreviewWrap.addEventListener("drop", function (event) {
+        event.preventDefault();
+        setSourceDragState(false);
+        var files = event.dataTransfer && event.dataTransfer.files;
+        previewAndValidateFile(files && files[0]).catch(function (err) {
+          showError((err && err.message) || "鍘熷浘璇诲彇澶辫触");
+        });
+      });
+      document.getElementById("btnRunValidation").onclick = function () {
+        runValidation().catch(function (err) {
+          showError((err && err.message) || "PT 单图试跑失败");
+        });
+      };
+      window.addEventListener("labelu-token-changed", function () {
+        syncAuthState();
+      });
+    }
+
+    async function boot() {
+      syncAuthState();
+      bindEvents();
+      var params = new URLSearchParams(window.location.search);
+      state.taskId = params.get("task_id") || "";
+      state.jobId = params.get("job_id") || "";
+      if (!authToken()) return;
+      await loadJobMeta();
+    }
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", function () {
+        boot().catch(function (err) { showError((err && err.message) || "页面初始化失败"); });
+      }, { once: true });
+    } else {
+      setTimeout(function () {
+        boot().catch(function (err) { showError((err && err.message) || "页面初始化失败"); });
+      }, 0);
+    }
+  })();
+  </script>
+</body>
+</html>

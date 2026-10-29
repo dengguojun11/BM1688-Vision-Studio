@@ -1,0 +1,2 @@
+# Optional: one model class name per line, in training order.
+# Leave this file with comments only when class names are not needed.

@@ -1,0 +1,13 @@
+{
+  "format": "labelu_bm1688_edge_runtime_v1",
+  "target_arch": "aarch64",
+  "target_os": "ubuntu-20.04",
+  "docker_image": "7g",
+  "reference_docker_image_id": "sha256:e33e68aaa2a6b6236ada715b1009c36859bd1d3c00fcef77bb870cfd700519cc",
+  "docker_container": "bm1688",
+  "reference_python": "3.6.9",
+  "reference_numpy": "1.19.5",
+  "reference_opencv": "4.8.0",
+  "validator_install_root": "/data/labelu_edge/runtime/validator",
+  "sophon_demo_root": "/data/labelu_edge/runtime/sophon-demo/sample/YOLOv8_plus_det"
+}

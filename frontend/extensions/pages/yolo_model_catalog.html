@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>模型列表</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <link rel="stylesheet" href="/assets/labelu_train_hub.css" />
+  <script src="/assets/labelu_embedded_boot.js"></script>
+  <script src="/assets/labelu_pager.js"></script>
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --catalog-bg: #f3f5f8;
+      --catalog-surface: #fff;
+      --catalog-border: #e4e7ec;
+      --catalog-text: #182230;
+      --catalog-muted: #667085;
+      --catalog-primary: #1677ff;
+      --catalog-green: #237804;
+      --catalog-amber: #ad6800;
+      --catalog-red: #b42318;
+    }
+    * { box-sizing: border-box; }
+    body.labelu-shell { margin: 0; min-height: 100vh; background: var(--catalog-bg); color: var(--catalog-text); }
+    .catalog-page { max-width: none; padding: 12px 16px 24px; }
+    body.labelu-embedded .catalog-page { padding: 10px 12px 18px; }
+    .auth-box { margin-bottom: 12px; padding: 12px; border: 1px solid #ffd591; border-radius: 6px; background: #fff7e6; }
+    .auth-box input { width: min(560px, 100%); margin-top: 8px; padding: 8px 10px; border: 1px solid #d0d5dd; border-radius: 5px; }
+    .catalog-commandbar { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-bottom: 10px; }
+    .catalog-commandbar h2 { margin: 0; font-size: 16px; font-weight: 650; }
+    .catalog-commandbar .subtitle { color: var(--catalog-muted); font-size: 12px; }
+    .catalog-commandbar-actions { display: flex; gap: 8px; margin-left: auto; }
+    .btn { min-height: 32px; padding: 6px 11px; border: 1px solid #d0d5dd; border-radius: 5px; background: #fff; color: #344054; cursor: pointer; font-size: 12px; }
+    .btn:hover { border-color: #91caff; color: #0958d9; }
+    .btn.primary { border-color: var(--catalog-primary); background: var(--catalog-primary); color: #fff; }
+    .btn.danger { border-color: #fda29b; color: var(--catalog-red); }
+    .btn:disabled { cursor: not-allowed; opacity: .55; }
+    .icon-btn { width: 32px; padding: 0; font-size: 17px; }
+    .catalog-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+    .metric { min-height: 78px; padding: 12px 14px; border: 1px solid var(--catalog-border); border-top: 3px solid #98a2b3; border-radius: 6px; background: var(--catalog-surface); }
+    .metric.public { border-top-color: #52c41a; }
+    .metric.warn { border-top-color: #ff4d4f; }
+    .metric.legacy { border-top-color: #faad14; }
+    .metric-label { color: var(--catalog-muted); font-size: 11px; font-weight: 600; }
+    .metric-value { display: block; margin-top: 5px; font-size: 24px; font-weight: 700; line-height: 1; }
+    .metric-hint { display: block; margin-top: 5px; color: #98a2b3; font-size: 10px; }
+    .catalog-state { display: none; margin-bottom: 10px; padding: 9px 11px; border: 1px solid #91caff; border-radius: 5px; background: #e6f4ff; color: #0958d9; font-size: 12px; }
+    .catalog-state.show { display: block; }
+    .catalog-state.error { border-color: #fda29b; background: #fff1f0; color: var(--catalog-red); }
+    .catalog-workspace { border: 1px solid var(--catalog-border); border-radius: 6px; background: var(--catalog-surface); overflow: hidden; }
+    .catalog-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--catalog-border); }
+    .catalog-toolbar input, .catalog-toolbar select, .modal input, .modal select {
+      min-height: 32px; padding: 6px 9px; border: 1px solid #d0d5dd; border-radius: 5px; background: #fff; color: #344054; font-size: 12px;
+    }
+    .catalog-toolbar input { width: min(290px, 100%); }
+    .catalog-toolbar-spacer { flex: 1; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; min-width: 1080px; border-collapse: collapse; table-layout: fixed; }
+    th { padding: 9px 10px; border-bottom: 1px solid var(--catalog-border); background: #f8f9fb; color: var(--catalog-muted); text-align: left; font-size: 11px; font-weight: 650; }
+    td { padding: 11px 10px; border-bottom: 1px solid #edf0f3; vertical-align: top; font-size: 12px; }
+    tbody tr:hover { background: #fafcff; }
+    .col-model { width: 20%; }
+    .col-contract { width: 20%; }
+    .col-package { width: 17%; }
+    .col-state { width: 15%; }
+    .col-alias { width: 19%; }
+    .col-actions { width: 9%; }
+    .model-name { color: #101828; font-weight: 650; line-height: 1.45; word-break: break-word; }
+    .model-id { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; color: #475467; font-family: Consolas, monospace; font-size: 11px; }
+    .meta { margin-top: 4px; color: var(--catalog-muted); font-size: 11px; line-height: 1.5; }
+    .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+    .chip { display: inline-flex; max-width: 150px; padding: 2px 6px; border-radius: 4px; background: #f2f4f7; color: #475467; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .status { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 4px; background: #f2f4f7; color: #475467; font-size: 10px; font-weight: 650; }
+    .status::before { width: 6px; height: 6px; border-radius: 50%; background: currentColor; content: ""; }
+    .status.ok { background: #f6ffed; color: var(--catalog-green); }
+    .status.warn { background: #fff7e6; color: var(--catalog-amber); }
+    .status.bad { background: #fff1f0; color: var(--catalog-red); }
+    .download-switch { display: inline-flex; flex-direction: row; align-items: center; gap: 6px; margin-top: 7px; color: #475467; cursor: pointer; font-size: 10px; }
+    .download-switch input { width: 28px; height: 16px; min-height: 0; margin: 0; appearance: none; border: 1px solid #98a2b3; border-radius: 8px; background: #d0d5dd; cursor: pointer; transition: background .15s ease; }
+    .download-switch input::before { display: block; width: 12px; height: 12px; margin: 1px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(16, 24, 40, .2); content: ""; transition: transform .15s ease; }
+    .download-switch input:checked { border-color: var(--catalog-primary); background: var(--catalog-primary); }
+    .download-switch input:checked::before { transform: translateX(12px); }
+    .download-switch input:disabled { cursor: wait; opacity: .6; }
+    .row-actions { display: flex; flex-direction: column; gap: 5px; }
+    .row-actions .btn { width: 100%; padding-inline: 7px; }
+    .empty { padding: 44px 16px; color: var(--catalog-muted); text-align: center; }
+    .pager { padding: 9px 12px 12px; }
+    .modal-bg { position: fixed; inset: 0; z-index: 90; display: none; align-items: center; justify-content: center; padding: 20px; background: rgba(16, 24, 40, .38); }
+    .modal-bg.show { display: flex; }
+    .modal { width: min(760px, 96vw); max-height: min(880px, 92vh); display: flex; flex-direction: column; border: 1px solid var(--catalog-border); border-radius: 8px; background: #fff; box-shadow: 0 16px 48px rgba(16, 24, 40, .24); }
+    .modal-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--catalog-border); }
+    .modal-head h3 { margin: 0; font-size: 16px; }
+    .modal-head p { margin: 4px 0 0; color: var(--catalog-muted); font-size: 11px; }
+    .modal-head .icon-btn { margin-left: auto; }
+    .modal-body { flex: 1; min-height: 0; padding: 16px 18px 24px; overflow-y: auto; }
+    .confirm-modal { width: min(440px, 96vw); }
+    .confirm-modal p { margin: 0; color: var(--catalog-muted); font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
+    .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px 16px; border-top: 1px solid var(--catalog-border); }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; margin: 0; }
+    .detail-item { padding: 9px 0; border-bottom: 1px solid #edf0f3; }
+    .detail-item.wide { grid-column: 1 / -1; }
+    .detail-item dt { color: var(--catalog-muted); font-size: 10px; }
+    .detail-item dd { margin: 3px 0 0; color: #101828; font-size: 12px; word-break: break-word; }
+    .detail-item.mono dd { font-family: Consolas, monospace; font-size: 11px; overflow-wrap: anywhere; }
+    .section-title { margin: 18px 0 8px; color: #344054; font-size: 12px; font-weight: 700; }
+    .section-title:first-child { margin-top: 0; }
+    .section-count { margin-left: 5px; color: var(--catalog-muted); font-size: 10px; font-weight: 500; }
+    .label-contract { border-top: 1px solid var(--catalog-border); }
+    .label-contract-head, .label-contract-row { display: grid; grid-template-columns: 34px 16px minmax(0, .9fr) minmax(0, 1.2fr); gap: 8px; align-items: center; }
+    .label-contract-head { padding: 6px 8px; background: #f8f9fb; color: var(--catalog-muted); font-size: 10px; font-weight: 650; }
+    .label-contract-row { min-height: 48px; padding: 8px; border-bottom: 1px solid #edf0f3; }
+    .label-contract-row.unmatched { background: #fffaf0; }
+    .label-index { color: var(--catalog-muted); font-family: Consolas, monospace; font-size: 10px; }
+    .label-swatch { width: 12px; height: 12px; border: 1px solid rgba(16, 24, 40, .15); border-radius: 3px; }
+    .label-zh { min-width: 0; color: #101828; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+    .label-zh.unmatched { color: var(--catalog-amber); }
+    .label-en { min-width: 0; margin: 0; color: #344054; font-family: Consolas, monospace; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; white-space: normal; }
+    .label-contract-meta { display: block; margin-top: 2px; color: var(--catalog-muted); font-family: inherit; font-size: 9px; }
+    .label-contract-empty { padding: 14px 8px; border-block: 1px solid #edf0f3; color: var(--catalog-muted); font-size: 11px; }
+    .edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .edit-grid label { display: flex; flex-direction: column; gap: 4px; color: var(--catalog-muted); font-size: 10px; }
+    .edit-grid .wide { grid-column: 1 / -1; }
+    .toggle-line { min-height: 32px; flex-direction: row !important; align-items: center; color: #344054 !important; font-size: 12px !important; }
+    .toggle-line input { min-height: auto; }
+    .alias-list { display: flex; flex-direction: column; gap: 6px; }
+    .alias-row { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid var(--catalog-border); border-radius: 5px; }
+    .alias-row code { min-width: 0; flex: 1; color: #344054; font-size: 11px; overflow-wrap: anywhere; }
+    .alias-add { display: grid; grid-template-columns: 130px 1fr auto; gap: 6px; margin-top: 8px; }
+    #toast { position: fixed; right: 18px; bottom: 18px; z-index: 120; display: flex; flex-direction: column; gap: 8px; }
+    .toast-item { min-width: 240px; max-width: 420px; padding: 10px 12px; border-radius: 5px; background: #101828; color: #fff; font-size: 12px; box-shadow: 0 8px 24px rgba(16,24,40,.24); }
+    .toast-item.error { background: #b42318; }
+    @media (max-width: 820px) {
+      .catalog-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .catalog-commandbar { align-items: flex-start; flex-direction: column; }
+      .catalog-commandbar-actions { width: 100%; margin-left: 0; }
+      .catalog-toolbar { align-items: stretch; flex-direction: column; }
+      .catalog-toolbar input, .catalog-toolbar select { width: 100%; }
+      .catalog-toolbar-spacer { display: none; }
+      .table-wrap { padding: 8px; overflow: visible; }
+      table { display: block; min-width: 0; }
+      thead { display: none; }
+      tbody { display: grid; gap: 8px; }
+      tr { display: grid; border: 1px solid var(--catalog-border); border-radius: 6px; overflow: hidden; }
+      td { display: grid; grid-template-columns: 95px minmax(0, 1fr); gap: 8px; padding: 8px 10px; }
+      td::before { content: attr(data-label); color: var(--catalog-muted); font-size: 10px; font-weight: 650; }
+      .row-actions { flex-direction: row; }
+      .edit-grid, .detail-grid { grid-template-columns: 1fr; }
+      .detail-item.wide { grid-column: auto; }
+      .edit-grid .wide { grid-column: auto; }
+      .alias-add { grid-template-columns: 1fr; }
+      .label-contract-head, .label-contract-row { grid-template-columns: 30px 14px minmax(0, .85fr) minmax(0, 1.15fr); gap: 6px; }
+    }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="yolo-model-catalog">
+  <div class="labelu-shell-header" role="banner">
+    <div class="labelu-shell-brand">
+      <a class="labelu-shell-logo" href="/">7GAI 进化平台</a>
+      <span class="labelu-shell-page-title">模型列表</span>
+    </div>
+    <nav class="labelu-shell-nav" aria-label="7GAI 工具导航"></nav>
+  </div>
+  <main class="catalog-page" data-lu-toolkit-main>
+    <div class="auth-box" id="authBox">
+      未检测到登录态。请先<a href="/login?redirect=%2Fyolo-model-catalog">登录主站</a>
+      <input type="password" id="tokenInput" placeholder="Bearer eyJ…" autocomplete="off" />
+      <button type="button" class="btn primary" id="btnSaveToken">保存令牌</button>
+    </div>
+
+    <section class="catalog-commandbar">
+      <div>
+        <h2>已发布模型</h2>
+        <span class="subtitle" id="catalogUpdatedAt">正在加载</span>
+      </div>
+      <div class="catalog-commandbar-actions">
+        <button type="button" class="btn catalog-management-control" id="btnSync" title="同步发布历史和 AICM 模型" hidden>同步</button>
+        <button type="button" class="btn icon-btn" id="btnRefresh" title="刷新列表" aria-label="刷新列表">↻</button>
+      </div>
+    </section>
+
+    <section class="catalog-metrics" aria-live="polite">
+      <article class="metric"><span class="metric-label">目录总数</span><strong class="metric-value" id="metricTotal">—</strong><span class="metric-hint">全部已登记模型</span></article>
+      <article class="metric public"><span class="metric-label">对外可用</span><strong class="metric-value" id="metricPublic">—</strong><span class="metric-hint">公开、活动且允许下载</span></article>
+      <article class="metric warn"><span class="metric-label">待缓存模型</span><strong class="metric-value" id="metricUnavailable">—</strong><span class="metric-hint">7GAI 尚未保存本地最终包</span></article>
+      <article class="metric legacy"><span class="metric-label">历史模型</span><strong class="metric-value" id="metricLegacy">—</strong><span class="metric-hint">由 AICM 既有数据同步</span></article>
+    </section>
+
+    <div class="catalog-state" id="catalogState"></div>
+
+    <section class="catalog-workspace">
+      <div class="catalog-toolbar" role="search" aria-label="筛选已发布模型">
+        <input type="search" id="filterQuery" placeholder="搜索模型名称、ID 或第三方别名" />
+        <select id="filterStatus" aria-label="模型状态">
+          <option value="">全部状态</option><option value="active">正常</option><option value="hidden">历史隐藏（兼容）</option><option value="revoked">历史停用（兼容）</option>
+        </select>
+        <select id="filterAvailability" aria-label="AICM 状态">
+          <option value="">全部 AICM 状态</option><option value="available">AICM 可用</option><option value="unavailable">AICM 不可用</option><option value="unknown">AICM 待确认</option>
+        </select>
+        <select id="filterSource" aria-label="模型来源">
+          <option value="">全部来源</option><option value="labelu_publish">7GAI 发布</option><option value="remote_legacy">AICM 历史模型</option><option value="third_party">第三方模型</option>
+        </select>
+        <select id="filterPublic" aria-label="公开状态">
+          <option value="">全部开放状态</option><option value="true">对外开放</option><option value="false">仅内部</option>
+        </select>
+        <span class="catalog-toolbar-spacer"></span>
+        <button type="button" class="btn" id="btnReset">重置</button>
+        <button type="button" class="btn primary" id="btnSearch">查询</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th class="col-model">模型</th><th class="col-contract">标签契约</th><th class="col-package">发布包</th><th class="col-state">状态</th><th class="col-alias">兼容标识</th><th class="col-actions">操作</th></tr></thead>
+          <tbody id="catalogTbody"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pager" id="catalogPager"></div>
+    </section>
+  </main>
+
+  <div class="modal-bg" id="detailModal">
+    <section class="modal" role="dialog" aria-modal="true" aria-labelledby="detailTitle">
+      <header class="modal-head">
+        <div><h3 id="detailTitle">模型详情</h3><p id="detailSubtitle"></p></div>
+        <button type="button" class="btn icon-btn" id="btnCloseModal" title="关闭" aria-label="关闭">×</button>
+      </header>
+      <div class="modal-body">
+        <h4 class="section-title">模型信息</h4>
+        <dl class="detail-grid" id="detailGrid"></dl>
+        <h4 class="section-title">标签契约 <span class="section-count" id="labelContractCount"></span></h4>
+        <div class="label-contract" id="labelContractList"></div>
+        <h4 class="section-title">模型包</h4>
+        <dl class="detail-grid" id="packageDetailGrid"></dl>
+        <div id="catalogManagementSection" class="catalog-management-control" hidden>
+          <h4 class="section-title">目录管理</h4>
+          <div class="edit-grid">
+            <label class="wide">展示名称<input id="editDisplayName" maxlength="256" /></label>
+            <label class="toggle-line"><input type="checkbox" id="editDownloadEnabled" /> 允许下载</label>
+            <p class="wide meta">模型发布后不提供回滚或撤回。模型有问题时可停止本平台后续下载，再发布替代模型；AICM 和其他平台已经取得的文件不会被收回。</p>
+            <div class="wide"><button type="button" class="btn primary" id="btnSaveModel">保存</button></div>
+          </div>
+          <h4 class="section-title">第三方兼容标识</h4>
+          <div class="alias-list" id="aliasList"></div>
+          <div class="alias-add">
+            <input id="aliasSource" placeholder="来源系统" maxlength="64" />
+            <input id="aliasId" placeholder="第三方模型 ID" maxlength="128" />
+            <button type="button" class="btn" id="btnAddAlias">添加</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="modal-bg" id="confirmModal">
+    <div class="modal confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <div class="modal-head"><div><h3 id="confirmTitle">请确认操作</h3></div><button type="button" class="btn icon-btn" id="btnCloseConfirm" aria-label="关闭">×</button></div>
+      <div class="modal-body"><p id="confirmMessage"></p></div>
+      <div class="confirm-actions"><button type="button" class="btn" id="btnCancelConfirm">取消</button><button type="button" class="btn danger" id="btnConfirmAction">确认</button></div>
+    </div>
+  </div>
+  <div id="toast"></div>
+
+  <script>
+(function () {
+  "use strict";
+  var API = "/api/v1";
+  var page = 0;
+  var size = 20;
+  var rows = [];
+  var total = 0;
+  var pager = null;
+  var selected = null;
+  var pendingConfirm = null;
+  // /users/me 的 is_task_superuser 是管理权限真源；缺少该字段时兼容旧后端，
+  // 但所有写接口仍由后端 require_system_admin 最终拦截。
+  var canManageCatalog = false;
+  var capabilitiesLoaded = false;
+
+  function esc(value) {
+    return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function token() {
+    return window.LabeluPortal ? LabeluPortal.getAuthToken() : (localStorage.getItem("token") || "");
+  }
+
+  async function api(path, options) {
+    options = options || {};
+    var headers = Object.assign({ "Content-Type": "application/json" }, options.headers || {});
+    if (token()) headers.Authorization = token();
+    var response = await fetch(API + path, Object.assign({}, options, { headers: headers, cache: "no-store" }));
+    var text = await response.text();
+    var json = null;
+    try { json = text ? JSON.parse(text) : {}; } catch (e) { json = {}; }
+    if ((response.status === 401 || response.status === 403) && window.LabeluPortal) LabeluPortal.handleUnauthorized(response.status);
+    return { ok: response.ok, status: response.status, json: json, text: text };
+  }
+
+  function errorMessage(result) {
+    return result && result.json && (result.json.detail || result.json.message) || (result && result.text) || "请求失败";
+  }
+
+  function toast(message, type) {
+    var item = document.createElement("div");
+    item.className = "toast-item" + (type === "error" ? " error" : "");
+    item.textContent = message;
+    document.getElementById("toast").appendChild(item);
+    setTimeout(function () { item.remove(); }, 3200);
+  }
+
+  function askConfirm(title, message, action) {
+    pendingConfirm = action;
+    document.getElementById("confirmTitle").textContent = title || "请确认操作";
+    document.getElementById("confirmMessage").textContent = message || "请确认是否继续。";
+    document.getElementById("confirmModal").classList.add("show");
+    document.getElementById("btnCancelConfirm").focus();
+  }
+  function closeConfirm() { document.getElementById("confirmModal").classList.remove("show"); pendingConfirm = null; }
+  document.getElementById("btnCloseConfirm").onclick = closeConfirm;
+  document.getElementById("btnCancelConfirm").onclick = closeConfirm;
+  document.getElementById("confirmModal").onclick = function (event) { if (event.target === event.currentTarget) closeConfirm(); };
+  document.getElementById("btnConfirmAction").onclick = async function () { var action = pendingConfirm; closeConfirm(); if (action) await action(); };
+
+  function showState(message, isError) {
+    var state = document.getElementById("catalogState");
+    state.textContent = message || "";
+    state.classList.toggle("show", !!message);
+    state.classList.toggle("error", !!isError);
+  }
+
+  function statusView(row) {
+    if (row.status === "revoked") return { text: "历史停用", cls: "bad" };
+    if (row.status === "hidden") return { text: "历史隐藏", cls: "warn" };
+    return { text: "正常", cls: "ok" };
+  }
+
+  function availabilityView(row) {
+    if (row.local_package_available) return { text: "本地包可用", cls: "ok" };
+    if (row.availability_status === "available") return { text: "可从 AICM 缓存", cls: "warn" };
+    return { text: "本地包缺失", cls: "bad" };
+  }
+
+  function downloadEnabled(row) {
+    return row.download_enabled !== false;
+  }
+
+  function setManagementVisibility() {
+    document.querySelectorAll(".catalog-management-control").forEach(function (element) {
+      element.hidden = !canManageCatalog;
+    });
+  }
+
+  async function loadCapabilities() {
+    if (capabilitiesLoaded || !token()) return;
+    capabilitiesLoaded = true;
+    var result = await api("/users/me");
+    if (!result.ok) {
+      canManageCatalog = false;
+    } else {
+      var data = result.json && result.json.data || {};
+      // 旧版 /users/me 没有字段时保留兼容展示，后端仍会拒绝越权写入。
+      canManageCatalog = data.is_task_superuser !== false;
+    }
+    setManagementVisibility();
+  }
+
+  function sourceLabel(value) {
+    return value === "labelu_publish" ? "7GAI 发布" : value === "remote_legacy" ? "AICM 历史" : value === "third_party" ? "第三方" : (value || "未知");
+  }
+
+  function formatDate(value) {
+    if (!value) return "—";
+    var date = new Date(value);
+    return isNaN(date.getTime()) ? String(value) : date.toLocaleString("zh-CN", { hour12: false });
+  }
+
+  function formatPrecision(value) {
+    var normalized = String(value || "").trim().toLowerCase();
+    return normalized === "int8" || normalized === "fp16" || normalized === "fp32" ? normalized.toUpperCase() : "未知";
+  }
+
+  function renderMetrics(summary) {
+    document.getElementById("metricTotal").textContent = summary.total || 0;
+    document.getElementById("metricPublic").textContent = summary.public || 0;
+    document.getElementById("metricUnavailable").textContent = summary.unavailable || 0;
+    document.getElementById("metricLegacy").textContent = summary.legacy || 0;
+  }
+
+  function aliasHtml(row) {
+    var aliases = row.aliases || [];
+    if (!aliases.length) return "<span class=\"meta\">仅模型 ID</span>";
+    return "<div class=\"chips\">" + aliases.slice(0, 3).map(function (alias) {
+      return "<span class=\"chip\" title=\"" + esc(alias.source_system + ":" + alias.external_model_id) + "\">" + esc(alias.source_system + ":" + alias.external_model_id) + "</span>";
+    }).join("") + (aliases.length > 3 ? "<span class=\"chip\">+" + (aliases.length - 3) + "</span>" : "") + "</div>";
+  }
+
+  function renderRows() {
+    var tbody = document.getElementById("catalogTbody");
+    if (!rows.length) {
+      tbody.innerHTML = "<tr><td colspan=\"6\" class=\"empty\">当前筛选条件下没有模型</td></tr>";
+      return;
+    }
+    tbody.innerHTML = rows.map(function (row) {
+      var state = statusView(row);
+      var available = availabilityView(row);
+      var labels = classLabels(row);
+      var labelChips = labels.slice(0, 3).map(function (label) {
+        var title = label.label_key ? label.label_key + " / " + label.label_value : label.label_value;
+        return "<span class=\"chip\" title=\"" + esc(title) + "\">" + esc(label.label_key || label.label_value) + "</span>";
+      }).join("");
+      if (labels.length > 3) labelChips += "<span class=\"chip\">+" + (labels.length - 3) + "</span>";
+      var algorithmText = row.algorithm_type === "Detection" ? "目标检测" : (row.algorithm_type || "算法待同步");
+      var managementControl = canManageCatalog
+        ? "<label class=\"download-switch catalog-management-control\" title=\"控制管理端和第三方下载\"><input type=\"checkbox\" data-act=\"download-toggle\"" + (downloadEnabled(row) ? " checked" : "") + " /><span>" + (downloadEnabled(row) ? "允许下载" : "下载已关闭") + "</span></label>"
+        : "<span class=\"meta\">下载由管理人员控制</span>";
+      return "<tr data-catalog-id=\"" + row.catalog_id + "\">" +
+        "<td data-label=\"模型\"><div><div class=\"model-name\">" + esc(row.display_name || row.name || "未命名模型") + "</div><div class=\"model-id\">ID " + esc(row.model_id) + "</div><div class=\"meta\">目录 #" + row.catalog_id + " · " + esc(sourceLabel(row.source_type)) + "</div></div></td>" +
+        "<td data-label=\"标签契约\"><div><div>" + esc(algorithmText) + " · " + esc(row.resolution || "—") + "</div><div class=\"chips\">" + (labelChips || "<span class=\"chip\">标签待同步</span>") + "</div></div></td>" +
+        "<td data-label=\"发布包\"><div><div>" + esc(row.chip_type || "芯片待同步") + "</div><div class=\"meta\">mAP50 " + (row.map50 == null ? "—" : (Number(row.map50) * 100).toFixed(1) + "%") + "</div><div class=\"meta\">发布于 " + esc(formatDate(row.published_at)) + "</div></div></td>" +
+        "<td data-label=\"状态\"><div><span class=\"status " + state.cls + "\">" + state.text + "</span><div style=\"margin-top:5px\"><span class=\"status " + available.cls + "\">" + available.text + "</span></div><div class=\"meta\">" + (row.is_public ? "对外开放" : "仅内部") + "</div>" + managementControl + "</div></td>" +
+        "<td data-label=\"兼容标识\"><div>" + aliasHtml(row) + "</div></td>" +
+        "<td data-label=\"操作\"><div class=\"row-actions\"><button class=\"btn primary\" data-act=\"download\"" + (downloadEnabled(row) ? "" : " disabled") + ">下载</button><button class=\"btn\" data-act=\"detail\">详情</button></div></td>" +
+        "</tr>";
+    }).join("");
+    tbody.querySelectorAll("tr[data-catalog-id]").forEach(function (tr) {
+      var row = rows.find(function (item) { return item.catalog_id === Number(tr.getAttribute("data-catalog-id")); });
+      tr.querySelector('[data-act="detail"]').onclick = function () { openDetail(row); };
+      tr.querySelector('[data-act="download"]').onclick = function () { downloadModel(row); };
+      var toggle = tr.querySelector('[data-act="download-toggle"]');
+      if (toggle) toggle.onchange = function (event) { toggleDownload(row, event.currentTarget); };
+    });
+  }
+
+  function initPager() {
+    if (!window.LuPager) return;
+    if (!pager) {
+      pager = LuPager.mount("catalogPager", { page: page, size: size, total: total, onChange: function (next) { page = next.page; size = next.size; loadModels(); } });
+    }
+    pager.update({ page: page, size: size, total: total });
+  }
+
+  async function loadModels(options) {
+    options = options || {};
+    if (!token()) return;
+    await loadCapabilities();
+    setManagementVisibility();
+    showState("正在加载模型目录…", false);
+    var params = new URLSearchParams({ page: String(page), size: String(size) });
+    var mappings = [["filterQuery", "q"], ["filterStatus", "status"], ["filterAvailability", "availability_status"], ["filterSource", "source_type"], ["filterPublic", "is_public"]];
+    mappings.forEach(function (pair) { var value = document.getElementById(pair[0]).value.trim(); if (value) params.set(pair[1], value); });
+    var result = await api("/published-models?" + params.toString());
+    if (!result.ok) {
+      rows = [];
+      renderRows();
+      showState("模型目录加载失败：" + errorMessage(result), true);
+      return;
+    }
+    var payload = result.json.data || {};
+    rows = payload.models || [];
+    total = result.json.meta_data && result.json.meta_data.total != null ? result.json.meta_data.total : rows.length;
+    renderMetrics(payload.summary || {});
+    renderRows();
+    initPager();
+    showState("", false);
+    document.getElementById("catalogUpdatedAt").textContent = "更新于 " + new Date().toLocaleTimeString("zh-CN", { hour12: false });
+    if (options.feedback) toast("模型目录已刷新");
+  }
+
+  async function syncModels() {
+    askConfirm("同步模型目录", "将从发布历史和当前 AICM 环境同步模型目录，现有模型 ID 与管理状态会保留。继续同步？", async function () {
+      var button = document.getElementById("btnSync");
+      button.disabled = true;
+      button.textContent = "同步中…";
+      var result = await api("/published-models/sync", { method: "POST", body: JSON.stringify({ include_remote_models: true }) });
+      button.disabled = false;
+      button.textContent = "同步";
+      if (!result.ok) return toast("同步失败：" + errorMessage(result), "error");
+      var data = result.json.data || {};
+      toast("同步完成：新增 " + (data.created || 0) + "，更新 " + (data.updated || 0));
+      page = 0;
+      loadModels();
+    });
+  }
+
+  async function downloadModel(row) {
+    var headers = {};
+    if (token()) headers.Authorization = token();
+    var response = await fetch(API + "/published-models/" + encodeURIComponent(row.model_id) + "/download", { headers: headers, cache: "no-store" });
+    if (!response.ok) {
+      var text = await response.text();
+      var json = {};
+      try { json = text ? JSON.parse(text) : {}; } catch (e) { json = {}; }
+      toast("下载失败：" + errorMessage({ json: json, text: text }), "error");
+      await loadModels();
+      return;
+    }
+    var blob = await response.blob();
+    var disposition = response.headers.get("Content-Disposition") || "";
+    var filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+    var filename = filenameMatch ? filenameMatch[1] : ("model-" + row.model_id + ".zip");
+    var objectUrl = URL.createObjectURL(blob);
+    var link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 1000);
+    toast("模型包已开始下载");
+  }
+
+  async function toggleDownload(row, control) {
+    var enabled = !!control.checked;
+    control.checked = downloadEnabled(row);
+    askConfirm(
+      enabled ? "恢复本平台下载" : "停止本平台下载",
+      enabled
+        ? "恢复后，登录用户和对外下载接口可以再次取得该模型包。是否继续？"
+        : "停止后只会禁止本平台的后续下载，不会撤回 AICM 或其他平台已经取得的文件。是否继续？",
+      async function () {
+        control.disabled = true;
+        var result = await api("/published-models/" + row.catalog_id, { method: "PATCH", body: JSON.stringify({ download_enabled: enabled, expected_download_enabled: downloadEnabled(row) }) });
+        control.disabled = false;
+        if (!result.ok) {
+          control.checked = downloadEnabled(row);
+          await loadModels();
+          return toast("下载开关保存失败：" + errorMessage(result), "error");
+        }
+        toast(enabled ? "已恢复本平台下载" : "已停止本平台后续下载");
+        await loadModels();
+      }
+    );
+  }
+
+  function detailItem(label, value, options) {
+    options = options || {};
+    return "<div class=\"detail-item" + (options.wide ? " wide" : "") + (options.mono ? " mono" : "") + "\"><dt>" + esc(label) + "</dt><dd>" + esc(value == null || value === "" ? "—" : value) + "</dd></div>";
+  }
+
+  function formatBytes(value) {
+    var size = Number(value);
+    if (!isFinite(size) || size < 0) return "—";
+    if (size < 1024) return size + " B";
+    var units = ["KB", "MB", "GB", "TB"];
+    var index = -1;
+    do { size /= 1024; index += 1; } while (size >= 1024 && index < units.length - 1);
+    return size.toFixed(size >= 10 ? 1 : 2) + " " + units[index];
+  }
+
+  function modelStatusText(row) {
+    var state = statusView(row).text;
+    return state + " · " + (row.is_public ? "对外开放" : "仅内部") + " · " + (downloadEnabled(row) ? "允许下载" : "下载已关闭");
+  }
+
+  function classLabels(row) {
+    if (Array.isArray(row.class_labels) && row.class_labels.length) return row.class_labels;
+    return (row.class_names || []).map(function (value, index) {
+      return { class_index: index, label_key: null, label_value: value, color: null, status: null, annotation_kind: null, matched: false };
+    });
+  }
+
+  function safeColor(value) {
+    return /^#[0-9a-f]{3,8}$/i.test(String(value || "")) ? value : "transparent";
+  }
+
+  function renderLabelContract(row) {
+    var labels = classLabels(row);
+    document.getElementById("labelContractCount").textContent = labels.length ? labels.length + " 类" : "";
+    var root = document.getElementById("labelContractList");
+    if (!labels.length) {
+      root.innerHTML = "<div class=\"label-contract-empty\">该模型尚未同步标签信息</div>";
+      return;
+    }
+    root.innerHTML = "<div class=\"label-contract-head\"><span>序号</span><span>色标</span><span>中文名称</span><span>英文类别 ID</span></div>" + labels.map(function (label, index) {
+      var matched = label.matched !== false && !!label.label_key;
+      var meta = [label.annotation_kind, label.status && label.status !== "active" ? label.status : ""].filter(Boolean).join(" · ");
+      return "<div class=\"label-contract-row" + (matched ? "" : " unmatched") + "\">" +
+        "<span class=\"label-index\">#" + esc(label.class_index == null ? index : label.class_index) + "</span>" +
+        "<span class=\"label-swatch\" style=\"background:" + esc(safeColor(label.color)) + "\"></span>" +
+        "<strong class=\"label-zh" + (matched ? "" : " unmatched") + "\">" + esc(matched ? label.label_key : "待配置中文名") + "</strong>" +
+        "<code class=\"label-en\">" + esc(label.label_value || (row.class_names || [])[index] || "—") + (meta ? "<span class=\"label-contract-meta\">" + esc(meta) + "</span>" : "") + "</code>" +
+        "</div>";
+    }).join("");
+  }
+
+  function renderAliasList() {
+    var root = document.getElementById("aliasList");
+    var aliases = selected && selected.aliases || [];
+    if (!aliases.length) { root.innerHTML = "<div class=\"meta\">暂无第三方兼容标识</div>"; return; }
+    root.innerHTML = aliases.map(function (alias) {
+      var removable = alias.alias_type !== "aicm";
+      return "<div class=\"alias-row\"><span class=\"chip\">" + esc(alias.source_system) + "</span><code>" + esc(alias.external_model_id) + "</code>" + (removable ? "<button type=\"button\" class=\"btn danger\" data-alias-id=\"" + alias.id + "\" title=\"删除别名\">×</button>" : "") + "</div>";
+    }).join("");
+    root.querySelectorAll("[data-alias-id]").forEach(function (button) { button.onclick = function () { removeAlias(Number(button.getAttribute("data-alias-id"))); }; });
+  }
+
+  function openDetail(row) {
+    selected = row;
+    document.getElementById("detailTitle").textContent = row.display_name || row.name || "模型详情";
+    document.getElementById("detailSubtitle").textContent = "模型 ID " + row.model_id + " · 目录 #" + row.catalog_id;
+    document.getElementById("detailGrid").innerHTML =
+      detailItem("稳定模型 ID", row.model_id, { mono: true }) + detailItem("目录 ID", "#" + row.catalog_id) +
+      detailItem("原始名称", row.name) + detailItem("来源类型", sourceLabel(row.source_type)) +
+      detailItem("来源系统", row.source_system) + detailItem("AICM 环境", row.aicm_environment_id, { mono: true }) +
+      detailItem("AICM 模型集合编号", row.aicm_model_set_id, { mono: true }) + detailItem("发布任务编号", row.publish_job_id, { mono: true }) +
+      detailItem("7GAI 导出 ID", row.export_id ? "#" + row.export_id : "—") + detailItem("训练作业 ID", row.yolo_train_job_id ? "#" + row.yolo_train_job_id : "—") +
+      detailItem("标注任务 ID", row.task_id ? "#" + row.task_id : "—") + detailItem("发布人", row.publisher_username) +
+      detailItem("芯片", row.chip_type) + detailItem("模型精度", formatPrecision(row.precision)) + detailItem("算法 / 输入", (row.algorithm_type || "—") + " / " + (row.resolution || "—")) +
+      detailItem("mAP50", row.map50 == null ? "—" : (Number(row.map50) * 100).toFixed(2) + "%") + detailItem("目录发布状态", modelStatusText(row)) +
+      detailItem("发布时间", formatDate(row.published_at)) + detailItem("最近同步", formatDate(row.last_synced_at));
+    renderLabelContract(row);
+    document.getElementById("packageDetailGrid").innerHTML =
+      detailItem("7GAI 本地包", row.local_package_available ? "已保存，可直接下载" : "尚未保存") + detailItem("AICM 远端状态", row.availability_status || "unknown") +
+      detailItem("包大小", formatBytes(row.package_size_bytes)) + detailItem("下载开关", downloadEnabled(row) ? "已开启" : "已关闭") +
+      detailItem("SHA256", row.package_sha256, { wide: true, mono: true }) + detailItem("MD5", row.package_md5, { wide: true, mono: true }) +
+      detailItem("7GAI 对外下载接口", row.download_path, { wide: true, mono: true }) + detailItem("AICM 原下载地址", row.remote_download_url, { wide: true, mono: true });
+    document.getElementById("editDisplayName").value = row.display_name || row.name || "";
+    document.getElementById("editDownloadEnabled").checked = downloadEnabled(row);
+    renderAliasList();
+    document.getElementById("detailModal").classList.add("show");
+  }
+
+  function closeDetail() { document.getElementById("detailModal").classList.remove("show"); selected = null; }
+
+  function saveModel() {
+    if (!selected) return;
+    var enabled = document.getElementById("editDownloadEnabled").checked;
+    var body = { display_name: document.getElementById("editDisplayName").value.trim(), download_enabled: enabled, expected_download_enabled: downloadEnabled(selected) };
+    var persist = async function () {
+      var result = await api("/published-models/" + selected.catalog_id, { method: "PATCH", body: JSON.stringify(body) });
+      if (!result.ok) return toast("保存失败：" + errorMessage(result), "error");
+      selected = result.json.data;
+      toast("模型目录已更新");
+      openDetail(selected);
+      loadModels();
+    };
+    if (enabled !== downloadEnabled(selected)) {
+      askConfirm(
+        enabled ? "恢复本平台下载" : "停止本平台下载",
+        enabled
+          ? "恢复后，登录用户和对外下载接口可以再次取得该模型包。是否继续？"
+          : "停止后只会禁止本平台的后续下载，不会撤回 AICM 或其他平台已经取得的文件。是否继续？",
+        persist
+      );
+      return;
+    }
+    persist();
+  }
+
+  async function addAlias() {
+    if (!selected) return;
+    var source = document.getElementById("aliasSource").value.trim();
+    var external = document.getElementById("aliasId").value.trim();
+    if (!source || !external) return toast("请填写来源系统和第三方模型 ID", "error");
+    var result = await api("/published-models/" + selected.catalog_id + "/aliases", { method: "POST", body: JSON.stringify({ source_system: source, external_model_id: external, alias_type: "third_party" }) });
+    if (!result.ok) return toast("别名添加失败：" + errorMessage(result), "error");
+    selected = result.json.data;
+    document.getElementById("aliasId").value = "";
+    renderAliasList();
+    toast("第三方模型 ID 已绑定");
+    loadModels();
+  }
+
+  async function removeAlias(aliasId) {
+    if (!selected) return;
+    askConfirm("删除第三方兼容标识", "删除后原模型和 AICM 模型 ID 不受影响，是否继续？", async function () {
+      var result = await api("/published-models/" + selected.catalog_id + "/aliases/" + aliasId, { method: "DELETE" });
+      if (!result.ok) return toast("别名删除失败：" + errorMessage(result), "error");
+      selected = result.json.data;
+      renderAliasList();
+      toast("兼容标识已删除");
+      loadModels();
+    });
+  }
+
+  document.getElementById("btnRefresh").onclick = function () { loadModels({ feedback: true }); };
+  document.getElementById("btnSync").onclick = syncModels;
+  document.getElementById("btnSearch").onclick = function () { page = 0; loadModels(); };
+  document.getElementById("filterQuery").onkeydown = function (event) { if (event.key === "Enter") { page = 0; loadModels(); } };
+  document.getElementById("btnReset").onclick = function () { ["filterQuery", "filterStatus", "filterAvailability", "filterSource", "filterPublic"].forEach(function (id) { document.getElementById(id).value = ""; }); page = 0; loadModels(); };
+  document.getElementById("btnCloseModal").onclick = closeDetail;
+  document.getElementById("detailModal").onclick = function (event) { if (event.target === event.currentTarget) closeDetail(); };
+  document.addEventListener("keydown", function (event) { if (event.key === "Escape" && document.getElementById("detailModal").classList.contains("show")) closeDetail(); });
+  document.addEventListener("keydown", function (event) { if (event.key === "Escape" && document.getElementById("confirmModal").classList.contains("show")) closeConfirm(); });
+  document.getElementById("btnSaveModel").onclick = saveModel;
+  document.getElementById("btnAddAlias").onclick = addAlias;
+  document.getElementById("btnSaveToken").onclick = function () { if (window.LabeluPortal) { LabeluPortal.setAuthToken(document.getElementById("tokenInput").value); LabeluPortal.syncAuthBox(); loadModels(); } };
+  window.addEventListener("labelu-auth-ready", function () { loadModels(); });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", function () { if (token()) loadModels(); });
+  else if (token()) loadModels();
+})();
+  </script>
+</body>
+</html>

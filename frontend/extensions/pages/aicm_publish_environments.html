@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AICM 发布环境</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --page-bg: #f5f7f9;
+      --surface: #ffffff;
+      --surface-subtle: #f8fafb;
+      --border: #dfe5ea;
+      --border-strong: #c9d2da;
+      --text: #18212b;
+      --muted: #687481;
+      --primary: #176b5b;
+      --primary-hover: #0f574a;
+      --primary-soft: #eaf5f2;
+      --success: #16794a;
+      --success-soft: #edf8f2;
+      --warning: #a85a08;
+      --warning-soft: #fff7e8;
+      --danger: #bd2c3a;
+      --danger-soft: #fff1f2;
+      --info: #2468a2;
+      --info-soft: #eef6fc;
+    }
+    * { box-sizing: border-box; }
+    body.labelu-shell { margin: 0; min-height: 100vh; color: var(--text); background: var(--page-bg); }
+    button, input, select { font: inherit; }
+    .auth-box { padding: 10px 18px; border-bottom: 1px solid #efd59d; background: #fff8e7; font-size: 13px; }
+    .page-main { max-width: 1480px; margin: 0 auto; padding: 18px 20px 32px; }
+    .page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 16px; }
+    .page-title { margin: 0; font-size: 24px; line-height: 1.3; letter-spacing: 0; }
+    .page-subtitle { margin: 6px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .header-actions, .toolbar-actions, .modal-actions, .row-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .btn {
+      min-height: 34px;
+      padding: 6px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 6px;
+      color: var(--text);
+      background: var(--surface);
+      cursor: pointer;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .btn:hover { border-color: #97a7b5; background: var(--surface-subtle); }
+    .btn:disabled { cursor: not-allowed; opacity: .5; }
+    .btn.primary { color: #fff; border-color: var(--primary); background: var(--primary); }
+    .btn.primary:hover { border-color: var(--primary-hover); background: var(--primary-hover); }
+    .btn.danger { color: var(--danger); border-color: #efb8bd; }
+    .btn.danger:hover { background: var(--danger-soft); }
+    .btn.small { min-height: 30px; padding: 4px 9px; font-size: 12px; }
+    .status-banner {
+      display: none;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+      border: 1px solid var(--border);
+      border-left-width: 4px;
+      border-radius: 6px;
+      background: var(--surface);
+    }
+    .status-banner.show { display: flex; }
+    .status-banner.ready { border-left-color: var(--success); background: var(--success-soft); }
+    .status-banner.blocked { border-left-color: var(--warning); background: var(--warning-soft); }
+    .status-banner strong { display: block; font-size: 14px; }
+    .status-banner p { margin: 3px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+    .metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .metric-card { min-width: 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+    .metric-label { color: var(--muted); font-size: 12px; }
+    .metric-value { margin-top: 5px; font-size: 21px; font-weight: 700; line-height: 1.2; word-break: break-word; }
+    .metric-note { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .workspace { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); overflow: hidden; }
+    .workspace-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .workspace-title { margin: 0; font-size: 16px; }
+    .workspace-note { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--surface-subtle); }
+    .filter-control { height: 34px; padding: 5px 10px; border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text); background: #fff; }
+    .filter-search { width: min(320px, 100%); }
+    .table-wrap { width: 100%; overflow-x: auto; }
+    table { width: 100%; min-width: 1120px; border-collapse: collapse; table-layout: fixed; }
+    th { padding: 10px 12px; color: #4f5d6a; background: #f7f9fa; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; text-align: left; }
+    td { padding: 12px; border-bottom: 1px solid #edf0f2; font-size: 12px; vertical-align: middle; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #fbfcfd; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .record-title { display: flex; align-items: center; gap: 7px; min-width: 0; font-size: 13px; font-weight: 650; }
+    .record-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .record-meta { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.45; word-break: break-all; }
+    .status-stack { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; }
+    .status-chip { display: inline-flex; align-items: center; min-height: 23px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .status-chip.ready { color: var(--success); border-color: #aadbc1; background: var(--success-soft); }
+    .status-chip.blocked { color: var(--warning); border-color: #edc68f; background: var(--warning-soft); }
+    .status-chip.danger { color: var(--danger); border-color: #edb5bb; background: var(--danger-soft); }
+    .status-chip.info { color: var(--info); border-color: #b8d3e8; background: var(--info-soft); }
+    .status-chip.neutral { color: #596673; background: #f5f7f8; }
+    .block-reason { max-width: 250px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .row-actions { flex-wrap: nowrap; }
+    .empty-state { padding: 48px 18px; text-align: center; color: var(--muted); }
+    .empty-state strong { display: block; margin-bottom: 6px; color: var(--text); font-size: 14px; }
+    .pagination-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; padding: 10px 16px 14px; border-top: 1px solid var(--border); background: var(--surface-subtle); }
+    .pagination-row select { height: 32px; padding: 4px 8px; border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text); background: #fff; }
+    .pagination-row .page-index { min-width: 90px; color: var(--muted); font-size: 12px; text-align: center; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; z-index: 1200; align-items: center; justify-content: center; padding: 20px; background: rgba(16, 24, 32, .46); }
+    .modal-backdrop.show { display: flex; }
+    .modal { width: min(760px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 18px 50px rgba(20, 28, 36, .2); }
+    .modal.small { width: min(460px, 100%); }
+    .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    .modal-head h2 { margin: 0; font-size: 17px; }
+    .modal-head p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .icon-close { width: 32px; height: 32px; padding: 0; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; font-size: 18px; line-height: 30px; }
+    .modal-body { padding: 16px 18px; }
+    .modal-actions { justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--border); background: #fafbfc; }
+    .form-section + .form-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+    .form-section-title { margin: 0 0 10px; font-size: 13px; }
+    .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 14px; }
+    .field.full { grid-column: 1 / -1; }
+    .field label { display: block; margin-bottom: 5px; color: #44515d; font-size: 12px; font-weight: 600; }
+    .field input, .field select { width: 100%; min-height: 36px; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 6px; color: var(--text); background: #fff; }
+    .field input:focus, .field select:focus { outline: 2px solid rgba(23, 107, 91, .15); border-color: var(--primary); }
+    .field-help { margin-top: 4px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+    .checkbox-field { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+    .checkbox-field input { width: auto; min-height: auto; }
+    .runtime-warning { margin-top: 12px; padding: 10px 12px; border: 1px solid #edc68f; border-radius: 6px; color: #77501d; background: var(--warning-soft); font-size: 12px; line-height: 1.55; }
+    .detail-modal-backdrop { display: none; position: fixed; inset: 0; z-index: 1150; align-items: center; justify-content: center; padding: 20px; background: rgba(16, 24, 32, .46); }
+    .detail-modal-backdrop.show { display: flex; }
+    .detail-modal { width: min(760px, 100%); max-height: calc(100vh - 40px); overflow: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); box-shadow: 0 18px 50px rgba(20, 28, 36, .2); }
+    .detail-section { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+    .detail-section h3 { margin: 0 0 10px; font-size: 13px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+    .detail-item { min-width: 0; padding: 9px 10px; border: 1px solid #e7ebee; border-radius: 6px; background: var(--surface-subtle); }
+    .detail-item dt { color: var(--muted); font-size: 11px; }
+    .detail-item dd { margin: 4px 0 0; font-size: 12px; line-height: 1.45; word-break: break-word; }
+    .detail-item.full { grid-column: 1 / -1; }
+    .readiness-box { padding: 12px; border: 1px solid var(--border); border-left-width: 4px; border-radius: 6px; }
+    .readiness-box.ready { border-left-color: var(--success); background: var(--success-soft); }
+    .readiness-box.blocked { border-left-color: var(--warning); background: var(--warning-soft); }
+    .readiness-box strong { font-size: 13px; }
+    .readiness-box p { margin: 5px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+    .toast { display: none; position: fixed; right: 20px; bottom: 20px; z-index: 1400; max-width: 420px; padding: 10px 13px; border-radius: 6px; color: #fff; background: #26323d; box-shadow: 0 10px 28px rgba(0, 0, 0, .2); font-size: 13px; }
+    .toast.ok { background: var(--success); }
+    .toast.err { background: var(--danger); }
+    @media (max-width: 980px) {
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .page-header { align-items: stretch; flex-direction: column; }
+      .header-actions { justify-content: flex-start; }
+    }
+    @media (max-width: 720px) {
+      .page-main { padding: 12px 10px 24px; }
+      .metric-grid { grid-template-columns: 1fr 1fr; }
+      .metric-value { font-size: 18px; }
+      .workspace-head { align-items: flex-start; flex-direction: column; }
+      .filters { align-items: stretch; flex-direction: column; }
+      .filter-control, .filter-search { width: 100%; }
+      .table-wrap { overflow: visible; }
+      table { min-width: 0; }
+      thead { display: none; }
+      tbody, tr, td { display: block; width: 100%; }
+      tbody { padding: 8px; }
+      tbody tr { margin-bottom: 8px; border: 1px solid var(--border); border-radius: 6px; background: #fff; }
+      td { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 10px; padding: 9px 10px; border-bottom: 1px solid #edf0f2; }
+      td::before { content: attr(data-label); color: var(--muted); font-size: 11px; font-weight: 600; }
+      td:last-child { border-bottom: 0; }
+      .row-actions { flex-wrap: wrap; }
+      .form-grid, .detail-grid { grid-template-columns: 1fr; }
+      .field.full, .detail-item.full { grid-column: auto; }
+      .status-banner { flex-direction: column; }
+    }
+  </style>
+</head>
+<body class="labelu-shell" data-labelu-page-title="AICM 发布环境">
+  <div class="auth-box" id="authBox" style="display:none;">
+    <strong>需要登录</strong>
+    <input id="tokenInput" type="password" placeholder="Bearer token" autocomplete="off" style="margin-left:8px;width:min(460px,70vw);" />
+    <button type="button" class="btn primary small" id="btnSaveToken">保存令牌</button>
+  </div>
+
+  <main class="page-main">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">AICM 发布环境</h1>
+        <p class="page-subtitle">发布环境和加密凭据统一存入 MySQL，保存后即可用于模型发布。<span id="backendLabel"></span></p>
+      </div>
+      <div class="header-actions">
+        <a class="btn" href="/yolo-model-publish">返回模型发布</a>
+        <button type="button" class="btn" id="btnRefresh">刷新状态</button>
+        <button type="button" class="btn primary" id="btnCreate">新增环境</button>
+      </div>
+    </header>
+
+    <section class="status-banner" id="activeStatusBanner">
+      <div><strong id="activeStatusTitle">尚未设置当前环境</strong><p id="activeStatusReason">新增环境后设为当前即可用于模型发布。</p></div>
+      <button type="button" class="btn small" id="btnViewActive" disabled>查看环境</button>
+    </section>
+
+    <section class="metric-grid" aria-label="环境概览">
+      <article class="metric-card"><div class="metric-label">当前发布环境</div><div class="metric-value" id="summaryActiveName">未设置</div><div class="metric-note" id="summaryActiveId">—</div></article>
+      <article class="metric-card"><div class="metric-label">环境总数</div><div class="metric-value" id="summaryCount">0</div><div class="metric-note">已登记的 AICM 目标</div></article>
+      <article class="metric-card"><div class="metric-label">可发布</div><div class="metric-value" id="summaryReadyCount">0</div><div class="metric-note">连接与加密凭据完整</div></article>
+      <article class="metric-card"><div class="metric-label">未就绪</div><div class="metric-value" id="summaryBlockedCount">0</div><div class="metric-note">需要补齐连接信息或密码</div></article>
+    </section>
+
+    <section class="workspace">
+      <div class="workspace-head">
+        <div><h2 class="workspace-title">环境列表</h2><p class="workspace-note">连接信息完整且 MySQL 加密密码可正常解密时，环境即可发布。</p></div>
+        <div class="toolbar-actions"><span class="record-meta" id="listCountLabel">共 0 条</span></div>
+      </div>
+      <div class="filters">
+        <input class="filter-control filter-search" id="filterKeyword" placeholder="搜索环境名称、地址或用户名" />
+        <select class="filter-control" id="filterStatus">
+          <option value="all">全部状态</option>
+          <option value="ready">可发布</option>
+          <option value="blocked">未就绪</option>
+          <option value="active">当前环境</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table aria-label="AICM 发布环境列表">
+          <colgroup><col style="width:18%"><col style="width:20%"><col style="width:18%"><col style="width:21%"><col style="width:9%"><col style="width:14%"></colgroup>
+          <thead><tr><th>环境</th><th>连接信息</th><th>密码状态</th><th>发布就绪</th><th>更新时间</th><th>操作</th></tr></thead>
+          <tbody id="envTableBody"><tr><td colspan="6"><div class="empty-state">正在加载环境…</div></td></tr></tbody>
+        </table>
+      </div>
+      <div class="pagination-row" aria-label="发布环境分页">
+        <span class="record-meta" id="envPageSummary">共 0 条</span>
+        <select id="envPageSize" aria-label="每页条数">
+          <option value="10">10 条/页</option>
+          <option value="20" selected>20 条/页</option>
+          <option value="50">50 条/页</option>
+        </select>
+        <button type="button" class="btn small" id="btnEnvPrev">上一页</button>
+        <span class="page-index" id="envPageIndex">第 1 / 1 页</span>
+        <button type="button" class="btn small" id="btnEnvNext">下一页</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="detail-modal-backdrop" id="detailModalBackdrop">
+    <section class="detail-modal" aria-labelledby="detailTitle" role="dialog" aria-modal="true">
+      <div class="modal-head"><div><h2 id="detailTitle">环境详情</h2><p id="detailSubtitle"></p></div><button type="button" class="icon-close" id="btnCloseDetail" aria-label="关闭">X</button></div>
+      <div class="detail-section"><div class="readiness-box" id="detailReadiness"><strong id="detailReadinessTitle"></strong><p id="detailReadinessReason"></p></div></div>
+      <div class="detail-section"><h3>连接与身份</h3><dl class="detail-grid" id="detailConnection"></dl></div>
+      <div class="detail-section"><h3>运行时配置</h3><dl class="detail-grid" id="detailRuntime"></dl></div>
+      <div class="detail-section"><h3>记录信息</h3><dl class="detail-grid" id="detailAudit"></dl></div>
+      <div class="modal-actions"><button type="button" class="btn" id="btnDetailSetActive">设为当前</button><button type="button" class="btn primary" id="btnDetailEdit">编辑环境</button></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="editorModalBackdrop">
+    <section class="modal" aria-labelledby="editorTitle">
+      <div class="modal-head"><div><h2 id="editorTitle">新增环境</h2><p id="editorSubtitle">填写 AICM 连接信息，密码由服务端加密保存。</p></div><button type="button" class="icon-close" id="btnCloseEditor" aria-label="关闭">X</button></div>
+      <div class="modal-body">
+        <section class="form-section"><h3 class="form-section-title">基本信息</h3><div class="form-grid">
+          <div class="field"><label for="fieldHost">IP 地址或主机名</label><input id="fieldHost" placeholder="192.168.54.169" autocomplete="off" /></div>
+          <div class="field"><label for="fieldPort">端口</label><input id="fieldPort" inputmode="numeric" maxlength="5" value="8102" placeholder="8102" /></div>
+          <div class="field"><label for="fieldUsername">账号</label><input id="fieldUsername" autocomplete="username" /></div>
+          <div class="field"><label for="fieldPassword">密码</label><input id="fieldPassword" type="password" maxlength="256" autocomplete="new-password" /><div class="field-help" id="passwordHelp">密码将加密存入 MySQL。</div></div>
+        </div><div class="runtime-warning">密码只在保存请求中提交，服务端使用系统密钥加密后写入 MySQL，页面和接口都不会返回密码明文。</div></section>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn" id="btnCancelEditor">取消</button><button type="button" class="btn primary" id="btnSave">保存环境</button></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="deleteModalBackdrop">
+    <section class="modal small" aria-labelledby="deleteTitle">
+      <div class="modal-head"><div><h2 id="deleteTitle">删除发布环境</h2><p>此操作不会删除已发布的模型。</p></div><button type="button" class="icon-close" id="btnCloseDelete" aria-label="关闭">X</button></div>
+      <div class="modal-body"><p id="deleteMessage" style="margin:0;line-height:1.6;"></p></div>
+      <div class="modal-actions"><button type="button" class="btn" id="btnCancelDelete">取消</button><button type="button" class="btn danger" id="btnConfirmDelete">确认删除</button></div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+  (function () {
+    var state = { activeEnvironmentId: "", activeEnvironmentRecord: null, environments: [], total: 0, readyCount: 0, page: 0, size: 20, editingId: "", detailId: "", deletingId: "", configBackendLabel: "" };
+
+    function authToken() {
+      if (window.LabeluPortal && window.LabeluPortal.getAuthToken) return window.LabeluPortal.getAuthToken();
+      var raw = String(localStorage.getItem("token") || "").trim();
+      if (!raw) return "";
+      if (/^bearer\s+/i.test(raw)) return raw;
+      return raw.indexOf("eyJ") === 0 ? "Bearer " + raw : raw;
+    }
+    function syncAuthState() {
+      if (window.LabeluPortal && window.LabeluPortal.syncAuthBox) return !!window.LabeluPortal.syncAuthBox();
+      var ok = !!authToken();
+      document.getElementById("authBox").style.display = ok ? "none" : "block";
+      return ok;
+    }
+    function esc(value) { return String(value == null ? "" : value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;"); }
+    function toast(message, kind) {
+      var el = document.getElementById("toast");
+      el.textContent = message || ""; el.className = "toast" + (kind ? " " + kind : ""); el.style.display = "block";
+      clearTimeout(el._timer); el._timer = setTimeout(function () { el.style.display = "none"; }, 2600);
+    }
+    async function api(path, options) {
+      var opts = options || {}; var headers = opts.headers || {}; headers["Content-Type"] = "application/json";
+      if (authToken()) headers.Authorization = authToken();
+      var response = await fetch("/api/v1" + path, { method: opts.method || "GET", headers: headers, body: opts.body, credentials: "same-origin" });
+      var text = await response.text(); var payload = text ? JSON.parse(text) : {};
+      if (!response.ok) throw new Error(payload.msg || ("HTTP " + response.status));
+      return payload.data;
+    }
+    function environmentById(id) { return state.environments.find(function (item) { return item.id === id; }) || (state.activeEnvironmentRecord && state.activeEnvironmentRecord.id === id ? state.activeEnvironmentRecord : null); }
+    function activeEnvironment() { return environmentById(state.activeEnvironmentId) || state.activeEnvironmentRecord || state.environments.find(function (item) { return item.is_active; }) || null; }
+    function isActive(item) { return !!item && (item.id === state.activeEnvironmentId || item.is_active); }
+    function passwordReferenceConfigured(item) { return !!(item && item.password_configured); }
+    function passwordRuntimeAvailable(item) { return !!(item && (item.password_runtime_available != null ? item.password_runtime_available : item.ready_to_publish)); }
+    function missingLabel(fields) { var map = { base_url: "连接地址", username: "账号", password: "加密密码" }; return (fields || []).map(function (field) { return map[field] || field; }).join("、") || "无"; }
+    function readinessReason(item) {
+      if (!item) return "未找到环境";
+      if (item.readiness_reason) return item.readiness_reason;
+      if (item.ready_to_publish) return "连接地址、账号和 MySQL 加密密码均已就绪";
+      if ((item.missing_fields || []).indexOf("password") >= 0 && passwordReferenceConfigured(item)) return "密码已加密保存，但当前服务无法解密，请检查系统加密密钥";
+      if ((item.missing_fields || []).indexOf("password") >= 0) return "尚未保存 AICM 密码，请编辑环境后重新录入";
+      return "缺少" + missingLabel(item.missing_fields);
+    }
+    function detailItem(label, value, full) { return '<div class="detail-item' + (full ? ' full' : '') + '"><dt>' + esc(label) + '</dt><dd>' + esc(value || "—") + '</dd></div>'; }
+    function formatDate(value) { return value ? String(value).replace("T", " ").replace(/\+00:00$/, "") : "—"; }
+
+    function renderSummary() {
+      var active = activeEnvironment(); var ready = Number.isFinite(state.readyCount) ? state.readyCount : state.environments.filter(function (item) { return item.ready_to_publish; }).length;
+      document.getElementById("summaryActiveName").textContent = active ? (active.name || "未命名") : "未设置";
+      document.getElementById("summaryActiveId").textContent = active ? active.id : "—";
+      document.getElementById("summaryCount").textContent = String(state.total);
+      document.getElementById("summaryReadyCount").textContent = String(ready);
+      document.getElementById("summaryBlockedCount").textContent = String(Math.max(0, state.total - ready));
+      document.getElementById("backendLabel").textContent = state.configBackendLabel ? " 配置主存：" + state.configBackendLabel : "";
+      var banner = document.getElementById("activeStatusBanner"); var viewButton = document.getElementById("btnViewActive");
+      banner.className = "status-banner show " + (active && active.ready_to_publish ? "ready" : "blocked");
+      document.getElementById("activeStatusTitle").textContent = active ? (active.ready_to_publish ? "当前发布环境已就绪" : "当前发布环境未就绪") : "尚未设置当前环境";
+      document.getElementById("activeStatusReason").textContent = active ? (active.name + "：" + readinessReason(active)) : "请新增环境并设为当前发布环境。";
+      viewButton.disabled = !active; viewButton.onclick = function () { if (active) openDetail(active.id); };
+    }
+
+    function matchesFilters(item) {
+      var status = document.getElementById("filterStatus").value;
+      if (status === "ready" && !item.ready_to_publish) return false;
+      if (status === "blocked" && item.ready_to_publish) return false;
+      if (status === "active" && !isActive(item)) return false;
+      return true;
+    }
+    function renderTable() {
+      var body = document.getElementById("envTableBody"); var rows = state.environments.filter(matchesFilters);
+      var status = document.getElementById("filterStatus").value;
+      document.getElementById("listCountLabel").textContent = status === "all" ? "共 " + state.total + " 条" : "本页 " + rows.length + " 条 / 搜索结果 " + state.total + " 条";
+      if (!rows.length) { body.innerHTML = '<tr><td colspan="6"><div class="empty-state"><strong>没有匹配的发布环境</strong>调整筛选条件或新增环境。</div></td></tr>'; renderPager(); return; }
+      body.innerHTML = rows.map(function (item) {
+        var reference = passwordReferenceConfigured(item); var runtime = passwordRuntimeAvailable(item);
+        return '<tr data-env-row="' + esc(item.id) + '">' +
+          '<td data-label="环境"><div class="record-title"><span class="record-title-text">' + esc(item.name || "未命名") + '</span>' + (isActive(item) ? '<span class="status-chip info">当前</span>' : '') + '</div><div class="record-meta">' + esc(item.id) + '</div></td>' +
+          '<td data-label="连接信息"><div class="record-title"><span class="record-title-text">' + esc(item.base_url || "未配置 URL") + '</span></div><div class="record-meta">用户名：' + esc(item.username || "未配置") + '</div></td>' +
+          '<td data-label="密码状态"><div class="status-stack"><span class="status-chip ' + (reference ? 'info' : 'danger') + '">' + (reference ? '已加密保存' : '尚未保存') + '</span><span class="status-chip ' + (runtime ? 'ready' : 'blocked') + '">' + (runtime ? '凭据可用' : '凭据不可用') + '</span></div><div class="record-meta">' + esc(item.password_masked_hint || "需要录入密码") + '</div></td>' +
+          '<td data-label="发布就绪"><div class="status-stack"><span class="status-chip ' + (item.ready_to_publish ? 'ready' : 'blocked') + '">' + (item.ready_to_publish ? '可发布' : '未就绪') + '</span><span class="block-reason">' + esc(readinessReason(item)) + '</span></div></td>' +
+          '<td data-label="更新时间"><div>' + esc(formatDate(item.updated_at)) + '</div><div class="record-meta">' + esc(item.algorithm_type || "Detection") + '</div></td>' +
+          '<td data-label="操作"><div class="row-actions"><button type="button" class="btn small" data-action="view">查看</button><button type="button" class="btn small" data-action="edit">编辑</button>' + (isActive(item) ? '' : '<button type="button" class="btn small" data-action="active">设为当前</button>') + '<button type="button" class="btn small danger" data-action="delete">删除</button></div></td></tr>';
+      }).join("");
+      body.querySelectorAll("[data-env-row]").forEach(function (row) {
+        var id = row.getAttribute("data-env-row"); row.onclick = function () { openDetail(id); };
+        row.querySelectorAll("[data-action]").forEach(function (button) { button.onclick = function (event) { event.stopPropagation(); var action = button.getAttribute("data-action"); if (action === "view") openDetail(id); if (action === "edit") openEditor(id); if (action === "active") setActiveEnvironment(id); if (action === "delete") openDelete(id); }; });
+      });
+      renderPager();
+    }
+
+    function renderPager() {
+      var total = Math.max(0, Number(state.total) || 0); var pages = Math.max(1, Math.ceil(total / state.size));
+      document.getElementById("envPageSummary").textContent = "共 " + total + " 条";
+      document.getElementById("envPageIndex").textContent = "第 " + (state.page + 1) + " / " + pages + " 页";
+      document.getElementById("btnEnvPrev").disabled = state.page <= 0;
+      document.getElementById("btnEnvNext").disabled = state.page + 1 >= pages;
+      document.getElementById("envPageSize").value = String(state.size);
+    }
+
+    function openDetail(id) {
+      var item = environmentById(id); if (!item) return; state.detailId = id;
+      document.getElementById("detailTitle").textContent = item.name || "环境详情";
+      document.getElementById("detailSubtitle").textContent = item.id + (isActive(item) ? " · 当前发布环境" : "");
+      var readiness = document.getElementById("detailReadiness"); readiness.className = "readiness-box " + (item.ready_to_publish ? "ready" : "blocked");
+      document.getElementById("detailReadinessTitle").textContent = item.ready_to_publish ? "环境可发布" : "环境未就绪";
+      document.getElementById("detailReadinessReason").textContent = readinessReason(item);
+      document.getElementById("detailConnection").innerHTML = detailItem("后台 URL", item.base_url, true) + detailItem("用户名", item.username) + detailItem("HTTPS 证书校验", item.verify_ssl ? "开启" : "关闭");
+      document.getElementById("detailRuntime").innerHTML = detailItem("密码存储", passwordReferenceConfigured(item) ? "MySQL 加密存储" : "尚未保存") + detailItem("凭据状态", passwordRuntimeAvailable(item) ? "可用" : "不可用") + detailItem("密码掩码", item.password_masked_hint || "—", true) + detailItem("Chip Type", item.chip_type) + detailItem("Algorithm Type", item.algorithm_type) + detailItem("缺失配置", missingLabel(item.missing_fields), true);
+      document.getElementById("detailAudit").innerHTML = detailItem("创建时间", formatDate(item.created_at)) + detailItem("更新时间", formatDate(item.updated_at)) + detailItem("密码更新时间", formatDate(item.password_updated_at), true);
+      var activeButton = document.getElementById("btnDetailSetActive"); activeButton.disabled = isActive(item); activeButton.textContent = isActive(item) ? "已是当前环境" : "设为当前";
+      document.getElementById("detailModalBackdrop").classList.add("show");
+    }
+    function closeDetail() { document.getElementById("detailModalBackdrop").classList.remove("show"); state.detailId = ""; }
+    function parseEndpoint(value) {
+      if (!value) return { protocol: "http", host: "", port: "8102" };
+      try {
+        var parsed = new URL(value);
+        return { protocol: parsed.protocol === "https:" ? "https" : "http", host: parsed.hostname || "", port: parsed.port || (parsed.protocol === "https:" ? "443" : "80") };
+      } catch (_) { return { protocol: "http", host: "", port: "8102" }; }
+    }
+    function openEditor(id) {
+      var item = id ? environmentById(id) : null; state.editingId = item ? item.id : "";
+      document.getElementById("editorTitle").textContent = item ? "编辑环境" : "新增环境";
+      document.getElementById("editorSubtitle").textContent = item ? (item.name + " · " + item.id) : "填写 IP、端口、账号和密码即可使用。";
+      var endpoint = parseEndpoint(item ? item.base_url : "");
+      document.getElementById("fieldHost").value = endpoint.host;
+      document.getElementById("fieldPort").value = item ? endpoint.port : "8102";
+      document.getElementById("fieldUsername").value = item ? (item.username || "") : "";
+      document.getElementById("fieldPassword").value = "";
+      document.getElementById("passwordHelp").textContent = item ? "留空表示保留当前密码；输入内容后将替换为新密码。" : "密码将加密存入 MySQL。";
+      closeDetail(); document.getElementById("editorModalBackdrop").classList.add("show");
+    }
+    function closeEditor() { document.getElementById("editorModalBackdrop").classList.remove("show"); state.editingId = ""; }
+    function collectPayload() {
+      var current = state.editingId ? environmentById(state.editingId) : null; var protocol = current ? parseEndpoint(current.base_url).protocol : "http"; var host = document.getElementById("fieldHost").value.trim(); var port = document.getElementById("fieldPort").value.trim(); var password = document.getElementById("fieldPassword").value;
+      var body = { base_url: protocol + "://" + host + ":" + port, username: document.getElementById("fieldUsername").value.trim(), chip_type: "SOPHGO,BM1688,NPU", algorithm_type: "Detection", verify_ssl: protocol === "https" };
+      if (state.editingId) { body.password_secret_action = password ? "set" : "keep"; if (password) body.password = password; }
+      else { body.password = password; body.set_active = state.environments.length === 0; }
+      return body;
+    }
+    async function saveEnvironment() {
+      var body = collectPayload(); var host = document.getElementById("fieldHost").value.trim(); var port = document.getElementById("fieldPort").value.trim();
+      if (!host) return toast("请填写 IP 地址或主机名", "err"); if (!/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535) return toast("请填写 1 到 65535 之间的端口", "err"); if (!body.username) return toast("请填写账号", "err");
+      if (!state.editingId && !body.password) return toast("请填写密码", "err");
+      var saved = state.editingId ? await api("/yolo-aicm-publish/environments/" + encodeURIComponent(state.editingId), { method: "PATCH", body: JSON.stringify(body) }) : await api("/yolo-aicm-publish/environments", { method: "POST", body: JSON.stringify(body) });
+      closeEditor(); toast("环境已保存", "ok"); await loadEnvironments(); if (saved && saved.id) openDetail(saved.id);
+    }
+    async function setActiveEnvironment(id) { await api("/yolo-aicm-publish/environments/active", { method: "PUT", body: JSON.stringify({ environment_id: id }) }); toast("已设为当前发布环境", "ok"); await loadEnvironments(); if (document.getElementById("detailModalBackdrop").classList.contains("show")) openDetail(id); }
+    function openDelete(id) { var item = environmentById(id); if (!item) return; state.deletingId = id; document.getElementById("deleteMessage").textContent = "确认删除发布环境「" + (item.name || id) + "」？" + (isActive(item) ? " 删除后系统会自动选择其他环境。" : ""); document.getElementById("deleteModalBackdrop").classList.add("show"); }
+    function closeDelete() { document.getElementById("deleteModalBackdrop").classList.remove("show"); state.deletingId = ""; }
+    async function deleteEnvironment() { if (!state.deletingId) return; await api("/yolo-aicm-publish/environments/" + encodeURIComponent(state.deletingId), { method: "DELETE" }); closeDelete(); closeDetail(); toast("环境已删除", "ok"); await loadEnvironments(); }
+    async function loadEnvironments() {
+      if (!syncAuthState()) return;
+      var params = new URLSearchParams({ page: String(state.page), size: String(state.size) });
+      var keyword = String(document.getElementById("filterKeyword").value || "").trim();
+      if (keyword) params.set("q", keyword);
+      var data = await api("/yolo-aicm-publish/environments?" + params.toString());
+      state.activeEnvironmentId = data.active_environment_id || "";
+      state.activeEnvironmentRecord = data.active_environment || null;
+      state.environments = data.environments || [];
+      state.total = Number(data.total != null ? data.total : state.environments.length);
+      state.readyCount = Number(data.ready_count != null ? data.ready_count : state.environments.filter(function (item) { return item.ready_to_publish; }).length);
+      state.configBackendLabel = data.config_backend_label || "";
+      if (!state.environments.length && state.page > 0 && state.page * state.size >= state.total) { state.page -= 1; return loadEnvironments(); }
+      renderSummary(); renderTable();
+    }
+
+    document.getElementById("btnCreate").onclick = function () { openEditor(""); };
+    document.getElementById("btnRefresh").onclick = function () { loadEnvironments().then(function () { toast("环境状态已刷新", "ok"); }).catch(function (error) { toast(error.message, "err"); }); };
+    document.getElementById("filterKeyword").oninput = function () { clearTimeout(state.searchTimer); state.page = 0; state.searchTimer = setTimeout(function () { loadEnvironments().catch(function (error) { toast(error.message, "err"); }); }, 250); };
+    document.getElementById("filterStatus").onchange = function () { state.page = 0; renderTable(); };
+    document.getElementById("envPageSize").onchange = function () { state.size = Number(this.value) || 20; state.page = 0; loadEnvironments().catch(function (error) { toast(error.message, "err"); }); };
+    document.getElementById("btnEnvPrev").onclick = function () { if (state.page > 0) { state.page -= 1; loadEnvironments().catch(function (error) { toast(error.message, "err"); }); } };
+    document.getElementById("btnEnvNext").onclick = function () { if ((state.page + 1) * state.size < state.total) { state.page += 1; loadEnvironments().catch(function (error) { toast(error.message, "err"); }); } };
+    document.getElementById("btnCloseDetail").onclick = closeDetail; document.getElementById("detailModalBackdrop").onclick = function (event) { if (event.target.id === "detailModalBackdrop") closeDetail(); };
+    document.getElementById("btnDetailEdit").onclick = function () { if (state.detailId) openEditor(state.detailId); }; document.getElementById("btnDetailSetActive").onclick = function () { if (state.detailId) setActiveEnvironment(state.detailId).catch(function (error) { toast(error.message, "err"); }); };
+    document.getElementById("btnCloseEditor").onclick = closeEditor; document.getElementById("btnCancelEditor").onclick = closeEditor; document.getElementById("editorModalBackdrop").onclick = function (event) { if (event.target.id === "editorModalBackdrop") closeEditor(); };
+    document.getElementById("btnSave").onclick = function () { saveEnvironment().catch(function (error) { toast(error.message, "err"); }); };
+    document.getElementById("btnCloseDelete").onclick = closeDelete; document.getElementById("btnCancelDelete").onclick = closeDelete; document.getElementById("deleteModalBackdrop").onclick = function (event) { if (event.target.id === "deleteModalBackdrop") closeDelete(); }; document.getElementById("btnConfirmDelete").onclick = function () { deleteEnvironment().catch(function (error) { toast(error.message, "err"); }); };
+    document.getElementById("btnSaveToken").onclick = function () { var token = document.getElementById("tokenInput").value.trim(); if (window.LabeluPortal && window.LabeluPortal.setAuthToken) window.LabeluPortal.setAuthToken(token); else localStorage.setItem("token", token); loadEnvironments().catch(function (error) { toast(error.message, "err"); }); };
+    window.addEventListener("labelu-token-changed", function () { if (authToken()) loadEnvironments().catch(function (error) { toast(error.message, "err"); }); });
+    function start() { syncAuthState(); if (authToken()) loadEnvironments().catch(function (error) { toast(error.message, "err"); }); }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start, { once: true }); else setTimeout(start, 0);
+  })();
+  </script>
+</body>
+</html>

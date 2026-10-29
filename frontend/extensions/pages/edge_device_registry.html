@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>边端设备配置</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --page-bg:#f5f7f9; --surface:#fff; --subtle:#f8fafb; --border:#dfe5ea;
+      --border-strong:#c9d2da; --text:#18212b; --muted:#687481; --primary:#176b5b;
+      --primary-hover:#0f574a; --primary-soft:#eaf5f2; --success:#16794a;
+      --success-soft:#edf8f2; --warning:#a85a08; --warning-soft:#fff7e8;
+      --danger:#bd2c3a; --danger-soft:#fff1f2; --info:#2468a2; --info-soft:#eef6fc;
+    }
+    * { box-sizing:border-box; }
+    html, body { max-width:100%; overflow-x:hidden; }
+    body.labelu-shell { margin:0; min-height:100vh; color:var(--text); background:var(--page-bg); }
+    button, input, select { font:inherit; }
+    .auth-box { padding:10px 18px; border-bottom:1px solid #efd59d; background:#fff8e7; font-size:13px; }
+    .page-main { width:100%; max-width:1480px; margin:0 auto; padding:18px 20px 32px; }
+    .page-header { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:16px; }
+    .page-title { margin:0; font-size:24px; line-height:1.3; letter-spacing:0; }
+    .page-subtitle { margin:6px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
+    .header-actions, .toolbar-actions, .modal-actions, .row-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .btn { min-height:34px; padding:6px 12px; border:1px solid var(--border-strong); border-radius:6px; color:var(--text); background:#fff; cursor:pointer; white-space:nowrap; }
+    .btn:hover { border-color:#97a7b5; background:var(--subtle); }
+    .btn:disabled { cursor:not-allowed; opacity:.5; }
+    .btn.primary { color:#fff; border-color:var(--primary); background:var(--primary); }
+    .btn.primary:hover { border-color:var(--primary-hover); background:var(--primary-hover); }
+    .btn.danger { color:var(--danger); border-color:#efb8bd; }
+    .btn.danger:hover { background:var(--danger-soft); }
+    .btn.small { min-height:30px; padding:4px 9px; font-size:12px; }
+    .status-banner { display:none; align-items:flex-start; justify-content:space-between; gap:16px; padding:12px 14px; margin-bottom:14px; border:1px solid var(--border); border-left-width:4px; border-radius:6px; background:#fff; }
+    .status-banner.show { display:flex; }
+    .status-banner.ready { border-left-color:var(--success); background:var(--success-soft); }
+    .status-banner.blocked { border-left-color:var(--warning); background:var(--warning-soft); }
+    .status-banner strong { display:block; font-size:14px; }
+    .status-banner p { margin:3px 0 0; color:var(--muted); font-size:12px; line-height:1.5; }
+    .metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:14px; }
+    .metric-card { min-width:0; padding:14px 16px; border:1px solid var(--border); border-radius:6px; background:#fff; }
+    .metric-label { color:var(--muted); font-size:12px; }
+    .metric-value { margin-top:5px; font-size:21px; font-weight:700; line-height:1.2; overflow-wrap:anywhere; }
+    .metric-note { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.4; }
+    .workspace { width:100%; border:1px solid var(--border); border-radius:8px; background:#fff; overflow:hidden; }
+    .workspace-head { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid var(--border); }
+    .workspace-title { margin:0; font-size:16px; }
+    .workspace-note { margin:4px 0 0; color:var(--muted); font-size:12px; }
+    .filters { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--subtle); }
+    .filter-control { height:34px; padding:5px 10px; border:1px solid var(--border-strong); border-radius:6px; color:var(--text); background:#fff; }
+    .filter-search { width:min(340px,100%); }
+    .table-wrap { width:100%; overflow:hidden; }
+    table { width:100%; border-collapse:collapse; table-layout:fixed; }
+    th { padding:10px 9px; color:#4f5d6a; background:#f7f9fa; border-bottom:1px solid var(--border); font-size:12px; font-weight:600; text-align:left; }
+    td { padding:11px 9px; border-bottom:1px solid #edf0f2; font-size:12px; vertical-align:middle; overflow-wrap:anywhere; }
+    tbody tr { cursor:pointer; }
+    tbody tr:hover { background:#fbfcfd; }
+    tbody tr:last-child td { border-bottom:0; }
+    .record-title { display:flex; align-items:center; gap:6px; min-width:0; font-size:13px; font-weight:650; }
+    .record-title-text { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .record-meta { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.45; overflow-wrap:anywhere; }
+    .status-stack { display:flex; flex-direction:column; align-items:flex-start; gap:5px; }
+    .status-chip { display:inline-flex; align-items:center; min-height:23px; padding:2px 7px; border:1px solid var(--border); border-radius:4px; font-size:11px; font-weight:600; }
+    .status-chip.ready { color:var(--success); border-color:#aadbc1; background:var(--success-soft); }
+    .status-chip.blocked { color:var(--warning); border-color:#edc68f; background:var(--warning-soft); }
+    .status-chip.danger { color:var(--danger); border-color:#edb5bb; background:var(--danger-soft); }
+    .status-chip.info { color:var(--info); border-color:#b8d3e8; background:var(--info-soft); }
+    .status-chip.neutral { color:#596673; background:#f5f7f8; }
+    .row-actions { gap:5px; }
+    .empty-state { padding:48px 18px; text-align:center; color:var(--muted); }
+    .empty-state strong { display:block; margin-bottom:6px; color:var(--text); font-size:14px; }
+    .modal-backdrop { display:none; position:fixed; inset:0; z-index:1200; align-items:center; justify-content:center; padding:20px; background:rgba(16,24,32,.46); }
+    .modal-backdrop.show { display:flex; }
+    .modal { width:min(780px,100%); max-height:calc(100vh - 40px); overflow:auto; border:1px solid var(--border); border-radius:8px; background:#fff; box-shadow:0 18px 50px rgba(20,28,36,.2); }
+    .modal.small { width:min(460px,100%); }
+    .modal-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding:16px 18px; border-bottom:1px solid var(--border); }
+    .modal-head h2 { margin:0; font-size:17px; }
+    .modal-head p { margin:5px 0 0; color:var(--muted); font-size:12px; }
+    .icon-close { width:32px; height:32px; padding:0; border:1px solid var(--border); border-radius:6px; background:#fff; cursor:pointer; font-size:18px; line-height:30px; }
+    .modal-body { padding:16px 18px; }
+    .modal-actions { justify-content:flex-end; padding:12px 18px; border-top:1px solid var(--border); background:#fafbfc; }
+    .form-section + .form-section { margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
+    .form-section-title { margin:0 0 10px; font-size:13px; }
+    .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px 14px; }
+    .field.full { grid-column:1 / -1; }
+    .field label { display:block; margin-bottom:5px; color:#44515d; font-size:12px; font-weight:600; }
+    .field input { width:100%; min-height:36px; padding:7px 9px; border:1px solid var(--border-strong); border-radius:6px; color:var(--text); background:#fff; }
+    .field input:focus { outline:2px solid rgba(23,107,91,.15); border-color:var(--primary); }
+    .field-help { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.4; }
+    .checkbox-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px 14px; }
+    .checkbox-field { display:flex; align-items:center; gap:8px; min-height:32px; font-size:12px; }
+    details.advanced { margin-top:16px; border:1px solid var(--border); border-radius:6px; }
+    details.advanced summary { padding:10px 12px; cursor:pointer; font-size:13px; font-weight:600; background:var(--subtle); }
+    .advanced-body { padding:14px; border-top:1px solid var(--border); }
+    .security-note { margin-top:12px; padding:10px 12px; border:1px solid #b8d3e8; border-radius:6px; color:#315d7c; background:var(--info-soft); font-size:12px; line-height:1.55; }
+    .detail-modal-backdrop { display:none; position:fixed; inset:0; z-index:1150; align-items:center; justify-content:center; padding:20px; background:rgba(16,24,32,.46); }
+    .detail-modal-backdrop.show { display:flex; }
+    .detail-modal { width:min(780px,100%); max-height:calc(100vh - 40px); overflow:auto; border:1px solid var(--border); border-radius:8px; background:#fff; box-shadow:0 18px 50px rgba(20,28,36,.2); }
+    .detail-section { padding:16px 18px; border-bottom:1px solid var(--border); }
+    .detail-section h3 { margin:0 0 10px; font-size:13px; }
+    .detail-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:0; }
+    .detail-item { min-width:0; padding:9px 10px; border:1px solid #e7ebee; border-radius:6px; background:var(--subtle); }
+    .detail-item dt { color:var(--muted); font-size:11px; }
+    .detail-item dd { margin:4px 0 0; font-size:12px; line-height:1.45; word-break:break-word; }
+    .detail-item.full { grid-column:1 / -1; }
+    .readiness-box { padding:12px; border:1px solid var(--border); border-left-width:4px; border-radius:6px; }
+    .readiness-box.ready { border-left-color:var(--success); background:var(--success-soft); }
+    .readiness-box.blocked { border-left-color:var(--warning); background:var(--warning-soft); }
+    .readiness-box.info { border-left-color:var(--info); background:var(--info-soft); }
+    .readiness-box strong { font-size:13px; }
+    .readiness-box p { margin:5px 0 0; color:var(--muted); font-size:12px; line-height:1.55; }
+    .environment-checks { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+    .environment-check { min-width:0; padding:9px; border:1px solid #e7ebee; border-radius:6px; background:var(--subtle); }
+    .environment-check .k { color:var(--muted); font-size:11px; }
+    .environment-check .v { margin-top:4px; font-size:12px; font-weight:600; overflow-wrap:anywhere; }
+    .environment-check .v.ok { color:var(--success); }
+    .environment-check .v.fail { color:var(--danger); }
+    .cleanup-note { margin-top:10px; padding:10px 12px; border-left:3px solid var(--warning); background:var(--warning-soft); color:#77501d; font-size:12px; line-height:1.55; }
+    .toast { display:none; position:fixed; right:20px; bottom:20px; z-index:1400; max-width:420px; padding:10px 13px; border-radius:6px; color:#fff; background:#26323d; box-shadow:0 10px 28px rgba(0,0,0,.2); font-size:13px; }
+    .toast.ok { background:var(--success); } .toast.err { background:var(--danger); }
+    @media (max-width:1080px) { .metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media (max-width:900px) {
+      .page-header { flex-direction:column; align-items:stretch; }
+      .filters { align-items:stretch; flex-direction:column; }
+      .filter-control, .filter-search { width:100%; }
+      thead { display:none; }
+      tbody, tr, td { display:block; width:100%; }
+      tbody { padding:8px; }
+      tbody tr { margin-bottom:8px; border:1px solid var(--border); border-radius:6px; background:#fff; }
+      td { display:grid; grid-template-columns:100px minmax(0,1fr); gap:10px; padding:9px 10px; border-bottom:1px solid #edf0f2; }
+      td::before { content:attr(data-label); color:var(--muted); font-size:11px; font-weight:600; }
+      td:last-child { border-bottom:0; }
+    }
+    @media (max-width:720px) {
+      .page-main { padding:12px 10px 24px; }
+      .metric-grid { grid-template-columns:1fr 1fr; }
+      .metric-value { font-size:18px; }
+      .workspace-head, .status-banner { align-items:flex-start; flex-direction:column; }
+      .form-grid, .detail-grid, .checkbox-grid { grid-template-columns:1fr; }
+      .field.full, .detail-item.full { grid-column:auto; }
+      .environment-checks { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    }
+  </style>
+</head>
+<body class="labelu-shell" data-labelu-page-title="边端设备配置">
+  <div class="auth-box" id="authBox" style="display:none;">
+    <strong>当前未登录</strong>
+    <input id="tokenInput" type="password" placeholder="Bearer token" autocomplete="off" style="margin-left:8px;width:min(460px,70vw);" />
+    <button type="button" class="btn primary small" id="btnSaveToken">保存令牌</button>
+  </div>
+
+  <main class="page-main">
+    <header class="page-header">
+      <div>
+        <h1 class="page-title">边端设备配置</h1>
+        <p class="page-subtitle">设备连接信息和加密凭据统一存入 MySQL。<span id="backendLabel"></span></p>
+      </div>
+      <div class="header-actions">
+        <a class="btn" href="/training?panel=compile">返回 BM1688 编译</a>
+        <button type="button" class="btn" id="btnRefresh">刷新状态</button>
+        <button type="button" class="btn" id="btnEnvironmentCheckAll">检查全部设备</button>
+        <button type="button" class="btn primary" id="btnCreate">新增设备</button>
+      </div>
+    </header>
+
+    <section class="status-banner" id="activeStatusBanner">
+      <div><strong id="activeStatusTitle">尚未设置当前设备</strong><p id="activeStatusReason">新增设备后设为当前即可参与边端验证。</p></div>
+      <button type="button" class="btn small" id="btnViewActive" disabled>查看设备</button>
+    </section>
+
+    <section class="metric-grid" aria-label="设备概览">
+      <article class="metric-card"><div class="metric-label">当前边端设备</div><div class="metric-value" id="summaryActiveName">未设置</div><div class="metric-note" id="summaryActiveHost">—</div></article>
+      <article class="metric-card"><div class="metric-label">设备总数</div><div class="metric-value" id="summaryCount">0</div><div class="metric-note">MySQL 已登记设备</div></article>
+      <article class="metric-card"><div class="metric-label">验证通道在线</div><div class="metric-value" id="summaryProbe">0</div><div class="metric-note">SSH 探测或板端心跳正常</div></article>
+      <article class="metric-card"><div class="metric-label">环境就绪</div><div class="metric-value" id="summaryEnvironmentReady">0</div><div class="metric-note">可参与 BM1688 边端验证</div></article>
+      <span id="summaryValidation" hidden></span><span id="summaryValidationReady" hidden></span>
+    </section>
+
+    <section class="workspace">
+      <div class="workspace-head">
+        <div><h2 class="workspace-title">设备列表</h2><p class="workspace-note">连接、凭据和 BM1688 环境同时就绪后，设备才会进入任务调度。</p></div>
+        <span class="record-meta" id="listCountLabel">共 0 条</span>
+      </div>
+      <div class="filters">
+        <input class="filter-control filter-search" id="filterKeyword" placeholder="搜索设备名称、IP 或账号" />
+        <select class="filter-control" id="filterStatus">
+          <option value="all">全部状态</option>
+          <option value="ready">可调度</option>
+          <option value="blocked">未就绪</option>
+          <option value="active">当前设备</option>
+          <option value="disabled">已停用</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table aria-label="边端设备列表">
+          <colgroup><col style="width:17%"><col style="width:17%"><col style="width:14%"><col style="width:18%"><col style="width:14%"><col style="width:20%"></colgroup>
+          <thead><tr><th>设备</th><th>验证通道</th><th>密码状态</th><th>环境状态</th><th>调度状态</th><th>操作</th></tr></thead>
+          <tbody id="deviceTableBody"><tr><td colspan="6"><div class="empty-state">正在加载设备…</div></td></tr></tbody>
+        </table>
+      </div>
+      <div id="deviceList" hidden></div>
+    </section>
+  </main>
+
+  <div class="detail-modal-backdrop" id="detailModalBackdrop">
+    <section class="detail-modal" aria-labelledby="detailTitle" role="dialog" aria-modal="true">
+      <div class="modal-head"><div><h2 id="detailTitle">设备详情</h2><p id="detailSubtitle"></p></div><button type="button" class="icon-close" id="btnCloseDetail" aria-label="关闭">X</button></div>
+      <div class="detail-section"><div class="readiness-box" id="detailReadiness"><strong id="detailReadinessTitle"></strong><p id="detailReadinessReason"></p></div></div>
+      <div class="detail-section"><h3>连接与凭据</h3><dl class="detail-grid" id="detailConnection"></dl></div>
+      <div class="detail-section"><h3>BM1688 环境检查</h3><div class="environment-checks" id="environmentChecks"></div><div class="cleanup-note" id="environmentCleanupNote" style="display:none;"></div></div>
+      <div class="detail-section"><h3>运行参数</h3><dl class="detail-grid" id="detailRuntime"></dl></div>
+      <div class="detail-section"><h3>最近状态</h3><dl class="detail-grid" id="detailAudit"></dl></div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="btnSetActive">设为当前</button>
+        <button type="button" class="btn" id="btnProbe">连接探测</button>
+        <button type="button" class="btn" id="btnEnvironmentCheck">体检并预安装</button>
+        <button type="button" class="btn" id="btnBootstrap" style="display:none;">安装 Board Agent</button>
+        <button type="button" class="btn primary" id="btnDetailEdit">编辑设备</button>
+      </div>
+      <span id="metaPassword" hidden></span><span id="metaEnvironment" hidden></span>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="editorModalBackdrop">
+    <section class="modal" aria-labelledby="editorTitle">
+      <div class="modal-head"><div><h2 id="editorTitle">新增设备</h2><p id="editorSubtitle">填写 SSH 连接信息，保存后服务端会自动配置并安装边端 Agent。</p></div><button type="button" class="icon-close" id="btnCloseEditor" aria-label="关闭">X</button></div>
+      <div class="modal-body">
+        <section class="form-section"><h3 class="form-section-title">基本连接</h3><div class="form-grid">
+          <div class="field"><label for="fieldName">设备名称</label><input id="fieldName" maxlength="64" placeholder="可选，留空使用设备编号" /></div>
+          <div class="field full"><label for="fieldValidationChannel">验证通道</label><select id="fieldValidationChannel" class="filter-control" style="width:100%;"><option value="ssh">SSH 兼容验证</option><option value="board_agent">板端主动拉取</option></select><div class="field-help" id="validationChannelHelp">服务端通过 SSH 连接 BM1688，适用于已开放 SSH 的设备。</div></div>
+          <div class="field ssh-only-field"><label for="fieldHost">IP 地址或主机名</label><input id="fieldHost" maxlength="256" placeholder="192.168.54.111" autocomplete="off" /></div>
+          <div class="field ssh-only-field"><label for="fieldPort">SSH 端口</label><input id="fieldPort" type="number" min="1" max="65535" value="22" /></div>
+          <div class="field ssh-only-field"><label for="fieldUser">SSH 账号</label><input id="fieldUser" maxlength="128" value="linaro" autocomplete="username" /></div>
+          <div class="field full ssh-only-field"><label for="fieldPassword">SSH 密码</label><input id="fieldPassword" type="password" maxlength="256" autocomplete="new-password" /><div class="field-help" id="passwordHelp">密码将加密存入 MySQL。</div></div>
+        </div><div class="security-note" id="sshSecurityNote">密码只在保存请求中提交，加密后写入 MySQL，页面和接口不会返回明文。</div><div class="security-note" id="boardAgentHelp" style="display:none;">板端主动拉取不需要填写 IP、SSH 端口、账号或密码。请在 BM1688 上部署板端程序，并使用本设备编号和板端令牌上报心跳、领取验证任务。</div></section>
+
+        <details class="advanced"><summary>高级设置</summary><div class="advanced-body">
+          <div class="form-grid">
+            <div class="field full"><label for="fieldEdgeRoot">边端根目录</label><input id="fieldEdgeRoot" maxlength="1024" value="/data/labelu_edge" readonly /></div>
+            <div class="field"><label for="fieldDockerContainer">Docker 容器</label><input id="fieldDockerContainer" maxlength="128" /></div>
+            <div class="field"><label for="fieldConnectTimeoutSec">连接超时（秒）</label><input id="fieldConnectTimeoutSec" type="number" min="1" max="3600" /></div>
+            <div class="field"><label for="fieldValidationTimeoutSec">验证超时（秒）</label><input id="fieldValidationTimeoutSec" type="number" min="1" max="86400" /></div>
+          </div>
+          <div class="checkbox-grid" style="margin-top:12px;">
+            <label class="checkbox-field"><input type="checkbox" id="fieldEnabled" checked />启用设备</label>
+            <label class="checkbox-field"><input type="checkbox" id="fieldAutoAfterExport" checked />导出完成后自动验证</label>
+            <label class="checkbox-field"><input type="checkbox" id="fieldRunCocoEval" />执行 COCO Eval</label>
+            <label class="checkbox-field"><input type="checkbox" id="fieldDockerUseSudo" checked />Docker 命令使用 sudo</label>
+          </div>
+        </div></details>
+      </div>
+      <div class="modal-actions"><button type="button" class="btn" id="btnCancelEditor">取消</button><button type="button" class="btn primary" id="btnSave">保存设备</button></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="deleteModalBackdrop">
+    <section class="modal small" aria-labelledby="deleteTitle">
+      <div class="modal-head"><div><h2 id="deleteTitle">删除边端设备</h2><p>正在执行边端任务的设备不能删除。</p></div><button type="button" class="icon-close" id="btnCloseDelete" aria-label="关闭">X</button></div>
+      <div class="modal-body"><p id="deleteMessage" style="margin:0;line-height:1.6;"></p></div>
+      <div class="modal-actions"><button type="button" class="btn" id="btnCancelDelete">取消</button><button type="button" class="btn danger" id="btnDelete">确认删除</button></div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+  (function () {
+    var state = { devices:[], activeDeviceId:"", configBackendLabel:"", editingId:"", detailId:"", deletingId:"", environmentTimer:null };
+    function authToken() {
+      if (window.LabeluPortal && window.LabeluPortal.getAuthToken) return window.LabeluPortal.getAuthToken();
+      var raw=String(localStorage.getItem("token")||"").trim(); if(!raw)return ""; if(/^bearer\s+/i.test(raw))return raw; return raw.indexOf("eyJ")===0?"Bearer "+raw:raw;
+    }
+    function syncAuthState() {
+      if(window.LabeluPortal&&window.LabeluPortal.syncAuthBox)return !!window.LabeluPortal.syncAuthBox();
+      var ok=!!authToken(); document.getElementById("authBox").style.display=ok?"none":"block"; return ok;
+    }
+    function esc(value){return String(value==null?"":value).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/\"/g,"&quot;");}
+    function toast(message,kind){var el=document.getElementById("toast");el.textContent=message||"";el.className="toast"+(kind?" "+kind:"");el.style.display="block";clearTimeout(el._timer);el._timer=setTimeout(function(){el.style.display="none";},2800);}
+    async function api(path,options){var opts=options||{},headers=opts.headers||{};headers["Content-Type"]="application/json";if(authToken())headers.Authorization=authToken();var response=await fetch("/api/v1"+path,{method:opts.method||"GET",headers:headers,body:opts.body,credentials:"same-origin"});var raw=await response.text(),payload=raw?JSON.parse(raw):{};if(!response.ok)throw new Error(payload.msg||payload.message||("HTTP "+response.status));return payload.data;}
+    function deviceById(id){return state.devices.find(function(item){return item.id===id;})||null;}
+    function activeDevice(){return deviceById(state.activeDeviceId)||state.devices.find(function(item){return item.is_active;})||null;}
+    function isActive(item){return !!item&&(item.id===state.activeDeviceId||item.is_active);}
+    function formatDate(value){return value?String(value).replace("T"," ").replace(/\+00:00$/,""):"—";}
+    function passwordReady(item){return !!(item&&item.password_runtime_available);}
+    function usesBoardAgent(item){return !!(item&&String(item.validation_channel||"ssh").toLowerCase()==="board_agent");}
+    function validationChannelLabel(item){return usesBoardAgent(item)?"板端主动拉取":"SSH 兼容验证";}
+    var BOARD_AGENT_HEARTBEAT_TTL_MS=120000;
+    var SSH_PROBE_TTL_MS=120000;
+    function boardAgentHeartbeatFresh(item){
+      var raw=item&&item.board_agent_last_heartbeat_at?Date.parse(String(item.board_agent_last_heartbeat_at)):NaN;
+      if(!Number.isFinite(raw))return false;
+      var age=Date.now()-raw;return age>=0&&age<=BOARD_AGENT_HEARTBEAT_TTL_MS;
+    }
+    function deviceConnectionReady(item){
+      if(!item||bootstrapInProgress(item))return false;
+      if(bootstrapStatus(item)==="FAILED"&&item.is_busy!==true)return false;
+      // Board Agent liveness is proved only by its status plus a fresh
+      // heartbeat. Scheduler availability must not substitute for it.
+      if(usesBoardAgent(item))return String(item.board_agent_status||"").toLowerCase()==="online"&&boardAgentHeartbeatFresh(item);
+      // SSH health is also time-bounded. Dispatch availability is a derived
+      // scheduler projection and cannot replace a recent successful probe.
+      return sshProbeFresh(item);
+    }
+    function boardAgentOnline(item){return deviceConnectionReady(item);}
+    function sshProbeFresh(item){
+      if(!item||String(item.last_probe_status||item.probe_status||"").toLowerCase()!=="ok")return false;
+      var raw=item.last_probe_checked_at||item.probe_checked_at;
+      var timestamp=Date.parse(String(raw||""));
+      if(!Number.isFinite(timestamp))return false;
+      var age=Date.now()-timestamp;return age>=0&&age<=SSH_PROBE_TTL_MS;
+    }
+    function isDispatchable(item){return !!(item&&item.is_busy!==true&&bootstrapStatus(item)!=="FAILED"&&!bootstrapInProgress(item)&&item.available_for_dispatch===true);}
+    function runtimeLocked(item){return !!(item&&item.is_busy===true);}
+    function environmentReady(item){return !!(item&&(usesBoardAgent(item)?(boardAgentOnline(item)&&item.board_agent_environment_ready):(item.environment_status==="ready"&&item.environment_report&&item.environment_report.environment_ready===true)));}
+    function probeReady(item){return !!(item&&(usesBoardAgent(item)?boardAgentOnline(item):sshProbeFresh(item)));}
+    var EDGE_BOOTSTRAP_ACTIVE_STATUSES={QUEUED:true,PREFLIGHT:true,RUNTIME_PROVISION:true,UPLOADING:true,INSTALLING:true,STARTING:true,WAITING_HEARTBEAT:true};
+    var EDGE_BOOTSTRAP_LABELS={QUEUED:"引导排队中",PREFLIGHT:"远端预检中",RUNTIME_PROVISION:"准备运行环境",UPLOADING:"上传 Agent",INSTALLING:"安装系统服务",STARTING:"启动 Agent",WAITING_HEARTBEAT:"等待 Agent 心跳"};
+    function bootstrapStatus(item){return String(item&&item.agent_bootstrap_status||"NOT_STARTED").trim().toUpperCase();}
+    function bootstrapInProgress(item){return !!EDGE_BOOTSTRAP_ACTIVE_STATUSES[bootstrapStatus(item)];}
+    function bootstrapLabel(item){return EDGE_BOOTSTRAP_LABELS[bootstrapStatus(item)]||bootstrapStatus(item);}
+    function bootstrapFailureReason(item){var message=String(item&&item.agent_bootstrap_message||"").trim()||"自动引导失败，请查看错误信息并重试";var code=String(item&&item.agent_bootstrap_code||"").trim();return "Board Agent 引导失败："+message+(code?"（"+code+"）":"");}
+    function bootstrapProgressReason(item){var stage=bootstrapLabel(item),message=String(item&&item.agent_bootstrap_message||"").trim();return "Board Agent 引导进行中："+stage+(message&&message!==stage?"："+message:"");}
+    function bootstrapTitle(item){var status=bootstrapStatus(item);if(status==="FAILED")return "Board Agent 引导失败";if(bootstrapInProgress(item))return "Board Agent 引导进行中："+bootstrapLabel(item);return "";}
+    function bootstrapNeedsAction(item){var status=bootstrapStatus(item);return !!(item&&!usesBoardAgent(item)&&item.agent_bootstrap_control_plane_enabled!==false&&!item.is_busy&&!bootstrapInProgress(item)&&status!=="READY");}
+    function boardAgentStatusText(item){if(boardAgentOnline(item))return item&&item.is_busy?"板端在线 · 任务执行中":"板端在线";return item&&item.is_busy?"任务执行中 · 心跳待确认":"等待心跳";}
+    function connectionStatusText(item){if(usesBoardAgent(item))return boardAgentStatusText(item);var endpoint=(item&&item.user||"linaro")+"@"+(item&&item.host||"未配置")+":"+(item&&item.port||22);return item&&item.is_busy?endpoint+" · 任务执行中":endpoint;}
+    function connectionStatusLabel(item){if(deviceConnectionReady(item))return "正常";return item&&item.is_busy?"任务执行中，连接待确认":"未通过";}
+    function readinessReason(item){
+      if(!item)return "未找到设备";
+      if(item.is_busy)return "设备正在执行边端任务"+(item.active_job_id?" #"+item.active_job_id:"");
+      if(item.enabled===false)return "设备已停用";
+      if(bootstrapStatus(item)==="FAILED")return bootstrapFailureReason(item);
+      if(bootstrapInProgress(item))return bootstrapProgressReason(item);
+      if(usesBoardAgent(item)){
+        if(!boardAgentOnline(item))return item.board_agent_message||"板端心跳尚未上报或已离线";
+        if(!environmentReady(item))return item.board_agent_message||"板端 BM1688 环境尚未就绪";
+        return "板端心跳在线，BM1688 环境已就绪";
+      }
+      if(!item.password_configured)return "尚未保存 SSH 密码，请编辑设备后补录";
+      if(!passwordReady(item))return "密码已加密保存，但当前服务无法解密，请检查系统加密密钥";
+      if(!probeReady(item))return item.probe_message||item.last_probe_message||"SSH 连接尚未探测通过";
+      if(!environmentReady(item))return item.environment_message||"BM1688 运行环境尚未就绪";
+      return "连接、凭据和 BM1688 环境均已就绪";
+    }
+    function statusChip(text,kind){return '<span class="status-chip '+kind+'">'+esc(text)+'</span>';}
+    function schedulingLabel(item){var map={idle:"空闲可调度",busy:"任务执行中",disabled:"已停用",environment_not_ready:"环境未就绪",offline:"连接不可用"};if(item&&item.is_busy)return "任务执行中";if(isDispatchable(item))return "空闲可调度";return map[item&&item.scheduling_status]||"等待检查";}
+    function schedulingKind(item){if(item&&item.is_busy)return "info";if(isDispatchable(item))return "ready";if(item&&item.enabled===false)return "neutral";return "blocked";}
+    function detailItem(label,value,full){return '<div class="detail-item'+(full?' full':'')+'"><dt>'+esc(label)+'</dt><dd>'+esc(value||"—")+'</dd></div>';}
+
+    function renderSummary(){
+      var active=activeDevice(),online=state.devices.filter(probeReady).length,ready=state.devices.filter(environmentReady).length;
+      document.getElementById("summaryActiveName").textContent=active?(active.name||active.host):"未设置";
+      document.getElementById("summaryActiveHost").textContent=active?(usesBoardAgent(active)?"板端主动拉取 · "+(active.board_agent_last_heartbeat_at?"最近心跳 "+formatDate(active.board_agent_last_heartbeat_at):"等待心跳"):((active.user||"linaro")+"@"+active.host+":"+(active.port||22))):"—";
+      document.getElementById("summaryCount").textContent=String(state.devices.length);
+      document.getElementById("summaryProbe").textContent=String(online);
+      document.getElementById("summaryEnvironmentReady").textContent=String(ready);
+      document.getElementById("summaryValidation").textContent=active?(active.last_validation_status||"未执行"):"未执行";
+      document.getElementById("summaryValidationReady").textContent=String(state.devices.filter(isDispatchable).length);
+      document.getElementById("backendLabel").textContent=state.configBackendLabel?" 配置主存："+state.configBackendLabel:"";
+      var banner=document.getElementById("activeStatusBanner"),view=document.getElementById("btnViewActive"),ok=isDispatchable(active);
+      banner.className="status-banner show "+(ok?"ready":"blocked");
+      var bootstrapSummaryTitle=bootstrapTitle(active);
+      document.getElementById("activeStatusTitle").textContent=active?(active.is_busy?"当前设备正在执行边端任务":bootstrapSummaryTitle|| (ok?"当前设备可参与边端验证":"当前设备未就绪")):"尚未设置当前设备";
+      document.getElementById("activeStatusReason").textContent=active?((active.name||active.host)+"："+readinessReason(active)):"请新增设备并设为当前设备。";
+      view.disabled=!active;view.onclick=function(){if(active)openDetail(active.id);};
+    }
+    function matchesFilters(item){
+      var keyword=String(document.getElementById("filterKeyword").value||"").trim().toLowerCase(),status=document.getElementById("filterStatus").value;
+      if(keyword&&[item.name,item.id,item.host,item.user].join(" ").toLowerCase().indexOf(keyword)<0)return false;
+      if(status==="ready"&&!isDispatchable(item))return false;
+      if(status==="blocked"&&isDispatchable(item))return false;
+      if(status==="active"&&!isActive(item))return false;
+      if(status==="disabled"&&item.enabled!==false)return false;
+      return true;
+    }
+    function renderTable(){
+      var body=document.getElementById("deviceTableBody"),rows=state.devices.filter(matchesFilters);document.getElementById("listCountLabel").textContent="共 "+rows.length+" 条";
+      if(!rows.length){body.innerHTML='<tr><td colspan="6"><div class="empty-state"><strong>没有匹配的边端设备</strong>调整筛选条件或新增设备。</div></td></tr>';return;}
+      body.innerHTML=rows.map(function(item){
+        var passwordStored=!!item.password_configured;
+        return '<tr data-device-row="'+esc(item.id)+'">'+
+          '<td data-label="设备"><div class="record-title"><span class="record-title-text">'+esc(item.name||item.host||"未命名")+'</span>'+(isActive(item)?statusChip("当前","info"):"")+'</div><div class="record-meta">'+esc(item.id)+'</div></td>'+
+          '<td data-label="验证通道"><div class="status-stack">'+statusChip(validationChannelLabel(item),usesBoardAgent(item)?"info":"neutral")+'</div><div class="record-meta">'+esc(connectionStatusText(item))+'</div></td>'+
+          '<td data-label="密码状态"><div class="status-stack">'+(usesBoardAgent(item)?statusChip("无需 SSH 密码","neutral")+statusChip(boardAgentStatusText(item),boardAgentOnline(item)?"ready":"blocked"):statusChip(passwordStored?"已加密保存":"尚未保存",passwordStored?"info":"danger")+statusChip(passwordReady(item)?"凭据可用":"凭据不可用",passwordReady(item)?"ready":"blocked"))+'</div><div class="record-meta">'+esc(usesBoardAgent(item)?(item.board_agent_last_heartbeat_at?"最近心跳 "+formatDate(item.board_agent_last_heartbeat_at):"尚未上报"):(item.password_masked_hint||"需要录入密码"))+'</div></td>'+
+          '<td data-label="环境状态"><div class="status-stack">'+statusChip(probeReady(item)?(usesBoardAgent(item)?"板端在线":"SSH 正常"):(usesBoardAgent(item)?"板端离线":"SSH 未通过"),probeReady(item)?"ready":"blocked")+statusChip(environmentReady(item)?"BM1688 就绪":"BM1688 未就绪",environmentReady(item)?"ready":"blocked")+'</div><div class="record-meta">'+esc(usesBoardAgent(item)?(item.board_agent_message||"尚未检查"):(item.environment_message||item.probe_message||"尚未检查"))+'</div></td>'+
+          '<td data-label="调度状态"><div class="status-stack">'+statusChip(schedulingLabel(item),schedulingKind(item))+'</div><div class="record-meta">'+esc(item.last_used_at?"最近使用 "+formatDate(item.last_used_at):"尚未执行任务")+'</div></td>'+
+           '<td data-label="操作"><div class="row-actions"><button type="button" class="btn small" data-action="view">查看</button><button type="button" class="btn small" data-action="edit"'+(runtimeLocked(item)?' disabled title="设备正在执行边端任务，暂不能编辑"':'')+'>编辑</button>'+(bootstrapNeedsAction(item)?'<button type="button" class="btn small" data-action="bootstrap">'+(bootstrapStatus(item)==="FAILED"?"重试 Agent 引导":"安装 Agent")+'</button>':'')+(isActive(item)?'':'<button type="button" class="btn small" data-action="active"'+(runtimeLocked(item)?' disabled title="设备正在执行边端任务，任务结束后再操作"':'')+'>设为当前</button>')+'<button type="button" class="btn small" data-action="probe"'+(runtimeLocked(item)?' disabled title="设备正在执行边端任务，任务结束后再操作"':'')+'>'+(usesBoardAgent(item)?"刷新状态":"连接探测")+'</button><button type="button" class="btn small danger" data-action="delete"'+(runtimeLocked(item)?' disabled title="设备正在执行边端任务，任务结束后再操作"':'')+'>删除</button></div></td></tr>';
+      }).join("");
+      body.querySelectorAll("[data-device-row]").forEach(function(row){var id=row.getAttribute("data-device-row");row.onclick=function(){openDetail(id);};row.querySelectorAll("[data-action]").forEach(function(button){button.onclick=function(event){event.stopPropagation();var action=button.getAttribute("data-action");if(action==="view")openDetail(id);if(action==="edit")openEditor(id);if(action==="bootstrap")bootstrapDevice(id);if(action==="active")setActiveDevice(id);if(action==="probe")probeDevice(id);if(action==="delete")openDelete(id);};});});
+    }
+    function checkValue(value,okText,failText){if(value===true)return{text:okText||"通过",className:"ok"};if(value===false)return{text:failText||"未通过",className:"fail"};return{text:"未检查",className:""};}
+    function spaceValue(value,minimum){if(value==null)return{text:"未检查",className:""};var threshold=Number(minimum||0);return{text:String(value)+" MB"+(threshold?(" / 最低 "+threshold+" MB"):""),className:threshold&&Number(value)<threshold?"fail":"ok"};}
+    function renderEnvironmentChecks(item){
+      var report=item&&item.environment_report&&typeof item.environment_report==="object"?item.environment_report:{};
+      var checks=[
+        ["系统架构",checkValue(report.architecture_ok,report.architecture||"aarch64",report.architecture||"不支持")],["BM1688 设备节点",checkValue(report.bm1688_device_ok)],["LibSophon",checkValue(report.libsophon_ok)],
+        ["Docker 服务",checkValue(report.docker_ok)],["运行时镜像",checkValue(report.docker_image_ok)],["运行时容器",checkValue(report.container_ok)],["Python 推理环境",checkValue(report.python_runtime_ok)],
+        ["Sophon Demo",checkValue(report.sophon_demo_ok)],["验证执行器",checkValue(report.validator_ok)],["运行时目录空间",spaceValue(report.free_mb,report.minimum_free_mb)],
+        ["/tmp 可用空间",spaceValue(report.tmp_free_mb,report.minimum_tmp_free_mb)],["Docker 可用空间",spaceValue(report.docker_free_mb,report.minimum_docker_free_mb)],["/data 可用空间",spaceValue(report.data_free_mb,report.minimum_data_free_mb)]
+      ];
+      document.getElementById("environmentChecks").innerHTML=checks.map(function(check){return '<div class="environment-check"><div class="k">'+esc(check[0])+'</div><div class="v '+check[1].className+'">'+esc(check[1].text)+'</div></div>';}).join("");
+      var cleanup=report.storage_cleanup&&typeof report.storage_cleanup==="object"?report.storage_cleanup:null,note=document.getElementById("environmentCleanupNote");
+      if(!cleanup){note.style.display="none";note.textContent="";return;}
+      var actions=Array.isArray(cleanup.actions)&&cleanup.actions.length?cleanup.actions.join("、"):"无自动清理动作";
+      note.textContent="释放约 "+Number(cleanup.freed_mb||0)+" MB；"+actions+(cleanup.manual_intervention_required?"；仍需人工处理":"");note.style.display="block";
+    }
+    function openDetail(id){
+      var item=deviceById(id);if(!item)return;state.detailId=id;
+      document.getElementById("detailTitle").textContent=item.name||item.host||"设备详情";
+      document.getElementById("detailSubtitle").textContent=item.id+(isActive(item)?" · 当前设备":"");
+      var box=document.getElementById("detailReadiness");box.className="readiness-box "+(item.is_busy?"info":bootstrapStatus(item)==="FAILED"?"blocked":bootstrapInProgress(item)?"info":isDispatchable(item)?"ready":"blocked");
+      var bootstrapDetailTitle=bootstrapTitle(item);
+      document.getElementById("detailReadinessTitle").textContent=item.is_busy?"设备正在执行边端任务":bootstrapDetailTitle||(isDispatchable(item)?"设备可调度":"设备未就绪");
+      document.getElementById("detailReadinessReason").textContent=readinessReason(item);
+      document.getElementById("detailConnection").innerHTML=detailItem("验证通道",validationChannelLabel(item))+detailItem("连接状态",connectionStatusLabel(item))+detailItem("IP / 主机",usesBoardAgent(item)?"不适用":item.host)+detailItem("SSH 端口",usesBoardAgent(item)?"不适用":String(item.port||22))+detailItem("SSH 账号",usesBoardAgent(item)?"不适用":item.user)+detailItem("密码存储",usesBoardAgent(item)?"不适用（板端主动拉取）":(item.password_configured?"MySQL 加密存储":"尚未保存"))+detailItem("凭据状态",usesBoardAgent(item)?"不适用":(passwordReady(item)?"可用":"不可用"))+detailItem("密码掩码",usesBoardAgent(item)?"不适用":(item.password_masked_hint||"—"));
+      document.getElementById("detailRuntime").innerHTML=detailItem("边端根目录",item.edge_root||"/data/labelu_edge",true)+detailItem("任务目录",item.remote_base,true)+detailItem("Sophon Demo",item.sophon_demo_root,true)+detailItem("Docker 容器",item.docker_container||"宿主机")+detailItem("Docker sudo",item.docker_use_sudo?"开启":"关闭")+detailItem("连接超时",String(item.connect_timeout_sec||30)+" 秒")+detailItem("验证超时",String(item.validation_timeout_sec||7200)+" 秒")+detailItem("自动验证",item.auto_after_export?"开启":"关闭")+detailItem("COCO Eval",item.run_coco_eval?"开启":"关闭");
+      document.getElementById("detailAudit").innerHTML=detailItem("最近探测",usesBoardAgent(item)?"板端心跳":"SSH "+formatDate(item.last_probe_checked_at||item.probe_checked_at))+detailItem("最近心跳",usesBoardAgent(item)?formatDate(item.board_agent_last_heartbeat_at):"不适用")+detailItem("板端状态",usesBoardAgent(item)?boardAgentStatusText(item)+" · "+(item.board_agent_message||"无状态消息"):"不适用")+detailItem("最近验证",formatDate(item.last_validation_at))+detailItem("最近使用",formatDate(item.last_used_at))+detailItem("环境检查",usesBoardAgent(item)?(environmentReady(item)?"板端已上报就绪":"等待板端上报"):formatDate(item.environment_checked_at))+detailItem("创建时间",formatDate(item.created_at))+detailItem("更新时间",formatDate(item.updated_at));
+      document.getElementById("metaPassword").textContent=item.password_configured?"已加密保存":"尚未保存";document.getElementById("metaEnvironment").textContent=item.environment_message||"未检查";
+      renderEnvironmentChecks(item);
+      document.getElementById("btnSetActive").disabled=isActive(item)||runtimeLocked(item);document.getElementById("btnSetActive").textContent=isActive(item)?"已是当前设备":"设为当前";document.getElementById("btnSetActive").title=runtimeLocked(item)?"设备正在执行边端任务，任务结束后再操作":"";
+      document.getElementById("btnProbe").disabled=runtimeLocked(item);document.getElementById("btnProbe").title=runtimeLocked(item)?"设备正在执行边端任务，任务结束后再操作":"";document.getElementById("btnProbe").textContent=usesBoardAgent(item)?"刷新状态":"连接探测";document.getElementById("btnEnvironmentCheck").disabled=usesBoardAgent(item)||runtimeLocked(item);document.getElementById("btnEnvironmentCheck").style.display=usesBoardAgent(item)?"none":"inline-flex";var bootstrapButton=document.getElementById("btnBootstrap");bootstrapButton.style.display=bootstrapNeedsAction(item)?"inline-flex":"none";bootstrapButton.disabled=runtimeLocked(item);bootstrapButton.textContent=bootstrapStatus(item)==="FAILED"?"重试 Agent 引导":"安装 Board Agent";bootstrapButton.title=runtimeLocked(item)?"设备正在执行边端任务，任务结束后再操作":"";
+      document.getElementById("btnDetailEdit").disabled=runtimeLocked(item);document.getElementById("btnDetailEdit").title=runtimeLocked(item)?"设备正在执行边端任务，暂不能编辑":"";
+      document.getElementById("detailModalBackdrop").classList.add("show");
+    }
+    function closeDetail(){document.getElementById("detailModalBackdrop").classList.remove("show");state.detailId="";}
+    function openEditor(id){
+      var item=id?deviceById(id):null;if(runtimeLocked(item)){toast("设备正在执行边端任务，暂不能编辑连接或运行参数","err");return;}state.editingId=item?item.id:"";
+      document.getElementById("editorTitle").textContent=item?("编辑设备 · "+(item.name||item.host)):"新增设备";
+      document.getElementById("editorSubtitle").textContent=item?item.id:"选择验证通道后填写对应连接信息。";
+      document.getElementById("fieldName").value=item?(item.name||""):"";
+      document.getElementById("fieldValidationChannel").value=item?(item.validation_channel||"ssh"):"ssh";
+      document.getElementById("fieldHost").value=item?(item.host||""):"";
+      document.getElementById("fieldPort").value=item?(item.port||22):22;
+      document.getElementById("fieldUser").value=item?(item.user||"linaro"):"linaro";
+      document.getElementById("fieldPassword").value="";
+      document.getElementById("passwordHelp").textContent=item?"留空保留当前密码；输入后替换为新密码。保存后会自动触发 Agent 引导。":"密码将加密存入 MySQL，保存后会自动触发 Agent 引导。";
+      document.getElementById("fieldEdgeRoot").value=item?(item.edge_root||"/data/labelu_edge"):"/data/labelu_edge";
+      document.getElementById("fieldDockerContainer").value=item?(item.docker_container||"bm1688"):"bm1688";
+      document.getElementById("fieldConnectTimeoutSec").value=item?(item.connect_timeout_sec||30):30;
+      document.getElementById("fieldValidationTimeoutSec").value=item?(item.validation_timeout_sec||7200):7200;
+      document.getElementById("fieldEnabled").checked=!item||item.enabled!==false;
+      document.getElementById("fieldAutoAfterExport").checked=!item||item.auto_after_export!==false;
+      document.getElementById("fieldRunCocoEval").checked=!!(item&&item.run_coco_eval);
+      document.getElementById("fieldDockerUseSudo").checked=!item||item.docker_use_sudo!==false;
+      toggleValidationChannel();
+      closeDetail();document.getElementById("editorModalBackdrop").classList.add("show");
+    }
+    function closeEditor(){document.getElementById("editorModalBackdrop").classList.remove("show");state.editingId="";}
+    function toggleValidationChannel(){
+      var channel=document.getElementById("fieldValidationChannel").value,board=channel==="board_agent";
+      document.querySelectorAll(".ssh-only-field").forEach(function(field){field.style.display=board?"none":"";field.querySelectorAll("input").forEach(function(input){input.disabled=board;});});
+      document.getElementById("sshSecurityNote").style.display=board?"none":"block";
+      document.getElementById("boardAgentHelp").style.display=board?"block":"none";
+      document.getElementById("validationChannelHelp").textContent=board?"BM1688 板端程序主动连接服务端，定时上报心跳并领取验证任务。":"服务端通过 SSH 连接 BM1688，适用于已开放 SSH 的设备。";
+    }
+    function shouldAutoConfigureAgent(body,current){
+      if(!body||String(body.validation_channel||"ssh").toLowerCase()!=="ssh")return false;
+      var host=String(body.host||"").trim(),user=String(body.user||"").trim();
+      var hasCredential=!!(String(body.password||"").trim()||(current&&(current.password_configured===true||current.private_key_path_configured===true)));
+      return !!(host&&user&&hasCredential);
+    }
+    var CONTROL_PLANE_MESSAGE_BY_CODE={
+      control_plane_env_disabled:"服务端已关闭 Agent 自动配置，请联系管理员启用控制面。",
+      token_env_empty:"服务端 Agent 凭据为空，暂时无法自动配置。",
+      token_decrypt_failed:"服务端 Agent 凭据无法解密，请检查服务端密钥配置。",
+      task_secret_decrypt_failed:"服务端任务令牌密钥无法解密，请检查服务端密钥配置。",
+      secret_key_missing:"服务端缺少安全加密密钥，暂时无法生成 Agent 凭据。",
+      public_base_url_missing:"服务端没有可被边端访问的回连地址，请检查服务监听地址和局域网网络。",
+      public_base_url_unreachable:"服务端回连地址不可达，请检查局域网地址、端口和防火墙。",
+      control_plane_persist_failed:"服务端保存 Agent 自动配置失败，请稍后重试。",
+      production_env_required:"生产环境的 Agent 安全配置尚未完成，请联系管理员。"
+    };
+    var CONTROL_PLANE_SECRET_WORDS=["BOARD_AGENT_ENABLED","BOARD_AGENT_PRIMARY_ENABLED","EDGE_AGENT_AUTO_BOOTSTRAP_ENABLED","BOARD_AGENT_TOKEN","BOARD_AGENT_PUBLIC_BASE_URL","TASK_TOKEN","SECRET","PASSWORD","PRIVATE_KEY","令牌","密钥","密码","口令"];
+    function safeControlPlaneText(value){
+      var raw=String(value||"").trim();if(!raw)return "";
+      if(CONTROL_PLANE_SECRET_WORDS.some(function(word){return raw.toUpperCase().indexOf(word.toUpperCase())>=0;}))return "服务端 Agent 自动配置尚未完成，请联系管理员检查控制面配置。";
+      return raw;
+    }
+    function controlPlaneMessage(item){
+      var code=String(item&&item.agent_bootstrap_code||"").trim().toLowerCase();
+      if(code&&CONTROL_PLANE_MESSAGE_BY_CODE[code])return CONTROL_PLANE_MESSAGE_BY_CODE[code];
+      var detail=safeControlPlaneText(item&&item.agent_bootstrap_message);if(detail)return detail;
+      detail=safeControlPlaneText(item&&item.agent_control_plane_message);if(detail)return detail;
+      if(item&&item.agent_control_plane_public_base_url_configured===false)return "等待服务端准备边端可访问的回连地址。";
+      return "Agent 自动配置状态待更新。";
+    }
+    function agentSaveToast(saved,body){
+      var prefix=body&&body.validation_channel==="board_agent"?"设备已保存":"设备已保存";
+      if(body&&body.validation_channel==="board_agent")return{text:prefix+"，等待板端心跳",kind:"ok"};
+      if(!body||body.auto_configure_agent!==true)return{text:prefix+"，SSH 环境检查已排队",kind:"ok"};
+      var status=bootstrapStatus(saved);
+      if(status==="FAILED")return{text:prefix+"，Agent 自动配置失败："+controlPlaneMessage(saved),kind:"err"};
+      if(saved&&saved.agent_bootstrap_control_plane_enabled===true){
+        if(status==="READY")return{text:prefix+"，Board Agent 已就绪",kind:"ok"};
+        if(status==="NOT_STARTED"||bootstrapInProgress(saved))return{text:prefix+"，Agent 自动配置已排队，等待远端心跳",kind:"ok"};
+        return{text:prefix+"，Agent 自动配置已提交",kind:"ok"};
+      }
+      return{text:prefix+"，Agent 自动配置未启用："+controlPlaneMessage(saved),kind:"err"};
+    }
+    function collectPayload(){
+      var password=document.getElementById("fieldPassword").value,channel=document.getElementById("fieldValidationChannel").value,body={name:document.getElementById("fieldName").value.trim()||null,validation_channel:channel,host:document.getElementById("fieldHost").value.trim(),port:Number(document.getElementById("fieldPort").value||22),user:document.getElementById("fieldUser").value.trim(),edge_root:document.getElementById("fieldEdgeRoot").value.trim(),auto_after_export:document.getElementById("fieldAutoAfterExport").checked,run_coco_eval:document.getElementById("fieldRunCocoEval").checked,connect_timeout_sec:Number(document.getElementById("fieldConnectTimeoutSec").value||30),validation_timeout_sec:Number(document.getElementById("fieldValidationTimeoutSec").value||7200),docker_container:document.getElementById("fieldDockerContainer").value.trim(),docker_use_sudo:document.getElementById("fieldDockerUseSudo").checked,enabled:document.getElementById("fieldEnabled").checked};
+      if(state.editingId){body.password_secret_action=password?"set":"keep";if(password)body.password=password;}else{body.password=password;body.set_active=state.devices.length===0;}return body;
+    }
+    async function saveDevice(){
+       var body=collectPayload(),current=state.editingId?deviceById(state.editingId):null;body.auto_configure_agent=shouldAutoConfigureAgent(body,current);if(runtimeLocked(current))return toast("设备正在执行边端任务，暂不能编辑连接或运行参数","err");if(body.validation_channel==="ssh"&&!body.host)return toast("SSH 通道必须填写 IP 地址或主机名","err");if(body.validation_channel==="ssh"&&!body.user)return toast("SSH 通道必须填写 SSH 账号","err");if(body.validation_channel==="ssh"&&(body.port<1||body.port>65535))return toast("SSH 端口必须在 1 到 65535 之间","err");if(body.validation_channel==="ssh"&&!state.editingId&&!body.password)return toast("SSH 通道必须填写 SSH 密码","err");if(body.validation_channel==="ssh"&&state.editingId&&!body.password&&(!current||(!current.password_configured&&!current.private_key_path_configured)))return toast("切换到 SSH 通道时必须填写 SSH 密码或私钥","err");
+      var saved=state.editingId?await api("/edge-devices/"+encodeURIComponent(state.editingId),{method:"PATCH",body:JSON.stringify(body)}):await api("/edge-devices",{method:"POST",body:JSON.stringify(body)});
+       closeEditor();var saveNotice=agentSaveToast(saved,body);toast(saveNotice.text,saveNotice.kind);await loadDevices();if(saved&&saved.id){openDetail(saved.id);watchEnvironment(saved.id);}
+    }
+    async function setActiveDevice(id){var item=deviceById(id);if(runtimeLocked(item)){toast("设备正在执行边端任务，任务结束后再操作","err");return;}await api("/edge-devices/active",{method:"PUT",body:JSON.stringify({device_id:id})});toast("已设为当前设备","ok");await loadDevices();if(document.getElementById("detailModalBackdrop").classList.contains("show"))openDetail(id);}
+    async function probeDevice(id){var item=deviceById(id);if(runtimeLocked(item)){toast("设备正在执行边端任务，任务结束后再操作","err");return;}var result=await api("/edge-devices/"+encodeURIComponent(id)+"/probe",{method:"POST"}),board=usesBoardAgent(item);toast(result.status==="ok"?(board?"板端状态已刷新":"SSH 探测通过，环境检查已启动"):(board?"板端未在线：":"SSH 探测失败：")+(result.message||result.code||"未知错误"),result.status==="ok"?"ok":"err");await loadDevices();if(result.status==="ok"&&!board)watchEnvironment(id);}
+    async function bootstrapDevice(id){var item=deviceById(id);if(!item||!bootstrapNeedsAction(item))return;if(runtimeLocked(item)){toast("设备正在执行边端任务，暂不能安装 Agent","err");return;}var result=await api("/edge-devices/"+encodeURIComponent(id)+"/agent-bootstrap",{method:"POST",body:JSON.stringify({device_id:id,confirm_install:true,wait_for_heartbeat:true,provision_runtime:true,require_environment_ready:true})});toast(result&&result.status==="FAILED"?"Board Agent 引导失败："+(result.message||result.code||"未知错误"):"已启动 Board Agent 引导，等待远端心跳","ok");await loadDevices();openDetail(id);watchEnvironment(id);}
+    async function environmentCheck(id){await api("/edge-devices/"+encodeURIComponent(id)+"/environment-check",{method:"POST"});toast("环境体检与预安装已排队","ok");await loadDevices();watchEnvironment(id);}
+    async function environmentCheckAll(){await api("/edge-devices/environment-check-all",{method:"POST"});toast("全部设备环境检查已排队","ok");await loadDevices();}
+    function openDelete(id){var item=deviceById(id);if(!item)return;if(runtimeLocked(item)){toast("设备正在执行边端任务，任务结束后再操作","err");return;}state.deletingId=id;document.getElementById("deleteMessage").textContent="确认删除边端设备「"+(item.name||item.host||id)+"」？"+(isActive(item)?" 请先切换当前设备后再删除。":"");document.getElementById("btnDelete").disabled=false;document.getElementById("deleteModalBackdrop").classList.add("show");}
+    function closeDelete(){document.getElementById("deleteModalBackdrop").classList.remove("show");state.deletingId="";}
+    async function deleteDevice(){if(!state.deletingId)return;var item=deviceById(state.deletingId);if(runtimeLocked(item)){toast("设备正在执行边端任务，任务结束后再操作","err");closeDelete();return;}await api("/edge-devices/"+encodeURIComponent(state.deletingId),{method:"DELETE"});closeDelete();closeDetail();toast("设备已删除","ok");await loadDevices();}
+    function deviceNeedsPolling(item){if(!item)return false;var status=String(item.environment_status||"unknown");if(["checking","installing","cleaning"].indexOf(status)>=0||bootstrapInProgress(item))return true;return usesBoardAgent(item)&&bootstrapStatus(item)!=="FAILED";}
+    function devicePollingDelay(){return state.devices.some(function(item){var status=String(item&&item.environment_status||"unknown");return ["checking","installing","cleaning"].indexOf(status)>=0||bootstrapInProgress(item);})?3000:30000;}
+    function watchEnvironment(id){if(state.environmentTimer)clearTimeout(state.environmentTimer);var attempts=0;async function tick(){attempts+=1;await loadDevices();var current=deviceById(id);if(document.getElementById("detailModalBackdrop").classList.contains("show")&&current)openDetail(id);if(state.devices.some(deviceNeedsPolling)&&attempts<600)state.environmentTimer=setTimeout(function(){tick().catch(handleError);},devicePollingDelay());else state.environmentTimer=null;}tick().catch(handleError);}
+    async function loadDevices(){if(!syncAuthState())return;var data=await api("/edge-devices");state.devices=data.devices||[];state.activeDeviceId=data.active_device_id||"";state.configBackendLabel=data.config_backend_label||"";renderSummary();renderTable();}
+    function handleError(error){toast(error&&error.message||"操作失败","err");}
+
+    document.getElementById("btnCreate").onclick=function(){openEditor("");};
+    document.getElementById("btnRefresh").onclick=function(){loadDevices().then(function(){toast("设备状态已刷新","ok");}).catch(handleError);};
+    document.getElementById("btnEnvironmentCheckAll").onclick=function(){environmentCheckAll().catch(handleError);};
+    document.getElementById("filterKeyword").oninput=renderTable;document.getElementById("filterStatus").onchange=renderTable;
+    document.getElementById("fieldValidationChannel").onchange=toggleValidationChannel;
+    document.getElementById("btnCloseDetail").onclick=closeDetail;document.getElementById("detailModalBackdrop").onclick=function(event){if(event.target.id==="detailModalBackdrop")closeDetail();};
+    document.getElementById("btnDetailEdit").onclick=function(){if(state.detailId)openEditor(state.detailId);};
+    document.getElementById("btnSetActive").onclick=function(){if(state.detailId)setActiveDevice(state.detailId).catch(handleError);};
+    document.getElementById("btnProbe").onclick=function(){if(state.detailId)probeDevice(state.detailId).catch(handleError);};
+    document.getElementById("btnBootstrap").onclick=function(){if(state.detailId)bootstrapDevice(state.detailId).catch(handleError);};
+    document.getElementById("btnEnvironmentCheck").onclick=function(){if(state.detailId)environmentCheck(state.detailId).catch(handleError);};
+    document.getElementById("btnCloseEditor").onclick=closeEditor;document.getElementById("btnCancelEditor").onclick=closeEditor;document.getElementById("editorModalBackdrop").onclick=function(event){if(event.target.id==="editorModalBackdrop")closeEditor();};
+    document.getElementById("btnSave").onclick=function(){saveDevice().catch(handleError);};
+    document.getElementById("btnCloseDelete").onclick=closeDelete;document.getElementById("btnCancelDelete").onclick=closeDelete;document.getElementById("deleteModalBackdrop").onclick=function(event){if(event.target.id==="deleteModalBackdrop")closeDelete();};document.getElementById("btnDelete").onclick=function(){deleteDevice().catch(handleError);};
+    document.getElementById("btnSaveToken").onclick=function(){var token=document.getElementById("tokenInput").value.trim();if(window.LabeluPortal&&window.LabeluPortal.setAuthToken)window.LabeluPortal.setAuthToken(token);else localStorage.setItem("token",token);loadDevices().catch(handleError);};
+    window.addEventListener("labelu-token-changed",function(){if(authToken())loadDevices().catch(handleError);});
+    function start(){syncAuthState();if(authToken())loadDevices().then(function(){var pending=state.devices.find(deviceNeedsPolling);if(pending)watchEnvironment(pending.id);}).catch(handleError);}
+    if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else setTimeout(start,0);
+  })();
+  </script>
+</body>
+</html>

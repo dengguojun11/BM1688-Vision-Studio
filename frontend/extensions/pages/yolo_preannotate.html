@@ -1,0 +1,749 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="shortcut icon" href="/favicon.ico" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YOLO 批量预标注</title>
+  <link rel="stylesheet" href="/assets/labelu_standalone_shell.css" />
+  <link rel="stylesheet" href="/assets/labelu_toolkit_compact.css" />
+  <script defer src="/assets/labelu_auth_bridge.js"></script>
+  <script defer src="/assets/labelu_portal.js"></script>
+  <style>
+    :root {
+      --bg: #f5f5f5;
+      --card: #fff;
+      --border: #d7d8dd;
+      --primary: #1677ff;
+      --success: #389e0d;
+      --warn: #d46b08;
+      --danger: #cf1322;
+      --muted: rgba(18, 19, 22, 0.5);
+      --text: rgba(18, 19, 22, 0.88);
+    }
+    body {
+      margin: 0;
+      font-family: var(--lu-font, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    .page-main {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      padding: 16px 20px 40px;
+    }
+    .muted { color: var(--muted); font-size: 12px; }
+    a { color: var(--primary); }
+    .auth-box {
+      background: #fffbe6;
+      border: 1px solid #ffe58f;
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    .auth-box input {
+      width: 100%;
+      max-width: 560px;
+      padding: 8px 10px;
+      margin-top: 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .page-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(300px, 34%);
+      gap: 16px;
+      align-items: start;
+    }
+    @media (max-width: 960px) {
+      .page-grid { grid-template-columns: 1fr; }
+    }
+    .card-block {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 18px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    .status-col { position: sticky; top: 12px; }
+    @media (max-width: 960px) {
+      .status-col { position: static; }
+    }
+    .card-block h2 {
+      margin: 0 0 12px;
+      font-size: 15px;
+      font-weight: 600;
+    }
+    label.field-label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+    input[type="number"],
+    input[type="search"],
+    select {
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    input[type="number"] { width: 120px; }
+    .search-input { width: min(200px, 32vw); }
+    .toolbar-row {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .toolbar-left,
+    .toolbar-right {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .toolbar-right { margin-left: auto; }
+    .inline-field { display: flex; flex-direction: column; gap: 4px; }
+    .task-summary {
+      padding: 10px 12px;
+      background: #fafafa;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    .task-summary strong { color: var(--text); }
+    button.btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--card);
+      cursor: pointer;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    button.btn-primary {
+      background: var(--primary);
+      color: #fff;
+      border-color: var(--primary);
+    }
+    button.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .params-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-end;
+      margin: 12px 0;
+    }
+    .params-row .param { min-width: 140px; }
+    .params-row select { width: 100%; max-width: 280px; }
+    .models-wrap {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .models {
+      max-height: min(52vh, 480px);
+      overflow: auto;
+    }
+    .models label.row-item {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 10px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+      margin: 0;
+      font-size: 13px;
+      color: var(--text);
+    }
+    .models label.row-item:hover { background: #fafafa; }
+    .models label.row-item:last-child { border-bottom: none; }
+    .models-empty {
+      padding: 24px 12px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .tag {
+      display: inline-block;
+      padding: 0 8px;
+      line-height: 20px;
+      border-radius: 4px;
+      font-size: 11px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+    .tag-tech {
+      background: #f5f5f5;
+      color: #595959;
+      border: 1px solid #d9d9d9;
+      font-family: ui-monospace, Consolas, monospace;
+    }
+    .tag-cat {
+      background: #e6f4ff;
+      color: #0958d9;
+      border: 1px solid #91caff;
+    }
+    .tag-ok {
+      background: #f6ffed;
+      color: var(--success);
+      border: 1px solid #b7eb8f;
+    }
+    .tag-warn {
+      background: #fff7e6;
+      color: var(--warn);
+      border: 1px solid #ffd591;
+    }
+    .tag-err {
+      background: #fff2f0;
+      color: var(--danger);
+      border: 1px solid #ffccc7;
+    }
+    .log-box {
+      background: #fafafa;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 12px;
+      font-family: ui-monospace, Consolas, monospace;
+      overflow: auto;
+      max-height: min(70vh, 520px);
+      min-height: 160px;
+    }
+    .log-line { padding: 2px 0; white-space: pre-wrap; word-break: break-word; }
+    .log-line.log-ok { color: var(--success); }
+    .log-line.log-warn { color: var(--warn); }
+    .log-line.log-err { color: var(--danger); }
+    .hint-line { margin: 0 0 10px; }
+  </style>
+</head>
+<body class="labelu-shell" data-lu-page="yolo-preannotate">
+  <div class="labelu-shell-header" role="banner">
+    <div class="labelu-shell-brand">
+      <a class="labelu-shell-logo" href="/">7GAI进化平台</a>
+      <span class="labelu-shell-page-title" id="pageTitle">YOLO 批量预标注</span>
+    </div>
+    <nav class="labelu-shell-nav" aria-label="7GAI进化平台工具导航"></nav>
+  </div>
+
+  <main class="page-main" data-lu-toolkit-main>
+    <div id="luPageHero"></div>
+
+    <div class="auth-box" id="authBox" data-lu-auth-panel>
+      <div id="authNeedLogin">
+        未检测到登录。请先 <a href="/login">在主站登录</a>，成功后返回本页将自动鉴权（与任务列表共用 Token）。
+      </div>
+      <details class="auth-manual" style="margin-top:10px;">
+        <summary class="muted" style="cursor:pointer;font-size:12px;">无法自动登录？手动粘贴 Token</summary>
+        <input type="text" id="tokenInput" placeholder="Bearer eyJhbGciOi..." autocomplete="off" style="margin-top:8px;" />
+      </details>
+    </div>
+
+    <div class="page-grid">
+      <section class="config-col">
+        <div class="card-block">
+          <h2>预标注配置</h2>
+          <p class="muted hint-line">
+            推理类别名须与任务矩形框标签 <code>value</code> 完全一致才会写入；列表含上传权重与本系统训练完成模型。
+          </p>
+
+          <div class="toolbar-row">
+            <div class="toolbar-left">
+              <div class="inline-field">
+                <label class="field-label" for="taskId">任务 ID</label>
+                <input type="number" id="taskId" min="1" placeholder="12" title="须已配置 rectTool 类别且非草稿" />
+              </div>
+              <button type="button" class="btn btn-primary" id="btnLoad">加载可选模型</button>
+              <button type="button" class="btn btn-primary" id="btnRun" disabled>开始批量预标注</button>
+            </div>
+            <div class="toolbar-right">
+              <div class="inline-field" id="modelCategoryWrap" style="display:none;">
+                <label class="field-label" for="modelCategorySelect">分类</label>
+                <select id="modelCategorySelect"></select>
+              </div>
+              <div class="inline-field" id="modelSourceWrap" style="display:none;">
+                <label class="field-label" for="modelSourceSelect">模型来源</label>
+                <select id="modelSourceSelect">
+                  <option value="recommended">当前任务推荐</option>
+                  <option value="__ALL__">全部匹配模型</option>
+                  <option value="trained">本系统训练</option>
+                  <option value="imported">外部导入</option>
+                </select>
+              </div>
+              <div class="inline-field">
+                <label class="field-label" for="searchModels">搜索</label>
+                <input type="search" class="search-input" id="searchModels" placeholder="模型名称 / 分类" disabled autocomplete="off" />
+              </div>
+              <button type="button" class="btn" id="btnReset" title="清空任务、模型与日志">重置</button>
+            </div>
+          </div>
+
+          <div id="taskSummary" class="task-summary" style="display:none;">
+            <span class="muted">当前任务</span><br />
+            <strong id="taskNameLine">—</strong>
+            <span class="muted">（ID：<span id="taskIdLine">—</span>）</span>
+          </div>
+
+          <div class="models-wrap">
+            <div class="models" id="modelList">
+              <div class="models-empty" id="modelListEmpty">填写任务 ID 后点击「加载可选模型」</div>
+            </div>
+          </div>
+
+          <div class="params-row">
+            <div class="param">
+              <label class="field-label" for="conf">置信度 conf</label>
+              <input type="number" id="conf" min="0.05" max="1" step="0.05" value="0.25" />
+            </div>
+            <div class="param" id="includeDoneRow">
+              <label class="field-label" for="includeDone">已标注样本（整任务）</label>
+              <select id="includeDone">
+                <option value="0">否（仅 NEW）</option>
+                <option value="1" selected>是（含 DONE）</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="status-col">
+        <div class="card-block">
+          <div class="toolbar-row" style="margin-bottom:8px;">
+            <h2 style="margin:0;">运行状态</h2>
+            <div class="toolbar-right">
+              <button type="button" class="btn" id="btnClearLog">清空日志</button>
+            </div>
+          </div>
+          <div class="log-box" id="log" aria-live="polite"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script>
+    var API = "/api/v1";
+    var selected = null;
+    var allModelItems = [];
+    var taskLabels = [];
+
+    function getToken() {
+      if (window.LabeluPortal && LabeluPortal.getAuthToken) return LabeluPortal.getAuthToken();
+      var raw = (localStorage.getItem("token") || "").trim();
+      if (!raw) return "";
+      if (/^bearer\s+/i.test(raw)) return raw;
+      if (raw.indexOf("eyJ") === 0) return "Bearer " + raw;
+      return raw;
+    }
+    function setToken(t) {
+      if (t) localStorage.setItem("token", t.trim());
+      else localStorage.removeItem("token");
+    }
+
+    function logKindFromMsg(msg) {
+      if (/status=FAILED|错误:|失败|轮询错误/.test(msg)) return "err";
+      if (/status=COMPLETED|完成|已创建/.test(msg)) return "ok";
+      if (/提示:|warn|跳过/.test(msg)) return "warn";
+      return "";
+    }
+
+    function log(msg, kind) {
+      var el = document.getElementById("log");
+      var line = document.createElement("div");
+      var k = kind || logKindFromMsg(msg);
+      line.className = "log-line" + (k ? " log-" + k : "");
+      line.textContent = new Date().toLocaleTimeString() + " " + msg;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function clearLog() {
+      document.getElementById("log").innerHTML = "";
+    }
+
+    function apiHeaders() {
+      var t = getToken();
+      if (!t) throw new Error("请先填写 Token");
+      return { Authorization: t, "Content-Type": "application/json" };
+    }
+
+    function esc(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+
+    function kindTag(kind) {
+      var cls = kind === "trained" ? "tag-ok" : "tag-tech";
+      var title = kind === "trained" ? "本系统训练完成" : kind === "imported" ? "用户上传权重" : String(kind);
+      return '<span class="tag ' + cls + '" title="' + esc(title) + '">' + esc(kind) + "</span>";
+    }
+
+    function modelCategory(it) {
+      if (it.category) return String(it.category);
+      return it.kind === "trained" ? "本系统训练" : "未分类";
+    }
+
+    function modelSubline(it) {
+      if (it.kind === "imported") return "分类：" + modelCategory(it);
+      var d = (it.detail || "").trim();
+      return d + (it.imgsz ? " · imgsz " + it.imgsz : "");
+    }
+
+    function modelMetricsSubline(it) {
+      var m = it.training_val_metrics || null;
+      if (!m) return it.kind === "imported" ? "未评估（外部导入）" : "未读取到验证指标";
+      var parts = [];
+      [["map50_95", "mAP50-95"], ["map50", "mAP50"], ["precision", "P"], ["recall", "R"], ["fitness", "综合评分"]].forEach(function (pair) {
+        var n = Number(m[pair[0]]);
+        if (isFinite(n)) parts.push(pair[1] + " " + (n * 100).toFixed(1) + "%");
+      });
+      var recommended = recommendedConfValue(it);
+      if (recommended !== null) parts.push("建议置信度 " + recommended.toFixed(2));
+      return parts.length ? parts.join(" · ") : "未读取到验证指标";
+    }
+
+    function recommendedConfValue(item) {
+      if (!item || item.recommended_conf == null || item.recommended_conf === "") return null;
+      var n = Number(item.recommended_conf);
+      return isFinite(n) ? n : null;
+    }
+
+    function applyRecommendedConf(item) {
+      var n = recommendedConfValue(item);
+      var input = document.getElementById("conf");
+      if (input && n !== null) input.value = n.toFixed(2);
+    }
+
+    function buildCategoryOptions(items) {
+      var set = {};
+      for (var i = 0; i < items.length; i++) set[modelCategory(items[i])] = true;
+      var keys = Object.keys(set);
+      keys.sort(function (a, b) {
+        if (a === "本系统训练") return -1;
+        if (b === "本系统训练") return 1;
+        if (a === "未分类") return 1;
+        if (b === "未分类") return -1;
+        return a.localeCompare(b, "zh-CN");
+      });
+      var sel = document.getElementById("modelCategorySelect");
+      sel.innerHTML = "";
+      var o0 = document.createElement("option");
+      o0.value = "__ALL__";
+      o0.textContent = "全部分类（" + items.length + "）";
+      sel.appendChild(o0);
+      for (var j = 0; j < keys.length; j++) {
+        var k = keys[j];
+        var n = 0;
+        for (var t = 0; t < items.length; t++) if (modelCategory(items[t]) === k) n++;
+        var o = document.createElement("option");
+        o.value = k;
+        o.textContent = k + "（" + n + "）";
+        sel.appendChild(o);
+      }
+    }
+
+    function renderModelList() {
+      var box = document.getElementById("modelList");
+      var emptyHint = document.getElementById("modelListEmpty");
+      var selVal = document.getElementById("modelCategorySelect").value;
+      var sourceVal = document.getElementById("modelSourceSelect").value;
+      var q = (document.getElementById("searchModels").value || "").trim().toLowerCase();
+      box.innerHTML = "";
+      selected = null;
+      document.getElementById("btnRun").disabled = true;
+
+      if (!allModelItems.length) {
+        var empty = document.createElement("div");
+        empty.className = "models-empty";
+        empty.id = "modelListEmpty";
+        empty.textContent = emptyHint ? emptyHint.textContent : "暂无模型";
+        box.appendChild(empty);
+        return;
+      }
+
+      var shown = 0;
+      for (var idx = 0; idx < allModelItems.length; idx++) {
+        var it = allModelItems[idx];
+        var cat = modelCategory(it);
+        if (selVal !== "__ALL__" && cat !== selVal) continue;
+        if (sourceVal === "recommended" && !it.recommended) continue;
+        if (sourceVal !== "__ALL__" && sourceVal !== "recommended" && it.kind !== sourceVal) continue;
+        var hay = (it.title || "") + " " + cat + " " + (it.detail || "") + " " + (it.kind || "");
+        if (q && hay.toLowerCase().indexOf(q) < 0) continue;
+        shown++;
+        var id = "m_" + idx;
+        var lab = document.createElement("label");
+        lab.className = "row-item";
+        lab.dataset.cat = cat;
+        lab.innerHTML =
+          '<input type="radio" name="pick" id="' + id + '" />' +
+          "<div>" +
+          (it.recommended ? '<span class="tag tag-ok">当前任务推荐</span> ' : "") +
+          kindTag(it.kind) +
+          ' <span class="tag tag-cat" title="分类">' + esc(cat) + "</span> " +
+          "<strong>" + esc(it.title) + "</strong><br/><span class=\"muted\">" +
+          esc(modelSubline(it)) +
+          '</span><br/><span class="muted">验证指标：' + esc(modelMetricsSubline(it)) + "</span>" +
+          (it.labels && it.labels.length ? '<br/><span class="muted">标签：' + esc(it.labels.join(", ")) + "</span>" : "") +
+          "</div>";
+        (function (item) {
+          lab.querySelector("input").addEventListener("change", function () {
+            selected = { kind: item.kind, id: item.id };
+            applyRecommendedConf(item);
+            document.getElementById("btnRun").disabled = false;
+          });
+        })(it);
+        box.appendChild(lab);
+      }
+      if (!shown) {
+        var none = document.createElement("div");
+        none.className = "models-empty";
+        none.textContent = "无匹配模型，请调整分类或搜索条件";
+        box.appendChild(none);
+      }
+    }
+
+    async function refreshTaskSummary(taskId, hintName) {
+      var wrap = document.getElementById("taskSummary");
+      var nameEl = document.getElementById("taskNameLine");
+      var idEl = document.getElementById("taskIdLine");
+      if (!taskId) {
+        wrap.style.display = "none";
+        return;
+      }
+      wrap.style.display = "block";
+      idEl.textContent = String(taskId);
+      if (hintName) nameEl.textContent = hintName;
+      else nameEl.textContent = "加载中…";
+      var t = getToken();
+      if (!t) {
+        nameEl.textContent = hintName || "填写 Token 后将自动拉取任务名称";
+        return;
+      }
+      try {
+        var r = await fetch(API + "/tasks/" + taskId, {
+          headers: { Authorization: t },
+          cache: "no-store",
+        });
+        var j = await r.json();
+        if (!r.ok) throw new Error(j.msg || r.statusText);
+        var name = (j.data && j.data.name) ? String(j.data.name) : "";
+        nameEl.textContent = name || hintName || "（未命名任务）";
+      } catch (e) {
+        nameEl.textContent = (hintName || "（无法加载名称）") + " · " + e.message;
+      }
+    }
+
+    function resetPage() {
+      document.getElementById("taskId").value = "";
+      document.getElementById("taskSummary").style.display = "none";
+      allModelItems = [];
+      taskLabels = [];
+      selected = null;
+      document.getElementById("btnRun").disabled = true;
+      document.getElementById("modelCategoryWrap").style.display = "none";
+      document.getElementById("modelSourceWrap").style.display = "none";
+      document.getElementById("searchModels").disabled = true;
+      document.getElementById("searchModels").value = "";
+      document.getElementById("modelCategorySelect").innerHTML = "";
+      var box = document.getElementById("modelList");
+      box.innerHTML = "";
+      var empty = document.createElement("div");
+      empty.className = "models-empty";
+      empty.id = "modelListEmpty";
+      empty.textContent = "填写任务 ID 后点击「加载可选模型」";
+      box.appendChild(empty);
+      clearLog();
+      window.__hintTaskName = "";
+    }
+
+    function onTokenReady() {
+      if (window.LabeluPortal && LabeluPortal.syncAuthBox) LabeluPortal.syncAuthBox();
+      var tid = parseInt(document.getElementById("taskId").value || "0", 10);
+      if (tid > 0) refreshTaskSummary(tid, window.__hintTaskName || "");
+    }
+    document.getElementById("tokenInput").value = getToken();
+    document.getElementById("tokenInput").addEventListener("change", function () {
+      setToken(document.getElementById("tokenInput").value || "");
+      onTokenReady();
+    });
+    window.addEventListener("labelu-token-changed", onTokenReady);
+    if (getToken()) onTokenReady();
+
+    document.getElementById("btnReset").onclick = resetPage;
+    document.getElementById("btnClearLog").onclick = clearLog;
+    document.getElementById("searchModels").addEventListener("input", renderModelList);
+
+    var params = new URLSearchParams(location.search);
+    var qTask = parseInt(params.get("task_id") || "0", 10);
+    var qSample = parseInt(params.get("sample_id") || "0", 10);
+    var qTaskName = params.get("task_name") || "";
+    if (qTaskName) {
+      try { qTaskName = decodeURIComponent(qTaskName); } catch (e1) {}
+    }
+    window.__hintTaskName = qTaskName || "";
+
+    if (qTask > 0) {
+      document.getElementById("taskId").value = String(qTask);
+      refreshTaskSummary(qTask, window.__hintTaskName);
+    }
+    if (qSample > 0) {
+      document.getElementById("pageTitle").textContent = "YOLO 预标注（当前图片）";
+      var row = document.getElementById("includeDoneRow");
+      if (row) row.style.display = "none";
+    }
+
+    document.getElementById("modelCategorySelect").addEventListener("change", renderModelList);
+    document.getElementById("modelSourceSelect").addEventListener("change", renderModelList);
+
+    document.getElementById("taskId").addEventListener("change", function () {
+      var tid = parseInt(document.getElementById("taskId").value || "0", 10);
+      window.__hintTaskName = "";
+      if (tid > 0) refreshTaskSummary(tid, "");
+      else document.getElementById("taskSummary").style.display = "none";
+    });
+
+    document.getElementById("btnLoad").onclick = async function () {
+      var taskId = parseInt(document.getElementById("taskId").value || "0", 10);
+      if (!taskId) {
+        log("请填写任务 ID", "err");
+        return;
+      }
+      await refreshTaskSummary(taskId, window.__hintTaskName);
+      selected = null;
+      document.getElementById("btnRun").disabled = true;
+      allModelItems = [];
+      taskLabels = [];
+      document.getElementById("modelCategoryWrap").style.display = "none";
+      document.getElementById("modelSourceWrap").style.display = "none";
+      document.getElementById("searchModels").disabled = true;
+      log("加载任务 " + taskId + " 的模型列表…");
+      try {
+        var r = await fetch(API + "/tasks/" + taskId + "/yolo_preannotate/models", {
+          headers: { Authorization: getToken() },
+          cache: "no-store",
+        });
+        var j = await r.json();
+        if (!r.ok) throw new Error(j.msg || r.statusText);
+        var data = j.data || {};
+        var items = data.items || [];
+        taskLabels = data.task_labels || [];
+        if (taskLabels.length) {
+          log("当前任务标签：" + taskLabels.join(", "));
+        }
+        if (!items.length) {
+          log("当前任务没有标签完全匹配的模型，请先训练或导入对应模型。", "warn");
+          renderModelList();
+          return;
+        }
+        allModelItems = items;
+        document.getElementById("modelCategorySelect").value = "__ALL__";
+        buildCategoryOptions(allModelItems);
+        document.getElementById("modelCategoryWrap").style.display = "flex";
+        document.getElementById("modelSourceWrap").style.display = "flex";
+        var sourceSelect = document.getElementById("modelSourceSelect");
+        sourceSelect.value = items.some(function (item) { return item.recommended; }) ? "recommended" : "__ALL__";
+        document.getElementById("searchModels").disabled = false;
+        renderModelList();
+        log("共 " + items.length + " 个模型，请选择一项后开始预标注。", "ok");
+      } catch (e) {
+        log("错误: " + e.message, "err");
+      }
+    };
+
+    document.getElementById("btnRun").onclick = async function () {
+      var taskId = parseInt(document.getElementById("taskId").value || "0", 10);
+      if (!taskId || !selected) return;
+      var conf = parseFloat(document.getElementById("conf").value || "0.25");
+      var includeDone = document.getElementById("includeDone").value === "1";
+      var payload = {
+        model_kind: selected.kind,
+        model_id: selected.id,
+        overwrite: true,
+        include_done_samples: includeDone,
+        conf: conf,
+      };
+      if (qSample > 0) {
+        payload.sample_ids = [qSample];
+        payload.sample_id = qSample;
+      }
+      log("提交作业: kind=" + selected.kind + " id=" + selected.id + (qSample > 0 ? " sample_ids=[" + qSample + "]" : ""));
+      document.getElementById("btnRun").disabled = true;
+      try {
+        var postUrl = API + "/tasks/" + taskId + "/yolo_preannotate_job";
+        if (qSample > 0) postUrl += "?sample_id=" + encodeURIComponent(String(qSample));
+        var r = await fetch(postUrl, {
+          method: "POST",
+          headers: apiHeaders(),
+          body: JSON.stringify(payload),
+        });
+        var j = await r.json();
+        if (!r.ok) throw new Error(j.msg || r.statusText);
+        var job = j.data;
+        log("作业已创建 id=" + job.id + "，轮询状态…", "ok");
+        var jid = job.id;
+        var timer = setInterval(async function () {
+          try {
+            var r2 = await fetch(API + "/tasks/" + taskId + "/yolo_preannotate_job/" + jid, {
+              headers: { Authorization: getToken() },
+              cache: "no-store",
+            });
+            var j2 = await r2.json();
+            if (!r2.ok) throw new Error(j2.msg || r2.statusText);
+            var st = j2.data;
+            var statusLine =
+              "status=" +
+              st.status +
+              " processed=" +
+              st.processed_count +
+              "/" +
+              st.sample_count +
+              " ok=" +
+              st.success_count +
+              " fail=" +
+              st.failed_count;
+            log(statusLine, st.status === "FAILED" ? "err" : st.status === "COMPLETED" ? "ok" : "");
+            if (st.status === "COMPLETED" || st.status === "FAILED") {
+              clearInterval(timer);
+              document.getElementById("btnRun").disabled = !selected;
+              if (st.status === "FAILED") {
+                if (st.error_message) log("失败原因: " + st.error_message, "err");
+              } else {
+                if (st.error_message) log("提示: " + st.error_message, "warn");
+                log("完成。请到标注界面查看预标注。", "ok");
+                if (qSample <= 0) {
+                  try {
+                    if (window.opener && !window.opener.closed) {
+                      window.opener.location.reload();
+                      log("已请求刷新打开本页的任务列表。", "ok");
+                    }
+                  } catch (e1) {}
+                }
+              }
+            }
+          } catch (e) {
+            clearInterval(timer);
+            document.getElementById("btnRun").disabled = !selected;
+            log("轮询错误: " + e.message, "err");
+          }
+        }, 1200);
+      } catch (e) {
+        document.getElementById("btnRun").disabled = !selected;
+        log("错误: " + e.message, "err");
+      }
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "conf_threshold": 0.25,
+  "nms_threshold": 0.7,
+  "plate_iou_threshold": 0.5,
+  "device_id": 0,
+  "bmrt_test": true
+}

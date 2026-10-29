@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LabelU Vision Ops Workspace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="side-nav">
+      <div class="brand">
+        <div class="brand-mark">LU</div>
+        <div class="brand-copy">
+          <strong>LabelU</strong>
+          <span>Vision Ops Workspace</span>
+        </div>
+      </div>
+
+      <div class="nav-group" id="nav-group">
+        <button class="nav-link active" data-page="overview">
+          <span class="nav-glyph">01</span>
+          <div><strong>总控台</strong><small>Program Board</small></div>
+        </button>
+        <button class="nav-link" data-page="training">
+          <span class="nav-glyph">02</span>
+          <div><strong>训练中心</strong><small>Training Hub</small></div>
+        </button>
+        <button class="nav-link" data-page="policies">
+          <span class="nav-glyph">03</span>
+          <div><strong>策略中心</strong><small>Policy Studio</small></div>
+        </button>
+        <button class="nav-link" data-page="validation">
+          <span class="nav-glyph">04</span>
+          <div><strong>边端验证</strong><small>Edge Validation</small></div>
+        </button>
+        <button class="nav-link" data-page="release">
+          <span class="nav-glyph">05</span>
+          <div><strong>发布交付</strong><small>Publish Gate</small></div>
+        </button>
+        <button class="nav-link" data-page="library">
+          <span class="nav-glyph">06</span>
+          <div><strong>模型资产</strong><small>Model Library</small></div>
+        </button>
+      </div>
+
+      <div class="side-status">
+        <div class="status-line">
+          <span>在线节点</span>
+          <strong>12</strong>
+        </div>
+        <div class="status-line">
+          <span>运行任务</span>
+          <strong>7</strong>
+        </div>
+        <div class="status-line">
+          <span>待发布</span>
+          <strong>3</strong>
+        </div>
+      </div>
+    </aside>
+
+    <div class="workspace">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="topbar-title">
+            <small id="page-kicker">Program Board</small>
+            <h1 id="page-title">总控台</h1>
+          </div>
+          <label class="search-box">
+            <span>搜索任务 / 模型 / 导出 / 发布</span>
+            <input type="text" placeholder="Search..." />
+          </label>
+        </div>
+
+        <div class="topbar-right">
+          <button class="top-action quiet" data-open-modal="command">Quick Run</button>
+          <button class="top-action quiet" data-open-modal="filter">Global Filter</button>
+          <button class="top-action strong" id="primary-cta">New Job</button>
+        </div>
+      </header>
+
+      <section class="command-strip" id="command-strip"></section>
+
+      <main class="workspace-grid">
+        <section class="surface-main" id="surface-main"></section>
+        <aside class="surface-side" id="surface-side"></aside>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-layer hidden" id="modal-layer">
+    <div class="modal-card" id="modal-card"></div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

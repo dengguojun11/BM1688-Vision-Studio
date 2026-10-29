@@ -1,0 +1,1452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>BM1688 模型编译工作台 - 静态原型</title>
+  <style>
+    :root {
+      --bg: #eef2f7;
+      --surface: #ffffff;
+      --surface-alt: #f7f9fc;
+      --border: #dbe4ef;
+      --text: #162235;
+      --muted: #6b7a90;
+      --primary: #1463ff;
+      --primary-2: #4da3ff;
+      --success: #1f8a48;
+      --success-bg: #ebf8ef;
+      --warn: #b96a00;
+      --warn-bg: #fff5df;
+      --danger: #bf2f45;
+      --danger-bg: #fff0f3;
+      --shadow: 0 18px 42px rgba(20, 45, 90, 0.08);
+      --radius-xl: 24px;
+      --radius-lg: 18px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --mono: "Consolas", "SFMono-Regular", monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: linear-gradient(180deg, #edf4ff 0%, var(--bg) 22%, #f4f6fa 100%); color: var(--text); font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    body { min-height: 100vh; }
+    a { color: inherit; text-decoration: none; }
+    button, input, select { font: inherit; }
+
+    .page {
+      max-width: 1540px;
+      margin: 0 auto;
+      padding: 24px 24px 48px;
+    }
+
+    .top-note {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      padding: 12px 16px;
+      border: 1px solid #bfd4ff;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.78);
+      backdrop-filter: blur(10px);
+      color: #24426d;
+      font-size: 13px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      border-radius: var(--radius-xl);
+      background:
+        radial-gradient(circle at 88% 22%, rgba(255,255,255,0.22), transparent 22%),
+        radial-gradient(circle at 72% 78%, rgba(255,255,255,0.18), transparent 20%),
+        linear-gradient(135deg, #0f58d6 0%, #1b7bff 48%, #72c2ff 100%);
+      color: #fff;
+      box-shadow: var(--shadow);
+      padding: 28px 28px 24px;
+      margin-bottom: 18px;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -60px -60px auto;
+      width: 260px;
+      height: 260px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.18);
+    }
+
+    .hero-main {
+      display: flex;
+      gap: 24px;
+      justify-content: space-between;
+      align-items: flex-start;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero h1 {
+      margin: 0 0 10px;
+      font-size: 34px;
+      letter-spacing: -0.02em;
+    }
+
+    .hero p {
+      margin: 0;
+      max-width: 760px;
+      line-height: 1.7;
+      color: rgba(255,255,255,0.88);
+      font-size: 14px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      min-width: 320px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 40px;
+      padding: 0 16px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      cursor: default;
+      white-space: nowrap;
+      font-size: 13px;
+      font-weight: 600;
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+    .btn-primary { background: #fff; color: #0f58d6; box-shadow: 0 10px 20px rgba(8, 30, 74, 0.16); }
+    .btn-secondary { background: rgba(255,255,255,0.12); color: #fff; border-color: rgba(255,255,255,0.28); }
+    .btn-ghost { background: transparent; color: #24426d; border-color: #d5dfed; }
+    .btn-tiny { min-height: 30px; padding: 0 12px; font-size: 12px; font-weight: 600; border-radius: 10px; }
+    .btn-success { background: var(--success-bg); color: var(--success); border-color: #b6e3c4; }
+    .btn-warn { background: var(--warn-bg); color: var(--warn); border-color: #ffd38a; }
+    .btn-danger { background: var(--danger-bg); color: var(--danger); border-color: #f0b8c3; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .stat-card {
+      background: rgba(255,255,255,0.86);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(219,228,239,0.9);
+      border-radius: 20px;
+      padding: 18px 18px 16px;
+      box-shadow: 0 10px 28px rgba(26, 43, 74, 0.05);
+    }
+
+    .stat-label {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 10px;
+    }
+
+    .stat-value {
+      font-size: 34px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      letter-spacing: -0.03em;
+    }
+
+    .stat-hint {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .stat-card.is-alert { border-color: #ffd38a; }
+    .stat-card.is-good { border-color: #b6e3c4; }
+
+    .flow-strip,
+    .todo-strip {
+      background: rgba(255,255,255,0.84);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 16px 18px;
+      box-shadow: 0 8px 24px rgba(20, 45, 90, 0.05);
+      margin-bottom: 18px;
+    }
+
+    .flow-strip-head,
+    .todo-strip-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .flow-title,
+    .todo-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .flow-steps {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .flow-step {
+      position: relative;
+      background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px 14px 12px;
+      min-height: 88px;
+    }
+
+    .flow-step.current {
+      border-color: #9bc1ff;
+      box-shadow: inset 0 0 0 1px rgba(20,99,255,0.10);
+      background: linear-gradient(180deg, #f6fbff 0%, #eef6ff 100%);
+    }
+
+    .flow-step strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .flow-step small {
+      display: block;
+      color: var(--muted);
+      line-height: 1.55;
+      font-size: 11px;
+    }
+
+    .todo-grid {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr 1fr;
+      gap: 12px;
+    }
+
+    .todo-card {
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, #fff 0%, #f9fbfe 100%);
+      padding: 14px 16px;
+    }
+
+    .todo-card strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+
+    .todo-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 12px;
+    }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: 420px minmax(0, 1fr);
+      gap: 18px;
+      margin-bottom: 22px;
+      align-items: start;
+    }
+
+    .panel {
+      background: rgba(255,255,255,0.92);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 20px 22px 14px;
+      border-bottom: 1px solid #edf2f8;
+      background: linear-gradient(180deg, rgba(248,251,255,0.95) 0%, rgba(255,255,255,0.92) 100%);
+    }
+
+    .panel-title {
+      margin: 0;
+      font-size: 20px;
+      letter-spacing: -0.02em;
+    }
+
+    .panel-sub {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .panel-body { padding: 18px 22px 22px; }
+
+    .filters {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .filter-box {
+      min-width: 120px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #fff;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .record-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .record-card {
+      border: 1px solid #dce6f1;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #fff 0%, #f9fbff 100%);
+      padding: 16px;
+      transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+      cursor: pointer;
+    }
+
+    .record-card:hover { transform: translateY(-2px); box-shadow: 0 14px 26px rgba(20, 45, 90, 0.06); }
+    .record-card.active { border-color: #9fc1ff; box-shadow: 0 16px 30px rgba(20, 99, 255, 0.10); background: linear-gradient(180deg, #fcfeff 0%, #f2f8ff 100%); }
+
+    .record-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 12px;
+      align-items: flex-start;
+    }
+
+    .record-name {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .record-meta {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .record-status {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 10px;
+      margin-bottom: 12px;
+    }
+
+    .mini-kv {
+      background: rgba(245,248,252,0.9);
+      border-radius: 12px;
+      padding: 10px 12px;
+      min-height: 66px;
+    }
+
+    .mini-kv label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+
+    .mini-kv strong {
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-height: 24px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid transparent;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .badge.good { color: var(--success); background: var(--success-bg); border-color: #b6e3c4; }
+    .badge.warn { color: var(--warn); background: var(--warn-bg); border-color: #ffd38a; }
+    .badge.danger { color: var(--danger); background: var(--danger-bg); border-color: #f0b8c3; }
+    .badge.info { color: #1559d4; background: #eef5ff; border-color: #c5dbff; }
+    .badge.neutral { color: #5c6b82; background: #f5f7fb; border-color: #dce6f1; }
+
+    .record-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .detail-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 18px;
+    }
+
+    .detail-title {
+      margin: 0 0 8px;
+      font-size: 28px;
+      letter-spacing: -0.03em;
+    }
+
+    .detail-sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.7;
+    }
+
+    .detail-conclusion {
+      min-width: 250px;
+      padding: 18px;
+      border-radius: 18px;
+      background: linear-gradient(180deg, #f9fcff 0%, #f2f8ff 100%);
+      border: 1px solid #cfe1ff;
+    }
+
+    .detail-conclusion label {
+      display: block;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .detail-conclusion strong {
+      display: block;
+      font-size: 18px;
+      margin-bottom: 8px;
+      color: #0d54da;
+    }
+
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .card {
+      border: 1px solid #e4ebf5;
+      background: linear-gradient(180deg, #fff 0%, #fafcff 100%);
+      border-radius: 18px;
+      padding: 16px 16px 14px;
+    }
+
+    .card h3 {
+      margin: 0 0 12px;
+      font-size: 15px;
+    }
+
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .timeline-item {
+      display: grid;
+      grid-template-columns: 30px 1fr auto;
+      gap: 10px;
+      align-items: start;
+      padding: 10px 0;
+      border-bottom: 1px dashed #e7edf5;
+    }
+
+    .timeline-item:last-child { border-bottom: none; }
+
+    .timeline-index {
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      background: #eef4ff;
+      color: #1759d0;
+    }
+
+    .timeline-title {
+      font-size: 13px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+
+    .timeline-desc {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .artifact-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .artifact {
+      border: 1px solid #e4ebf5;
+      border-radius: 14px;
+      padding: 12px;
+      background: #fff;
+    }
+
+    .artifact code {
+      display: block;
+      margin-top: 6px;
+      color: #35506f;
+      font-size: 11px;
+      font-family: var(--mono);
+      word-break: break-all;
+      line-height: 1.6;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .metric {
+      border-radius: 14px;
+      background: #fff;
+      border: 1px solid #e4ebf5;
+      padding: 12px 12px 10px;
+    }
+
+    .metric label {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-bottom: 8px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 20px;
+      letter-spacing: -0.03em;
+    }
+
+    .detail-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .modal-section {
+      margin-top: 22px;
+    }
+
+    .modal-section h2 {
+      margin: 0 0 12px;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+    }
+
+    .modal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .mock-modal {
+      background: rgba(255,255,255,0.95);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .mock-modal-head {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid #edf2f8;
+      background: linear-gradient(180deg, #f7fbff 0%, #ffffff 100%);
+    }
+
+    .mock-modal-head h3 {
+      margin: 0 0 6px;
+      font-size: 18px;
+    }
+
+    .mock-modal-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    .mock-modal-body { padding: 18px 20px 20px; }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0 0 10px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .field.span-2 { grid-column: span 2; }
+
+    .field label {
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .field .input,
+    .field .select,
+    .field .textarea,
+    .chips-row,
+    .sample-box {
+      border: 1px solid #dce6f1;
+      border-radius: 14px;
+      background: #fff;
+      padding: 12px 12px;
+      font-size: 12px;
+      color: #40516a;
+    }
+
+    .field .textarea { min-height: 78px; line-height: 1.7; }
+
+    .chips-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      min-height: 48px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #f5f8fd;
+      border: 1px solid #dce6f1;
+      font-size: 11px;
+      color: #4d607d;
+      font-weight: 600;
+    }
+
+    .sample-box {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 130px;
+    }
+
+    .sample-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding-bottom: 10px;
+      border-bottom: 1px dashed #e8eef6;
+      font-size: 12px;
+    }
+
+    .sample-item:last-child { border-bottom: none; padding-bottom: 0; }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      overflow: hidden;
+      border-radius: 14px;
+      border: 1px solid #e2e9f3;
+    }
+
+    .table th,
+    .table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e9eef5;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .table th {
+      background: #f7faff;
+      color: #546882;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .table tr:last-child td { border-bottom: none; }
+
+    .steps-compact {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .steps-compact .step-row {
+      display: grid;
+      grid-template-columns: 28px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      border: 1px solid #e3ebf6;
+      border-radius: 14px;
+      background: #fff;
+      padding: 12px;
+    }
+
+    .step-row strong { font-size: 13px; }
+    .step-row small { display: block; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+
+    .footer-note {
+      margin-top: 20px;
+      border-top: 1px dashed #dbe4ef;
+      padding-top: 14px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .mobile-preview {
+      margin-top: 24px;
+      display: none;
+    }
+
+    .mobile-shell {
+      width: 390px;
+      max-width: 100%;
+      margin: 0 auto;
+      border: 10px solid #182233;
+      border-radius: 34px;
+      background: #f4f7fb;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    .mobile-head {
+      padding: 16px;
+      background: linear-gradient(135deg, #1257d9 0%, #67bbff 100%);
+      color: #fff;
+    }
+
+    .mobile-head h3 { margin: 0 0 6px; font-size: 18px; }
+    .mobile-head p { margin: 0; font-size: 12px; line-height: 1.6; color: rgba(255,255,255,0.88); }
+    .mobile-body { padding: 14px; }
+
+    .mobile-card {
+      border-radius: 18px;
+      background: #fff;
+      border: 1px solid #e3ebf6;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+
+    .mobile-card h4 { margin: 0 0 8px; font-size: 14px; }
+
+    @media (max-width: 1300px) {
+      .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .workspace { grid-template-columns: 1fr; }
+      .detail-grid,
+      .modal-grid,
+      .todo-grid { grid-template-columns: 1fr; }
+      .flow-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 900px) {
+      .page { padding: 16px 14px 32px; }
+      .hero-main,
+      .detail-header { flex-direction: column; }
+      .hero-actions { justify-content: flex-start; min-width: 0; }
+      .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .artifact-list,
+      .metric-grid,
+      .form-grid,
+      .record-status { grid-template-columns: 1fr; }
+      .flow-steps { grid-template-columns: 1fr; }
+      .mobile-preview { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="top-note">
+      <div><strong>静态原型页</strong>：仅用于确认 BM1688 模型编译菜单下的 UI 信息结构，不调用后端，不影响现有代码逻辑。</div>
+      <div>覆盖范围：导出记录、详情面板、编译配置、模型评估、手动边端验证、执行步骤、移动端参考。</div>
+    </section>
+
+    <section class="hero">
+      <div class="hero-main">
+        <div>
+          <h1>BM1688 模型编译与边端验证工作台</h1>
+          <p>从 ONNX 导出、bmodel 编译、边端执行，到 INT8 精度评估与发布判定，这里统一查看。页面不再让用户在表格里找状态，而是先告诉用户“现在卡在哪一步、哪个模型可以继续发”。</p>
+        </div>
+        <div class="hero-actions">
+          <span class="btn btn-primary">发起导出</span>
+          <span class="btn btn-secondary">编译配置</span>
+          <span class="btn btn-secondary">查看评估标准</span>
+          <span class="btn btn-secondary">刷新</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="stats">
+      <article class="stat-card">
+        <div class="stat-label">总导出数</div>
+        <div class="stat-value">25</div>
+        <div class="stat-hint">当前系统内全部 BM1688 导出记录</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-label">编译中</div>
+        <div class="stat-value">2</div>
+        <div class="stat-hint">含 ONNX 导出、bmodel 编译、自动重试</div>
+      </article>
+      <article class="stat-card is-alert">
+        <div class="stat-label">待边端验证</div>
+        <div class="stat-value">1</div>
+        <div class="stat-hint">编译已完成，但还没下发到边端执行</div>
+      </article>
+      <article class="stat-card is-alert">
+        <div class="stat-label">待回传结果</div>
+        <div class="stat-value">1</div>
+        <div class="stat-hint">边端已执行，等待 INT8 精度结果回传</div>
+      </article>
+      <article class="stat-card is-good">
+        <div class="stat-label">可进入发布评估</div>
+        <div class="stat-value">8</div>
+        <div class="stat-hint">训练达标 + INT8 通过，可继续发布流转</div>
+      </article>
+    </section>
+
+    <section class="flow-strip">
+      <div class="flow-strip-head">
+        <div>
+          <h2 class="flow-title">流程状态</h2>
+        </div>
+        <span class="badge info">统一理解：编译配置 → 模型编译 → 边端验证 → INT8 评估 → 发布判定</span>
+      </div>
+      <div class="flow-steps">
+        <article class="flow-step">
+          <strong>1. 编译配置</strong>
+          <small>设置自动编译、量化模式、目标平台、边端 SSH 和默认校准方式。</small>
+        </article>
+        <article class="flow-step">
+          <strong>2. 模型编译</strong>
+          <small>训练产物导出 ONNX，再生成 fp32 / fp16 / int8 三类 bmodel。</small>
+        </article>
+        <article class="flow-step current">
+          <strong>3. 边端验证</strong>
+          <small>把模型和测试图下发到边端，确认 bmodel 在目标设备上可以真正运行。</small>
+        </article>
+        <article class="flow-step">
+          <strong>4. INT8 评估</strong>
+          <small>比较 PT、ONNX、INT8 的 test 集结果，判断精度是否在阈值内。</small>
+        </article>
+        <article class="flow-step">
+          <strong>5. 发布判定</strong>
+          <small>给出“可进入发布评估 / 待补充验证 / 不建议发布”的清晰结论。</small>
+        </article>
+      </div>
+    </section>
+
+    <section class="todo-strip">
+      <div class="todo-strip-head">
+        <h2 class="todo-title">当前待处理</h2>
+        <span class="btn btn-ghost btn-tiny">查看待处理模型</span>
+      </div>
+      <div class="todo-grid">
+        <article class="todo-card">
+          <strong>优先处理：有 1 个模型待边端验证</strong>
+          <p>这类模型训练达标、编译产物完整，但还没有真正确认边端能跑。建议优先下发验证，不然用户会误以为模型已经可发布。</p>
+        </article>
+        <article class="todo-card">
+          <strong>需要关注：有 1 个模型待回传 INT8 结果</strong>
+          <p>这类模型已经完成边端执行，但还没有形成最终精度结论。页面要明确提示“不是失败，是还没拿到评估结果”。</p>
+        </article>
+        <article class="todo-card">
+          <strong>可以推进：有 8 个模型可进入发布评估</strong>
+          <p>这些模型已经满足当前流程条件，建议直接去模型发布菜单继续后续操作，减少来回跳转。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">导出记录</h2>
+            <p class="panel-sub">从宽表格改成卡片列表，先让用户读懂状态，再决定点哪个动作。</p>
+          </div>
+          <span class="badge neutral">本页假数据 3 条</span>
+        </div>
+        <div class="panel-body">
+          <div class="filters">
+            <div class="filter-box">筛选：全部预设</div>
+            <div class="filter-box">搜索：垃圾暴露</div>
+            <div class="filter-box">排序：最近更新时间</div>
+          </div>
+
+          <div class="record-list">
+            <article class="record-card active">
+              <div class="record-top">
+                <div>
+                  <div class="record-name">垃圾暴露-训练筛选一致 #79</div>
+                  <div class="record-meta">作业 #198 · 640px · 2026-06-29 20:09 · 训练集 957 张 test 图</div>
+                </div>
+                <span class="badge good">可进入发布评估</span>
+              </div>
+              <div class="record-status">
+                <div class="mini-kv">
+                  <label>编译状态</label>
+                  <strong><span class="badge info">已完成</span></strong>
+                </div>
+                <div class="mini-kv">
+                  <label>边端状态</label>
+                  <strong><span class="badge info">结果已回传</span></strong>
+                </div>
+                <div class="mini-kv">
+                  <label>INT8 评估</label>
+                  <strong><span class="badge good">通过</span></strong>
+                </div>
+                <div class="mini-kv">
+                  <label>训练达标</label>
+                  <strong><span class="badge good">达标</span></strong>
+                </div>
+              </div>
+              <div class="record-actions">
+                <span class="btn btn-primary btn-tiny">查看评估</span>
+                <span class="btn btn-ghost btn-tiny">详情</span>
+                <span class="btn btn-ghost btn-tiny">重新编译</span>
+                <span class="btn btn-ghost btn-tiny">更多操作</span>
+              </div>
+            </article>
+
+            <article class="record-card">
+              <div class="record-top">
+                <div>
+                  <div class="record-name">垃圾桶满溢 #73</div>
+                  <div class="record-meta">作业 #183 · 640px · 2026-06-26 17:14 · 训练集 802 张 test 图</div>
+                </div>
+                <span class="badge warn">待边端验证</span>
+              </div>
+              <div class="record-status">
+                <div class="mini-kv">
+                  <label>编译状态</label>
+                  <strong><span class="badge info">已完成</span></strong>
+                </div>
+                <div class="mini-kv">
+                  <label>边端状态</label>
+                  <strong><span class="badge warn">未验证</span></strong>
+                </div>
+                <div class="mini-kv">
+                  <label>INT8 评估</label>
+                  <strong><span class="badge neutral">待评估</span></strong>
+                </div>
+                <div class="mini-kv">
+                  <label>训练达标</label>
+                  <strong><span class="badge good">达标</span></strong>
+                </div>
+              </div>
+              <div class="record-actions">
+                <span class="btn btn-primary btn-tiny">查看评估</span>
+                <span class="btn btn-ghost btn-tiny">详情</span>
+                <span class="btn btn-ghost btn-tiny">手动边端验证</span>
+                <span class="btn btn-ghost btn-tiny">更多操作</span>
+              </div>
+            </article>
+
+            <article class="record-card">
+              <div class="record-top">
+                <div>
+                  <div class="record-name">占道经营-lxl-wly #45</div>
+                  <div class="record-meta">作业 #145 · 640px · 2026-06-26 12:07 · 训练集 1260 张 test 图</div>
+                </div>
+                <span class="badge danger">不建议发布</span>
+              </div>
+              <div class="record-status">
+                <div class="mini-kv">
+                  <label>编译状态</label>
+                  <strong><span class="badge info">已完成</span></strong>
+                </div>
+                <div class="mini-kv">
+                  <label>边端状态</label>
+                  <strong><span class="badge info">结果已回传</span></strong>
+                </div>
+                <div class="mini-kv">
+                  <label>INT8 评估</label>
+                  <strong><span class="badge danger">未通过</span></strong>
+                </div>
+                <div class="mini-kv">
+                  <label>训练达标</label>
+                  <strong><span class="badge good">达标</span></strong>
+                </div>
+              </div>
+              <div class="record-actions">
+                <span class="btn btn-primary btn-tiny">查看评估</span>
+                <span class="btn btn-ghost btn-tiny">详情</span>
+                <span class="btn btn-ghost btn-tiny">执行步骤</span>
+                <span class="btn btn-ghost btn-tiny">更多操作</span>
+              </div>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div>
+            <h2 class="panel-title">当前模型详情</h2>
+            <p class="panel-sub">用户在左侧点中一条记录后，右侧固定展示详情，不再来回点“详情 / 执行步骤 / 评估”。</p>
+          </div>
+          <span class="badge info">当前选中 #49</span>
+        </div>
+        <div class="panel-body">
+          <div class="detail-header">
+            <div>
+              <h2 class="detail-title">垃圾暴露-训练筛选一致 #79</h2>
+              <p class="detail-sub">作业 #198 · 640px · 2026-06-29 20:09 · 模型基础名 <code>yolov11n</code> · 板端设备 <code>10.10.11.26</code></p>
+            </div>
+            <div class="detail-conclusion">
+              <label>当前发布结论</label>
+              <strong>可进入发布评估</strong>
+              <div class="badge good">训练达标 + 边端已回传 + INT8 通过</div>
+            </div>
+          </div>
+
+          <div class="detail-grid">
+            <section class="card">
+              <h3>阶段进度</h3>
+              <div class="timeline">
+                <div class="timeline-item">
+                  <div class="timeline-index">1</div>
+                  <div>
+                    <div class="timeline-title">ONNX 导出</div>
+                    <div class="timeline-desc">从训练产物生成标准 ONNX，作为后续量化与评估基础。</div>
+                  </div>
+                  <span class="badge info">已完成</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-index">2</div>
+                  <div>
+                    <div class="timeline-title">bmodel 编译</div>
+                    <div class="timeline-desc">已生成 fp32 / fp16 / int8 三类 bmodel，可直接下载或继续验证。</div>
+                  </div>
+                  <span class="badge info">已完成</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-index">3</div>
+                  <div>
+                    <div class="timeline-title">边端执行</div>
+                    <div class="timeline-desc">目标板端已成功执行 bmodel 推理流程，设备可运行确认通过。</div>
+                  </div>
+                  <span class="badge info">已完成</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-index">4</div>
+                  <div>
+                    <div class="timeline-title">结果回传</div>
+                    <div class="timeline-desc">边端执行结果及评估产物已回传到平台，可生成完整评估视图。</div>
+                  </div>
+                  <span class="badge info">已回传</span>
+                </div>
+                <div class="timeline-item">
+                  <div class="timeline-index">5</div>
+                  <div>
+                    <div class="timeline-title">INT8 精度评估</div>
+                    <div class="timeline-desc">基于同一 test 集完成 PT / ONNX / INT8 相对比对，满足阈值要求。</div>
+                  </div>
+                  <span class="badge good">通过</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="card">
+              <h3>产物信息</h3>
+              <div class="artifact-list">
+                <div class="artifact">
+                  <strong>ONNX</strong>
+                  <code>models/onnx/yolo11n.onnx</code>
+                </div>
+                <div class="artifact">
+                  <strong>FP32 bmodel</strong>
+                  <code>BM1688/yolov11n_fp32_1b.bmodel</code>
+                </div>
+                <div class="artifact">
+                  <strong>FP16 bmodel</strong>
+                  <code>BM1688/yolov11n_fp16_1b.bmodel</code>
+                </div>
+                <div class="artifact">
+                  <strong>INT8 bmodel</strong>
+                  <code>BM1688/yolov11n_int8_1b.bmodel</code>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section class="card" style="margin-bottom:14px;">
+            <h3>核心评估指标</h3>
+            <div class="metric-grid">
+              <div class="metric">
+                <label>PT mAP50</label>
+                <strong>0.6721</strong>
+              </div>
+              <div class="metric">
+                <label>ONNX mAP50</label>
+                <strong>0.6718</strong>
+              </div>
+              <div class="metric">
+                <label>INT8 mAP50</label>
+                <strong>0.6795</strong>
+              </div>
+              <div class="metric">
+                <label>INT8 相对 PT</label>
+                <strong>1.10%</strong>
+              </div>
+            </div>
+            <div class="detail-actions">
+              <span class="btn btn-primary">查看评估</span>
+              <span class="btn btn-ghost">执行步骤</span>
+              <span class="btn btn-ghost">重新编译</span>
+              <span class="btn btn-ghost">手动边端验证</span>
+              <span class="btn btn-ghost">下载 ONNX</span>
+              <span class="btn btn-ghost">下载 bmodel</span>
+            </div>
+          </section>
+        </div>
+      </section>
+    </section>
+
+    <section class="modal-section">
+      <h2>关键功能原型</h2>
+      <div class="modal-grid">
+        <section class="mock-modal">
+          <div class="mock-modal-head">
+            <h3>编译配置</h3>
+            <p>默认只展示常用配置，让业务用户看得懂；技术细节折叠到高级项里。</p>
+          </div>
+          <div class="mock-modal-body">
+            <div class="section-title">常用配置 <span class="badge info">默认展开</span></div>
+            <div class="form-grid" style="margin-bottom:14px;">
+              <div class="field">
+                <label>自动编译</label>
+                <div class="select">开启：导出 ONNX 后自动生成 bmodel</div>
+              </div>
+              <div class="field">
+                <label>编译模式</label>
+                <div class="select">full：生成 fp32 / fp16 / int8</div>
+              </div>
+              <div class="field">
+                <label>目标平台</label>
+                <div class="input">bm1688</div>
+              </div>
+              <div class="field">
+                <label>BModel 前缀</label>
+                <div class="input">yolov11n</div>
+              </div>
+              <div class="field span-2">
+                <label>边端 SSH</label>
+                <div class="chips-row">
+                  <span class="chip">已启用</span>
+                  <span class="chip">IP：10.10.11.26</span>
+                  <span class="chip">用户：linaro</span>
+                  <span class="chip">容器：bm1688</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-title">高级配置 <span class="badge neutral">折叠区</span></div>
+            <div class="form-grid">
+              <div class="field span-2">
+                <label>TPU_MLIR_ROOT</label>
+                <div class="input">/data/labeIU/tpu-mlir</div>
+              </div>
+              <div class="field">
+                <label>校准集</label>
+                <div class="input">自适应抽样（上限 128）</div>
+              </div>
+              <div class="field">
+                <label>qtable</label>
+                <div class="input">yolov11n_qtable</div>
+              </div>
+              <div class="field span-2">
+                <label>自定义编译命令</label>
+                <div class="textarea">留空，默认走系统内置编译脚本</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mock-modal">
+          <div class="mock-modal-head">
+            <h3>模型评估</h3>
+            <p>总览优先，先回答“过没过、差在哪、接下来做什么”，细表放到后面。</p>
+          </div>
+          <div class="mock-modal-body">
+            <div class="section-title">评估总览 <span class="badge good">本机 ONNX 与边端 INT8 均已通过</span></div>
+            <div class="metric-grid" style="margin-bottom:14px;">
+              <div class="metric">
+                <label>PT mAP50</label>
+                <strong>0.6721</strong>
+              </div>
+              <div class="metric">
+                <label>ONNX 相对 PT</label>
+                <strong>0.04%</strong>
+              </div>
+              <div class="metric">
+                <label>INT8 相对 PT</label>
+                <strong>1.10%</strong>
+              </div>
+              <div class="metric">
+                <label>阈值判定</label>
+                <strong>通过</strong>
+              </div>
+            </div>
+
+            <div class="section-title">下一步建议</div>
+            <div class="sample-box" style="min-height:auto; margin-bottom:14px;">
+              <div class="sample-item">
+                <div>
+                  <strong>建议 1：可进入发布评估</strong>
+                  <div style="color:var(--muted); margin-top:4px;">训练达标、边端设备已验证可运行、INT8 精度在阈值内，建议继续模型发布流转。</div>
+                </div>
+                <span class="badge good">通过</span>
+              </div>
+              <div class="sample-item">
+                <div>
+                  <strong>建议 2：关注小目标损失</strong>
+                  <div style="color:var(--muted); margin-top:4px;">虽然全局通过，但 tiny 档仍然较弱，适合在后续迭代补充校准图与小目标样本。</div>
+                </div>
+                <span class="badge warn">建议优化</span>
+              </div>
+            </div>
+
+            <div class="section-title">分类明细（节选）</div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>类别</th>
+                  <th>标签数</th>
+                  <th>PT AP50</th>
+                  <th>INT8 AP50</th>
+                  <th>AP50 Δ</th>
+                  <th>召回 Δ</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>garbage_street_scattered</td>
+                  <td>3639</td>
+                  <td>0.4808</td>
+                  <td>0.4768</td>
+                  <td>-0.0040</td>
+                  <td>+0.0074</td>
+                </tr>
+                <tr>
+                  <td>garbage_street_pack</td>
+                  <td>1779</td>
+                  <td>0.7380</td>
+                  <td>0.7439</td>
+                  <td>+0.0059</td>
+                  <td>+0.0219</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="mock-modal">
+          <div class="mock-modal-head">
+            <h3>手动边端验证</h3>
+            <p>让用户从系统内选择图片和模型一起验证，不要求一定有标注；有标注就做精度评估，无标注就做可运行性确认。</p>
+          </div>
+          <div class="mock-modal-body">
+            <div class="section-title">验证配置</div>
+            <div class="form-grid" style="margin-bottom:14px;">
+              <div class="field">
+                <label>验证模式</label>
+                <div class="chips-row">
+                  <span class="chip">运行验证 + 精度评估</span>
+                  <span class="chip">仅运行验证</span>
+                </div>
+              </div>
+              <div class="field">
+                <label>阈值来源</label>
+                <div class="chips-row">
+                  <span class="chip">系统默认</span>
+                  <span class="chip">AI 推荐</span>
+                  <span class="chip">AI 二次修正</span>
+                  <span class="chip">手动填写</span>
+                </div>
+              </div>
+              <div class="field">
+                <label>conf_thres</label>
+                <div class="input">0.35</div>
+              </div>
+              <div class="field">
+                <label>nms_thres</label>
+                <div class="input">0.70</div>
+              </div>
+              <div class="field span-2">
+                <label>AI 推荐说明</label>
+                <div class="textarea">本次样本以街面小目标为主，建议在保证误检可控的前提下，适度提高召回；推荐 conf_thres 0.31、nms_thres 0.69。</div>
+              </div>
+            </div>
+
+            <div class="section-title">已选样本</div>
+            <div class="sample-box">
+              <div class="sample-item">
+                <div>
+                  <strong>选择来源</strong>
+                  <div style="color:var(--muted); margin-top:4px;">任务内抽样 20 张 + 自定义勾选 5 张</div>
+                </div>
+                <span class="badge info">共 25 张</span>
+              </div>
+              <div class="sample-item">
+                <div>
+                  <strong>标注情况</strong>
+                  <div style="color:var(--muted); margin-top:4px;">有标注 18 张，无标注 7 张</div>
+                </div>
+                <span class="badge warn">混合验证</span>
+              </div>
+              <div class="sample-item">
+                <div>
+                  <strong>执行说明</strong>
+                  <div style="color:var(--muted); margin-top:4px;">有标注图片进入精度评估；无标注图片只校验边端可运行与推理输出。</div>
+                </div>
+                <span class="badge neutral">系统内选图</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="mock-modal">
+          <div class="mock-modal-head">
+            <h3>执行步骤</h3>
+            <p>不打印太细的日志，但要让用户知道现在做到哪一步、是否卡住、卡在谁那里。</p>
+          </div>
+          <div class="mock-modal-body">
+            <div class="steps-compact">
+              <div class="step-row">
+                <div class="timeline-index">1</div>
+                <div>
+                  <strong>导出 ONNX</strong>
+                  <small>从训练产物生成 ONNX，检查文件路径与命名规范。</small>
+                </div>
+                <span class="badge good">已完成</span>
+              </div>
+              <div class="step-row">
+                <div class="timeline-index">2</div>
+                <div>
+                  <strong>编译 bmodel</strong>
+                  <small>生成 fp32 / fp16 / int8 三类 bmodel，并校验产物结构。</small>
+                </div>
+                <span class="badge good">已完成</span>
+              </div>
+              <div class="step-row">
+                <div class="timeline-index">3</div>
+                <div>
+                  <strong>下发边端任务</strong>
+                  <small>打包模型与图片，传到边端工作目录，准备在容器内执行。</small>
+                </div>
+                <span class="badge good">已完成</span>
+              </div>
+              <div class="step-row">
+                <div class="timeline-index">4</div>
+                <div>
+                  <strong>边端运行验证</strong>
+                  <small>在板端容器内执行推理脚本，确认 bmodel 能跑，并生成结果文件。</small>
+                </div>
+                <span class="badge good">已完成</span>
+              </div>
+              <div class="step-row">
+                <div class="timeline-index">5</div>
+                <div>
+                  <strong>INT8 精度评估</strong>
+                  <small>将边端结果回传到平台，与 PT 基线进行相对比较并形成结论。</small>
+                </div>
+                <span class="badge good">通过</span>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+      <div class="footer-note">
+        这版静态页的设计目标不是“把更多字段塞进列表”，而是把当前页面所有功能拆成用户能理解的工作台结构。<br />
+        其中保留了你系统里现在的主要前端功能入口：发起导出、编译配置、模型评估、执行步骤、手动边端验证、重新编译、下载产物、发布前判断。
+      </div>
+    </section>
+
+    <section class="mobile-preview">
+      <h2 style="margin:0 0 12px; font-size:22px;">移动端参考</h2>
+      <div class="mobile-shell">
+        <div class="mobile-head">
+          <h3>BM1688 模型编译</h3>
+          <p>移动端不保留双栏，改成卡片列表 + 居中弹窗详情。</p>
+        </div>
+        <div class="mobile-body">
+          <div class="mobile-card">
+            <h4>待处理</h4>
+            <div class="badge warn">1 个待边端验证</div>
+            <div style="margin-top:8px; color:var(--muted); font-size:12px;">优先处理垃圾桶满溢 #73，编译完成但未下发边端。</div>
+          </div>
+          <div class="mobile-card">
+            <h4>垃圾暴露-训练筛选一致 #79</h4>
+            <div style="display:flex; flex-wrap:wrap; gap:8px; margin:8px 0 10px;">
+              <span class="badge info">编译完成</span>
+              <span class="badge info">结果已回传</span>
+              <span class="badge good">INT8 通过</span>
+            </div>
+            <div style="color:var(--muted); font-size:12px;">当前结论：可进入发布评估</div>
+          </div>
+          <div class="mobile-card">
+            <h4>居中弹窗预期</h4>
+            <div style="color:var(--muted); font-size:12px; line-height:1.7;">
+              点卡片后，居中弹窗展示阶段进度、核心指标、评估按钮和更多操作，不强迫用户横向滚动表格。
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

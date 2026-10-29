@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONTAINER_NAME="${LABELU_BM1688_CONTAINER:-bm1688}"
+EDGE_ROOT="${LABELU_EDGE_ROOT:-/data/labelu_edge}"
+INSTALL_ROOT="${LABELU_VALIDATOR_ROOT:-${EDGE_ROOT}/runtime/validator}"
+DEMO_ROOT="${LABELU_SOPHON_DEMO_ROOT:-${EDGE_ROOT}/runtime/sophon-demo/sample/YOLOv8_plus_det}"
+
+if [[ "${EUID}" -ne 0 ]]; then
+  if command -v sudo >/dev/null 2>&1; then
+    exec sudo --preserve-env=LABELU_BM1688_CONTAINER,LABELU_EDGE_ROOT,LABELU_VALIDATOR_ROOT,LABELU_SOPHON_DEMO_ROOT \
+      bash "$0" "$@"
+  fi
+  echo "ERROR: bmodel-validate requires root access to Docker." >&2
+  exit 2
+fi
+
+[[ "${EDGE_ROOT}" == /* && "${EDGE_ROOT}" != "/" && "${EDGE_ROOT}" != "/data" ]] \
+  || { echo "ERROR: LABELU_EDGE_ROOT must be a safe absolute directory." >&2; exit 2; }
+[[ ! -L "${EDGE_ROOT}" ]] \
+  || { echo "ERROR: LABELU_EDGE_ROOT must not be a symbolic link." >&2; exit 2; }
+root_real="$(readlink -m "${EDGE_ROOT}")"
+for managed_path in "${INSTALL_ROOT}" "${DEMO_ROOT}"; do
+  managed_real="$(readlink -m "${managed_path}")"
+  case "${managed_real}" in
+    "${root_real}"|"${root_real}"/*) ;;
+    *) echo "ERROR: path escapes LABELU_EDGE_ROOT: ${managed_path}" >&2; exit 2 ;;
+  esac
+done
+
+if [[ "$#" -ne 1 ]]; then
+  echo "Usage: bmodel-validate /data/labelu_edge/jobs/bmodel-validation-job.tar.gz" >&2
+  exit 2
+fi
+
+archive="$(readlink -f "$1")"
+[[ -f "${archive}" ]] || { echo "ERROR: job archive not found: $1" >&2; exit 2; }
+case "${archive}" in
+  "${root_real}"/*) ;;
+  *) echo "ERROR: job archive must be under ${EDGE_ROOT}." >&2; exit 2 ;;
+esac
+
+if tar -tzf "${archive}" | awk '/^\// || /(^|\/)\.\.($|\/)/ { bad=1 } END { exit bad ? 0 : 1 }'; then
+  echo "ERROR: unsafe path found in job archive." >&2
+  exit 2
+fi
+
+name="$(basename "${archive}" .tar.gz | tr -c 'A-Za-z0-9._-' '_')"
+stamp="$(date +%Y%m%d-%H%M%S)"
+job_root="${INSTALL_ROOT}/jobs/${name}-${stamp}"
+result_root="${INSTALL_ROOT}/results/${name}-${stamp}"
+mkdir -p "${job_root}" "${result_root}"
+tar -xzf "${archive}" -C "${job_root}" --no-same-owner
+
+job_dir="${job_root}/validation_job"
+[[ -f "${job_dir}/manifest.json" ]] || { echo "ERROR: validation_job/manifest.json is missing." >&2; exit 2; }
+[[ -d "${job_dir}/model" ]] || { echo "ERROR: validation_job/model is missing." >&2; exit 2; }
+[[ -d "${job_dir}/images" ]] || { echo "ERROR: validation_job/images is missing." >&2; exit 2; }
+
+classes="${job_dir}/model/classes.txt"
+set +e
+docker exec "${CONTAINER_NAME}" python3 "${INSTALL_ROOT}/app/validate.py" \
+  --model "${job_dir}/model" \
+  --images "${job_dir}/images" \
+  --classes "${classes}" \
+  --config "${INSTALL_ROOT}/app/config.json" \
+  --sophon-demo-root "${DEMO_ROOT}" \
+  --output "${result_root}/current"
+exit_code=$?
+set -e
+
+cp -f "${job_dir}/manifest.json" "${result_root}/manifest.json"
+tar -czf "${result_root}/validation-result.tar.gz" -C "${result_root}" \
+  --exclude validation-result.tar.gz .
+
+echo "Result directory: ${result_root}"
+echo "Result archive: ${result_root}/validation-result.tar.gz"
+exit "${exit_code}"
