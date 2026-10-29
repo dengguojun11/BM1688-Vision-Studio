@@ -1389,7 +1389,7 @@ async def create(
         existing_ai_annotations
         and not cmd.overwrite
         and _cached_contract_prompt_matches(
-            _annotation_meta(existing_ai_annotations[-1]), contract_prompt
+            _annotation_meta(existing_ai_annotations[-1].data), contract_prompt
         )
     ):
         latest_pre_annotation = existing_ai_annotations[-1]
