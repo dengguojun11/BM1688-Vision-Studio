@@ -98,3 +98,10 @@ Data directory is determined by `appdirs.user_data_dir("labelu")`.
   - Username: `admin@123.com`
   - Password: `Admin@123`
 - Use the default admin account above for post-deploy UI verification unless the user provides a different verification account.
+
+## Production Deployment Rules
+
+- Production deployment uses only the `18001` service and its related frontend/backend files. Do not deploy or verify through ports `8003`, `10000`, `10001`, or any other LabelU instance.
+- The production deployment root is `/data/7G_AI`; the `18001` backend is managed by the `7gai-web` supervisor service and uses the static assets served by that backend.
+- Every production deployment must restart both the frontend delivery and the backend service through the current `18001` deployment path. When frontend assets are changed, update the static directory actually served by `18001` before restarting `7gai-web`.
+- After every deployment, verify that the `18001` backend is running, the frontend assets are served from `18001`, and `/healthz` responds successfully before reporting deployment complete.
