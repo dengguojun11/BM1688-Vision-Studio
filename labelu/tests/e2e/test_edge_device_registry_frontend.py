@@ -141,6 +141,12 @@ def _route_training(route: Route) -> None:
     if api_path == "/users/me":
         _json_response(route, {"data": {"id": 1, "email": "admin@123.com"}})
         return
+    if api_path == "/yolo-bm1688-exports/edge-ssh-settings" and request.method == "GET":
+        _json_response(
+            route,
+            {"data": {"edge_root": "/data/7G_AI/edge"}},
+        )
+        return
     if api_path.startswith("/annotation-taxonomy/label-presets"):
         _json_response(route, {"data": [{"slug": "garbageStreet", "name": "垃圾暴露"}]})
         return
@@ -289,11 +295,35 @@ def _route_edge_device_registry(route: Route) -> None:
     if api_path == "/users/me":
         _json_response(route, {"data": {"id": 1, "email": "admin@123.com"}})
         return
+    if api_path == "/yolo-bm1688-exports/edge-ssh-settings" and request.method == "GET":
+        _json_response(
+            route,
+            {"data": {"edge_root": "/data/7G_AI/edge"}},
+        )
+        return
     if api_path == "/edge-devices/environment-check-all" and request.method == "POST":
         _json_response(
             route,
             {"data": {"active_device_id": "edge_box_1", "devices": []}},
             status=202,
+        )
+        return
+    if api_path == "/edge-devices" and request.method == "POST":
+        payload = json.loads(request.post_data or "{}")
+        assert payload.get("edge_root") == "/data/7G_AI/edge"
+        assert "/data/labelu_edge" not in json.dumps(payload, ensure_ascii=False)
+        _json_response(
+            route,
+            {
+                "data": {
+                    "id": "edge_new",
+                    "name": payload.get("name") or "新增设备",
+                    "validation_channel": payload.get("validation_channel") or "ssh",
+                    "agent_bootstrap_control_plane_enabled": False,
+                    "agent_bootstrap_status": "NOT_STARTED",
+                }
+            },
+            status=201,
         )
         return
     if api_path == "/edge-devices":
@@ -414,7 +444,11 @@ def _route_edge_device_registry(route: Route) -> None:
 
 def _route_training_and_edge_registry(route: Route) -> None:
     path = urlparse(route.request.url).path
-    if path == "/edge-device-registry" or path.startswith(f"{API_PREFIX}/edge-devices"):
+    if (
+        path == "/edge-device-registry"
+        or path.startswith(f"{API_PREFIX}/edge-devices")
+        or path == f"{API_PREFIX}/yolo-bm1688-exports/edge-ssh-settings"
+    ):
         _route_edge_device_registry(route)
         return
     _route_training(route)
@@ -531,6 +565,7 @@ def test_edge_device_registry_page_renders_active_device_summary():
         expect(page.locator("#editorTitle")).to_have_text("新增设备")
         expect(page.locator("#editorModalBackdrop")).to_have_class("modal-backdrop show")
         expect(page.locator("#fieldPassword")).to_have_value("")
+        expect(page.locator("#fieldEdgeRoot")).to_have_value("/data/7G_AI/edge")
 
         assert page.evaluate(
             "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
@@ -551,6 +586,28 @@ def test_edge_device_registry_page_stays_put_when_token_is_missing():
         expect(page.locator("#authBox")).to_contain_text("当前未登录")
         expect(page.locator("h1")).to_have_text("边端设备配置")
 
+        browser.close()
+
+
+def test_edge_device_registry_create_submits_server_canonical_root():
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1600, "height": 1200})
+        page.add_init_script("localStorage.setItem('token', 'Bearer mock-token');")
+        page.route("**/*", _route_edge_device_registry)
+        page.goto(EDGE_DEVICE_REGISTRY_PAGE_URL)
+
+        expect(page.locator("#fieldEdgeRoot")).to_have_value(
+            "/data/7G_AI/edge", timeout=15_000
+        )
+        page.locator("#btnCreate").click()
+        page.locator("#fieldName").fill("新增边端测试设备")
+        page.locator("#fieldHost").fill("10.1.1.147")
+        page.locator("#fieldPassword").fill("test-password")
+        expect(page.locator("#fieldEdgeRoot")).to_have_value("/data/7G_AI/edge")
+        page.locator("#btnSave").click()
+
+        expect(page.locator("#editorModalBackdrop")).not_to_have_class("show", timeout=15_000)
         browser.close()
 
 

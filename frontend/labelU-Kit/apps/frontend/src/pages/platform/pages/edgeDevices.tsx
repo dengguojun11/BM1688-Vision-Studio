@@ -108,6 +108,10 @@ type EdgeDeviceList = {
   size?: number;
 };
 
+type EdgeRuntimeSettings = {
+  edge_root?: string;
+};
+
 type EdgeDeviceFormValues = {
   name?: string;
   validation_channel: ValidationChannel;
@@ -560,6 +564,14 @@ export default function EdgeDevicesPanel() {
   const [form] = Form.useForm<EdgeDeviceFormValues>();
   const validationChannel = Form.useWatch('validation_channel', form) || 'ssh';
 
+  const edgeRuntimeSettingsQuery = useQuery<EdgeRuntimeSettings>({
+    queryKey: ['edge-runtime-settings'],
+    queryFn: async () => (await request.get('/v1/yolo-bm1688-exports/edge-ssh-settings')).data,
+    staleTime: 60_000,
+    retry: 1,
+  });
+  const canonicalEdgeRoot = edgeRuntimeSettingsQuery.data?.edge_root?.trim() || '';
+
   const devicesQuery = useQuery<EdgeDeviceList>({
     queryKey: ['edge-devices', page, pageSize, keyword, statusFilter],
     queryFn: async () =>
@@ -614,9 +626,12 @@ export default function EdgeDevicesPanel() {
         name: values.name?.trim() || null,
         host: values.host?.trim() || '',
         user: values.user?.trim() || 'linaro',
-        edge_root: values.edge_root?.trim() || '/data/labelu_edge',
         docker_container: values.docker_container?.trim() || 'bm1688',
       } as Record<string, unknown>;
+      // The server owns the canonical remote root.  Never send the legacy
+      // UI fallback, which can differ from EDGE_REMOTE_ROOT in production.
+      if (canonicalEdgeRoot) body.edge_root = canonicalEdgeRoot;
+      else delete body.edge_root;
       body.auto_configure_agent = shouldAutoConfigureAgent(values, editingDevice);
       if (editingDevice) {
         body.password_secret_action = values.password ? 'set' : 'keep';
@@ -736,7 +751,7 @@ export default function EdgeDevicesPanel() {
       password: '',
       private_key_path: '',
       clear_private_key_path: false,
-      edge_root: current?.edge_root || '/data/labelu_edge',
+      edge_root: canonicalEdgeRoot || current?.edge_root || '',
       docker_container: current?.docker_container || 'bm1688',
       connect_timeout_sec: current?.connect_timeout_sec || 30,
       validation_timeout_sec: current?.validation_timeout_sec || 7200,
@@ -748,6 +763,11 @@ export default function EdgeDevicesPanel() {
     setDetailDevice(null);
     setEditorOpen(true);
   };
+
+  useEffect(() => {
+    if (!editorOpen || !canonicalEdgeRoot) return;
+    form.setFieldValue('edge_root', canonicalEdgeRoot);
+  }, [canonicalEdgeRoot, editorOpen, form]);
 
   const columns: ColumnsType<EdgeDevice> = [
     {
@@ -1255,7 +1275,7 @@ export default function EdgeDevicesPanel() {
             </div>
             <Descriptions title="运行设置" bordered size="small" column={{ xs: 1, sm: 2 }}>
               <Descriptions.Item label="边端工作目录" span={2}>
-                {detailDevice.edge_root || '/data/labelu_edge'}
+                {detailDevice.edge_root || canonicalEdgeRoot || '由服务端配置'}
               </Descriptions.Item>
               <Descriptions.Item label="运行容器">{detailDevice.docker_container || '宿主机'}</Descriptions.Item>
               <Descriptions.Item label="导出后自动检查">
@@ -1379,7 +1399,7 @@ export default function EdgeDevicesPanel() {
           <Typography.Title level={5}>运行设置</Typography.Title>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', columnGap: 16 }}>
             <Form.Item name="edge_root" label="边端工作目录">
-              <Input disabled />
+              <Input disabled placeholder="由服务端配置" />
             </Form.Item>
             <Form.Item name="docker_container" label="运行容器名称">
               <Input placeholder="留空表示在宿主机运行" />

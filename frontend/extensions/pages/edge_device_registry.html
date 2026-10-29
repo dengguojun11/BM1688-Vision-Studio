@@ -241,7 +241,7 @@
 
         <details class="advanced"><summary>高级设置</summary><div class="advanced-body">
           <div class="form-grid">
-            <div class="field full"><label for="fieldEdgeRoot">边端根目录</label><input id="fieldEdgeRoot" maxlength="1024" value="/data/labelu_edge" readonly /></div>
+            <div class="field full"><label for="fieldEdgeRoot">边端根目录</label><input id="fieldEdgeRoot" maxlength="1024" value="" placeholder="读取服务端配置" readonly /></div>
             <div class="field"><label for="fieldDockerContainer">Docker 容器</label><input id="fieldDockerContainer" maxlength="128" /></div>
             <div class="field"><label for="fieldConnectTimeoutSec">连接超时（秒）</label><input id="fieldConnectTimeoutSec" type="number" min="1" max="3600" /></div>
             <div class="field"><label for="fieldValidationTimeoutSec">验证超时（秒）</label><input id="fieldValidationTimeoutSec" type="number" min="1" max="86400" /></div>
@@ -270,7 +270,7 @@
 
   <script>
   (function () {
-    var state = { devices:[], activeDeviceId:"", configBackendLabel:"", editingId:"", detailId:"", deletingId:"", environmentTimer:null };
+    var state = { devices:[], activeDeviceId:"", configBackendLabel:"", edgeRoot:"", editingId:"", detailId:"", deletingId:"", environmentTimer:null };
     function authToken() {
       if (window.LabeluPortal && window.LabeluPortal.getAuthToken) return window.LabeluPortal.getAuthToken();
       var raw=String(localStorage.getItem("token")||"").trim(); if(!raw)return ""; if(/^bearer\s+/i.test(raw))return raw; return raw.indexOf("eyJ")===0?"Bearer "+raw:raw;
@@ -418,7 +418,7 @@
       document.getElementById("detailReadinessTitle").textContent=item.is_busy?"设备正在执行边端任务":bootstrapDetailTitle||(isDispatchable(item)?"设备可调度":"设备未就绪");
       document.getElementById("detailReadinessReason").textContent=readinessReason(item);
       document.getElementById("detailConnection").innerHTML=detailItem("验证通道",validationChannelLabel(item))+detailItem("连接状态",connectionStatusLabel(item))+detailItem("IP / 主机",usesBoardAgent(item)?"不适用":item.host)+detailItem("SSH 端口",usesBoardAgent(item)?"不适用":String(item.port||22))+detailItem("SSH 账号",usesBoardAgent(item)?"不适用":item.user)+detailItem("密码存储",usesBoardAgent(item)?"不适用（板端主动拉取）":(item.password_configured?"MySQL 加密存储":"尚未保存"))+detailItem("凭据状态",usesBoardAgent(item)?"不适用":(passwordReady(item)?"可用":"不可用"))+detailItem("密码掩码",usesBoardAgent(item)?"不适用":(item.password_masked_hint||"—"));
-      document.getElementById("detailRuntime").innerHTML=detailItem("边端根目录",item.edge_root||"/data/labelu_edge",true)+detailItem("任务目录",item.remote_base,true)+detailItem("Sophon Demo",item.sophon_demo_root,true)+detailItem("Docker 容器",item.docker_container||"宿主机")+detailItem("Docker sudo",item.docker_use_sudo?"开启":"关闭")+detailItem("连接超时",String(item.connect_timeout_sec||30)+" 秒")+detailItem("验证超时",String(item.validation_timeout_sec||7200)+" 秒")+detailItem("自动验证",item.auto_after_export?"开启":"关闭")+detailItem("COCO Eval",item.run_coco_eval?"开启":"关闭");
+      document.getElementById("detailRuntime").innerHTML=detailItem("边端根目录",item.edge_root||state.edgeRoot||"由服务端配置",true)+detailItem("任务目录",item.remote_base,true)+detailItem("Sophon Demo",item.sophon_demo_root,true)+detailItem("Docker 容器",item.docker_container||"宿主机")+detailItem("Docker sudo",item.docker_use_sudo?"开启":"关闭")+detailItem("连接超时",String(item.connect_timeout_sec||30)+" 秒")+detailItem("验证超时",String(item.validation_timeout_sec||7200)+" 秒")+detailItem("自动验证",item.auto_after_export?"开启":"关闭")+detailItem("COCO Eval",item.run_coco_eval?"开启":"关闭");
       document.getElementById("detailAudit").innerHTML=detailItem("最近探测",usesBoardAgent(item)?"板端心跳":"SSH "+formatDate(item.last_probe_checked_at||item.probe_checked_at))+detailItem("最近心跳",usesBoardAgent(item)?formatDate(item.board_agent_last_heartbeat_at):"不适用")+detailItem("板端状态",usesBoardAgent(item)?boardAgentStatusText(item)+" · "+(item.board_agent_message||"无状态消息"):"不适用")+detailItem("最近验证",formatDate(item.last_validation_at))+detailItem("最近使用",formatDate(item.last_used_at))+detailItem("环境检查",usesBoardAgent(item)?(environmentReady(item)?"板端已上报就绪":"等待板端上报"):formatDate(item.environment_checked_at))+detailItem("创建时间",formatDate(item.created_at))+detailItem("更新时间",formatDate(item.updated_at));
       document.getElementById("metaPassword").textContent=item.password_configured?"已加密保存":"尚未保存";document.getElementById("metaEnvironment").textContent=item.environment_message||"未检查";
       renderEnvironmentChecks(item);
@@ -439,7 +439,7 @@
       document.getElementById("fieldUser").value=item?(item.user||"linaro"):"linaro";
       document.getElementById("fieldPassword").value="";
       document.getElementById("passwordHelp").textContent=item?"留空保留当前密码；输入后替换为新密码。保存后会自动触发 Agent 引导。":"密码将加密存入 MySQL，保存后会自动触发 Agent 引导。";
-      document.getElementById("fieldEdgeRoot").value=item?(item.edge_root||"/data/labelu_edge"):"/data/labelu_edge";
+      document.getElementById("fieldEdgeRoot").value=state.edgeRoot||((item&&item.edge_root)||"");
       document.getElementById("fieldDockerContainer").value=item?(item.docker_container||"bm1688"):"bm1688";
       document.getElementById("fieldConnectTimeoutSec").value=item?(item.connect_timeout_sec||30):30;
       document.getElementById("fieldValidationTimeoutSec").value=item?(item.validation_timeout_sec||7200):7200;
@@ -503,7 +503,8 @@
       return{text:prefix+"，Agent 自动配置未启用："+controlPlaneMessage(saved),kind:"err"};
     }
     function collectPayload(){
-      var password=document.getElementById("fieldPassword").value,channel=document.getElementById("fieldValidationChannel").value,body={name:document.getElementById("fieldName").value.trim()||null,validation_channel:channel,host:document.getElementById("fieldHost").value.trim(),port:Number(document.getElementById("fieldPort").value||22),user:document.getElementById("fieldUser").value.trim(),edge_root:document.getElementById("fieldEdgeRoot").value.trim(),auto_after_export:document.getElementById("fieldAutoAfterExport").checked,run_coco_eval:document.getElementById("fieldRunCocoEval").checked,connect_timeout_sec:Number(document.getElementById("fieldConnectTimeoutSec").value||30),validation_timeout_sec:Number(document.getElementById("fieldValidationTimeoutSec").value||7200),docker_container:document.getElementById("fieldDockerContainer").value.trim(),docker_use_sudo:document.getElementById("fieldDockerUseSudo").checked,enabled:document.getElementById("fieldEnabled").checked};
+      var password=document.getElementById("fieldPassword").value,channel=document.getElementById("fieldValidationChannel").value,body={name:document.getElementById("fieldName").value.trim()||null,validation_channel:channel,host:document.getElementById("fieldHost").value.trim(),port:Number(document.getElementById("fieldPort").value||22),user:document.getElementById("fieldUser").value.trim(),auto_after_export:document.getElementById("fieldAutoAfterExport").checked,run_coco_eval:document.getElementById("fieldRunCocoEval").checked,connect_timeout_sec:Number(document.getElementById("fieldConnectTimeoutSec").value||30),validation_timeout_sec:Number(document.getElementById("fieldValidationTimeoutSec").value||7200),docker_container:document.getElementById("fieldDockerContainer").value.trim(),docker_use_sudo:document.getElementById("fieldDockerUseSudo").checked,enabled:document.getElementById("fieldEnabled").checked};
+      if(state.edgeRoot)body.edge_root=state.edgeRoot;
       if(state.editingId){body.password_secret_action=password?"set":"keep";if(password)body.password=password;}else{body.password=password;body.set_active=state.devices.length===0;}return body;
     }
     async function saveDevice(){
@@ -522,6 +523,17 @@
     function deviceNeedsPolling(item){if(!item)return false;var status=String(item.environment_status||"unknown");if(["checking","installing","cleaning"].indexOf(status)>=0||bootstrapInProgress(item))return true;return usesBoardAgent(item)&&bootstrapStatus(item)!=="FAILED";}
     function devicePollingDelay(){return state.devices.some(function(item){var status=String(item&&item.environment_status||"unknown");return ["checking","installing","cleaning"].indexOf(status)>=0||bootstrapInProgress(item);})?3000:30000;}
     function watchEnvironment(id){if(state.environmentTimer)clearTimeout(state.environmentTimer);var attempts=0;async function tick(){attempts+=1;await loadDevices();var current=deviceById(id);if(document.getElementById("detailModalBackdrop").classList.contains("show")&&current)openDetail(id);if(state.devices.some(deviceNeedsPolling)&&attempts<600)state.environmentTimer=setTimeout(function(){tick().catch(handleError);},devicePollingDelay());else state.environmentTimer=null;}tick().catch(handleError);}
+    async function loadEdgeRuntimeSettings(){
+      try{
+        var data=await api("/yolo-bm1688-exports/edge-ssh-settings"),root=String(data&&data.edge_root||"").trim();
+        if(!root)return;
+        state.edgeRoot=root;
+        document.getElementById("fieldEdgeRoot").value=root;
+      }catch(_){
+        // Older servers may not expose the compatibility settings endpoint;
+        // leave edge_root absent so the create API can derive its own root.
+      }
+    }
     async function loadDevices(){if(!syncAuthState())return;var data=await api("/edge-devices");state.devices=data.devices||[];state.activeDeviceId=data.active_device_id||"";state.configBackendLabel=data.config_backend_label||"";renderSummary();renderTable();}
     function handleError(error){toast(error&&error.message||"操作失败","err");}
 
@@ -539,9 +551,9 @@
     document.getElementById("btnCloseEditor").onclick=closeEditor;document.getElementById("btnCancelEditor").onclick=closeEditor;document.getElementById("editorModalBackdrop").onclick=function(event){if(event.target.id==="editorModalBackdrop")closeEditor();};
     document.getElementById("btnSave").onclick=function(){saveDevice().catch(handleError);};
     document.getElementById("btnCloseDelete").onclick=closeDelete;document.getElementById("btnCancelDelete").onclick=closeDelete;document.getElementById("deleteModalBackdrop").onclick=function(event){if(event.target.id==="deleteModalBackdrop")closeDelete();};document.getElementById("btnDelete").onclick=function(){deleteDevice().catch(handleError);};
-    document.getElementById("btnSaveToken").onclick=function(){var token=document.getElementById("tokenInput").value.trim();if(window.LabeluPortal&&window.LabeluPortal.setAuthToken)window.LabeluPortal.setAuthToken(token);else localStorage.setItem("token",token);loadDevices().catch(handleError);};
-    window.addEventListener("labelu-token-changed",function(){if(authToken())loadDevices().catch(handleError);});
-    function start(){syncAuthState();if(authToken())loadDevices().then(function(){var pending=state.devices.find(deviceNeedsPolling);if(pending)watchEnvironment(pending.id);}).catch(handleError);}
+    document.getElementById("btnSaveToken").onclick=function(){var token=document.getElementById("tokenInput").value.trim();if(window.LabeluPortal&&window.LabeluPortal.setAuthToken)window.LabeluPortal.setAuthToken(token);else localStorage.setItem("token",token);if(authToken())Promise.all([loadEdgeRuntimeSettings(),loadDevices()]).catch(handleError);};
+    window.addEventListener("labelu-token-changed",function(){if(authToken())Promise.all([loadEdgeRuntimeSettings(),loadDevices()]).catch(handleError);});
+    function start(){syncAuthState();if(authToken())Promise.all([loadEdgeRuntimeSettings(),loadDevices()]).then(function(){var pending=state.devices.find(deviceNeedsPolling);if(pending)watchEnvironment(pending.id);}).catch(handleError);}
     if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else setTimeout(start,0);
   })();
   </script>
