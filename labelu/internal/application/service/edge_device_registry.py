@@ -56,6 +56,12 @@ _AUTO_AGENT_RETRYABLE_CODES = frozenset(
     {
         "device_mutation_lock_unavailable",
         "bootstrap_state_persist_failed",
+        # These failures are produced before any remote work starts when the
+        # production control-plane contract is not loaded yet.  Once the
+        # operator supplies the static configuration and the process restarts,
+        # startup recovery can safely resume the persisted enrollment.
+        "production_env_required",
+        "control_plane_disabled",
     }
 )
 # Keep the SSH read-model liveness window identical to the scheduler.  A
@@ -391,9 +397,10 @@ def _auto_agent_bootstrap_retryable(record: dict | None) -> bool:
     """Return whether startup may retry automatic enrollment for this record.
 
     A missing marker is the normal state immediately after a device is saved.
-    Only explicit coordination/persistence failures are retryable once a
-    lifecycle run has reached ``FAILED``; authentication, artifact, and remote
-    configuration failures remain operator-actionable terminal states.
+    Coordination/persistence failures and control-plane configuration gates
+    are retryable once a lifecycle run has reached ``FAILED``.  Authentication,
+    artifact, and remote configuration failures remain operator-actionable
+    terminal states.
     """
 
     status = _agent_bootstrap_status(record)

@@ -1052,6 +1052,28 @@ def test_startup_recovery_requeues_not_started_automatic_agent(monkeypatch):
     start.assert_called_once_with(record["id"])
 
 
+@pytest.mark.parametrize("code", ["production_env_required", "control_plane_disabled"])
+def test_startup_recovery_requeues_control_plane_gate_failure(monkeypatch, code):
+    record = {
+        "id": "edge_recover_control_plane",
+        "enabled": True,
+        "validation_channel": "ssh",
+        "host": "192.168.1.20",
+        "user": "linaro",
+        "password_encrypted": "configured",
+        "agent_bootstrap": {"status": "FAILED", "code": code},
+    }
+    monkeypatch.setattr(mod, "_agent_bootstrap_control_plane_enabled", lambda: True)
+    monkeypatch.setattr(mod.registry_io, "list_device_records", lambda: [record])
+    monkeypatch.setattr(mod, "_active_processing_job_id", lambda _id: None)
+    start = Mock(return_value=True)
+    monkeypatch.setattr(mod, "_start_auto_agent_bootstrap", start)
+    monkeypatch.setattr(mod, "_auto_agent_bootstrap_enabled", lambda _record: True)
+
+    assert mod.recover_persisted_agent_bootstraps() == 1
+    start.assert_called_once_with(record["id"])
+
+
 def test_startup_recovery_does_not_retry_terminal_agent_validation_failure(monkeypatch):
     record = {
         "id": "edge_recover_terminal",
