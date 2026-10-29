@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 from datetime import datetime, timezone
 from typing import Any
@@ -2085,12 +2086,18 @@ def schedule_system_environment_checks() -> None:
         if _SYSTEM_ENVIRONMENT_BOOTSTRAP_STARTED:
             return
         _SYSTEM_ENVIRONMENT_BOOTSTRAP_STARTED = True
+    disable_background_watchdogs = (
+        os.environ.get("LABELU_DISABLE_BACKGROUND_WATCHDOGS", "")
+        .strip()
+        .lower()
+        in {"1", "true", "yes", "on"}
+    )
 
     def _bootstrap() -> None:
         try:
             resumed = recover_persisted_agent_bootstraps()
             queued = 0
-            if settings.YOLO_TRAIN_ENABLED:
+            if settings.YOLO_TRAIN_ENABLED and not disable_background_watchdogs:
                 queued = scan_and_start_configured_environment_checks(
                     provision=True,
                     only_pending=False,

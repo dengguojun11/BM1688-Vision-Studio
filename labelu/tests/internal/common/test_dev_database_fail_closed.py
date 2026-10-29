@@ -80,10 +80,10 @@ def test_explicit_dev_database_url_overrides_inherited_url(tmp_path):
     assert local.DATABASE_URL == "sqlite:///./dev.sqlite"
 
 
-def test_asgi_lifespan_schedules_agent_recovery_when_yolo_is_disabled(
+def test_asgi_lifespan_schedules_agent_recovery_when_yolo_and_watchdogs_are_disabled(
     monkeypatch, restore_dev_database_settings
 ):
-    """The resident Agent control plane must start independently of YOLO."""
+    """The resident Agent control plane must start independently of watchdogs."""
 
     main_module = importlib.import_module("labelu.main")
     production_security = importlib.import_module(
@@ -106,7 +106,7 @@ def test_asgi_lifespan_schedules_agent_recovery_when_yolo_is_disabled(
     monkeypatch.setattr(settings, "DATABASE_URL", "sqlite:///./lifespan-agent.db")
     monkeypatch.setattr(settings, "YOLO_TRAIN_ENABLED", False)
     monkeypatch.setattr(settings, "EXPERIMENT_DATASET_DEDICATED_WORKER_ENABLED", False)
-    monkeypatch.setenv("LABELU_DISABLE_BACKGROUND_WATCHDOGS", "false")
+    monkeypatch.setenv("LABELU_DISABLE_BACKGROUND_WATCHDOGS", "true")
     calls = []
 
     class _Session:

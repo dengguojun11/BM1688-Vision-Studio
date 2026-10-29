@@ -1255,6 +1255,7 @@ def test_environment_scan_skips_agent_owned_devices(monkeypatch):
 
 def test_startup_recovery_precedes_legacy_scan(monkeypatch):
     order = []
+    monkeypatch.delenv("LABELU_DISABLE_BACKGROUND_WATCHDOGS", raising=False)
     monkeypatch.setattr(mod.settings, "YOLO_TRAIN_ENABLED", True)
     monkeypatch.setattr(mod.settings, "EDGE_AGENT_AUTO_BOOTSTRAP_ENABLED", True)
     monkeypatch.setattr(mod.settings, "BOARD_AGENT_ENABLED", True)
@@ -1298,6 +1299,38 @@ def test_startup_recovery_runs_when_yolo_scan_is_disabled(monkeypatch):
         mod,
         "recover_persisted_agent_bootstraps",
         lambda: calls.append("recover") or 2,
+    )
+    scan = Mock()
+    monkeypatch.setattr(mod, "scan_and_start_configured_environment_checks", scan)
+
+    class _Thread:
+        def __init__(self, *, target, **_kwargs):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+    monkeypatch.setattr(mod.threading, "Thread", _Thread)
+
+    mod.schedule_system_environment_checks()
+
+    assert calls == ["recover"]
+    scan.assert_not_called()
+
+
+def test_startup_recovery_runs_when_background_watchdogs_are_disabled(monkeypatch):
+    calls = []
+    monkeypatch.setenv("LABELU_DISABLE_BACKGROUND_WATCHDOGS", "true")
+    monkeypatch.setattr(mod.settings, "YOLO_TRAIN_ENABLED", True)
+    monkeypatch.setattr(mod.settings, "EDGE_AGENT_AUTO_BOOTSTRAP_ENABLED", True)
+    monkeypatch.setattr(mod.settings, "BOARD_AGENT_ENABLED", True)
+    monkeypatch.setattr(mod.settings, "BOARD_AGENT_PRIMARY_ENABLED", True)
+    monkeypatch.setattr(mod.settings, "BOARD_AGENT_TOKEN", "token")
+    monkeypatch.setattr(mod, "_SYSTEM_ENVIRONMENT_BOOTSTRAP_STARTED", False)
+    monkeypatch.setattr(
+        mod,
+        "recover_persisted_agent_bootstraps",
+        lambda: calls.append("recover") or 1,
     )
     scan = Mock()
     monkeypatch.setattr(mod, "scan_and_start_configured_environment_checks", scan)

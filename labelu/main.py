@@ -172,15 +172,15 @@ async def lifespan(app):
     finally:
         db.close()
     # Board Agent enrollment/recovery is an edge control-plane concern and
-    # must not depend on the legacy YOLO training switch.  The scheduler
-    # itself keeps the compatibility SSH environment scan gated by YOLO, so
-    # this call is safe when training is disabled.
-    if not disable_background_watchdogs:
-        from labelu.internal.application.service.edge_device_registry import (
-            schedule_system_environment_checks,
-        )
+    # must not depend on the legacy watchdog switch or YOLO training.  The
+    # registry scheduler keeps the compatibility SSH environment scan gated by
+    # both YOLO and LABELU_DISABLE_BACKGROUND_WATCHDOGS, so recovery remains
+    # active even in production deployments that disable legacy watchdogs.
+    from labelu.internal.application.service.edge_device_registry import (
+        schedule_system_environment_checks,
+    )
 
-        schedule_system_environment_checks()
+    schedule_system_environment_checks()
     if settings.YOLO_TRAIN_ENABLED and not disable_background_watchdogs:
         from labelu.internal.application.service.yolo_train import (
             prepare_cuda_env_for_yolo_train,
