@@ -306,6 +306,7 @@ type AicmPublishJob = {
 type ExternalImportedModel = {
   id: number;
   display_name?: string | null;
+  registered_display_name?: string | null;
   category?: string | null;
   original_filename?: string | null;
   file_size?: number | null;
@@ -314,6 +315,12 @@ type ExternalImportedModel = {
   can_delete?: boolean;
   registered_model_count?: number;
 };
+
+function externalImportedModelDisplayName(
+  model: Pick<ExternalImportedModel, 'id' | 'display_name' | 'registered_display_name' | 'original_filename'>,
+) {
+  return model.registered_display_name || model.display_name || model.original_filename || `模型 #${model.id}`;
+}
 
 type Bm1688ExportRow = {
   id: number;
@@ -1621,14 +1628,15 @@ function ExternalModelImportModal({
     onError: (error) => message.error(error instanceof Error ? error.message : '权重上传失败，请检查文件格式和大小'),
   });
   const mutation = useMutation({
-    mutationFn: async (values: Record<string, unknown>) =>
-      request.post('/v1/models/import', {
-        ...values,
+    mutationFn: async (values: Record<string, unknown>) => {
+      const payload = {
         imported_model_id: Number(values.imported_model_id),
         algorithm_id: Number(values.algorithm_id),
         dataset_id: Number(values.dataset_id),
         display_name: String(values.display_name || '').trim() || undefined,
-      }),
+      };
+      return request.post('/v1/models/import', payload);
+    },
     onSuccess: () => {
       message.success('外部模型已登记到模型仓库');
       form.resetFields();
@@ -1766,7 +1774,7 @@ function ExternalModelImportModal({
             countLabel="外部权重"
             options={importedModels.map((item) => ({
               value: item.id,
-              label: `${item.display_name || item.original_filename || `模型 #${item.id}`} · #${item.id}`,
+              label: `${externalImportedModelDisplayName(item)} · #${item.id}`,
             }))}
             onSelectionChange={(id) =>
               setSelectedImportedModel(importedModels.find((item) => Number(item.id) === Number(id)) || null)
@@ -1896,14 +1904,6 @@ function ExternalModelImportModal({
         <Form.Item name="display_name" label="模型显示名称">
           <Input maxLength={256} placeholder="留空则使用外部权重名称" />
         </Form.Item>
-        <Space style={{ display: 'flex' }} size={12}>
-          <Form.Item name="chip_type" label="目标芯片" style={{ flex: 1 }}>
-            <Input placeholder="例如 BM1688" />
-          </Form.Item>
-          <Form.Item name="precision" label="精度" style={{ flex: 1 }}>
-            <Select allowClear options={['fp32', 'fp16', 'int8'].map((value) => ({ value }))} />
-          </Form.Item>
-        </Space>
       </Form>
     </Modal>
   );
@@ -3562,10 +3562,10 @@ export default function ModelsPage() {
       content:
         Number(row.registered_model_count || 0) > 0
           ? `“${
-              row.display_name || row.original_filename || `模型 #${row.id}`
+              externalImportedModelDisplayName(row)
             }”已登记到模型仓库。删除后将从外部导入列表移除，模型仓库中的版本和权重制品会保留。`
           : `确认删除“${
-              row.display_name || row.original_filename || `模型 #${row.id}`
+              externalImportedModelDisplayName(row)
             }”吗？外部导入记录和服务器权重文件都会删除，且无法恢复。`,
       onOk: async () => {
         try {
@@ -3880,7 +3880,7 @@ export default function ModelsPage() {
                   key: 'display_name',
                   width: 220,
                   ellipsis: true,
-                  render: (_, row) => row.display_name || row.original_filename || `模型 #${row.id}`,
+                  render: (_, row) => externalImportedModelDisplayName(row),
                 },
                 { title: '原始文件', dataIndex: 'original_filename', key: 'original_filename', width: 220, ellipsis: true },
                 { title: '文件大小', dataIndex: 'file_size', key: 'file_size', width: 100, render: formatFileSize },

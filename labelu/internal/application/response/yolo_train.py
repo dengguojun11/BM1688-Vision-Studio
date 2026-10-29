@@ -713,6 +713,10 @@ class YoloImportedModelRowResponse(BaseModel):
 
     id: int
     display_name: Optional[str] = None
+    registered_display_name: Optional[str] = Field(
+        default=None,
+        description="最近一次登记到模型仓库时填写的模型显示名称",
+    )
     category: Optional[str] = None
     original_filename: Optional[str] = None
     file_size: Optional[int] = None

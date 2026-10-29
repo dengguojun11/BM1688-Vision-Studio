@@ -705,8 +705,17 @@ def test_external_model_registration_has_no_project_field(
     imported_row = next(
         row for row in imported_list.json()["data"] if row["id"] == imported_id
     )
+    assert imported_row["display_name"] == "外部基线"
+    assert imported_row["registered_display_name"] == "外部基线登记版本"
     assert imported_row["can_delete"] is True
     assert imported_row["registered_model_count"] == 1
+    registered_search = client.get(
+        "/api/v1/yolo-imported-models",
+        params={"q": "外部基线登记版本"},
+        headers=testuser_token_headers,
+    )
+    assert registered_search.status_code == 200, registered_search.text
+    assert [row["id"] for row in registered_search.json()["data"]] == [imported_id]
 
     deleted = client.delete(
         f"/api/v1/yolo-imported-models/{imported_id}",

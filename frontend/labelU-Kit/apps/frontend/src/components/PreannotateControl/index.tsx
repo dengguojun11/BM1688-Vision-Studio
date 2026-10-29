@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Checkbox, InputNumber, Modal, Progress, Select, Typography } from 'antd';
+import { Button, Checkbox, InputNumber, Modal, Progress, Select, Typography } from 'antd';
 
-import type { PreannotateJobResponse, YoloPreannotateModelResponse } from '@/api/types';
+import type { PreannotateJobResponse } from '@/api/types';
 import type { PreannotationCapabilityItem } from '@/api/types';
 import { getPreannotationCapabilities } from '@/api/services/samples';
 import {
   AI_DETECTION_DEFAULT_CONF,
-  aiDetectionImageSize,
   getDefaultIncludeDoneSamples,
   usePreannotateJob,
 } from '@/hooks/usePreannotateJob';
@@ -84,26 +83,9 @@ export default function PreannotateControl({
   }, [mode, type]);
 
   const requiresModelSelection = type === 'yolo' || type === 'tagtool';
-  const aiYoloModel = type === 'ai_detection' ? selectedModel as YoloPreannotateModelResponse | undefined : undefined;
-  const missingDetectionLabels = aiYoloModel?.missing_task_labels || [];
-
   const providerSummary = useMemo(() => {
     if (requiresModelSelection) {
       return '';
-    }
-    if (type === 'ai_detection') {
-      if (loadingModels) return '正在选择兼容的目标检测模型...';
-      if (!modelsResolved) return '目标检测模型列表读取失败，请关闭后重新打开';
-      if (aiYoloModel) {
-        const coverage = aiYoloModel.matched_labels?.length;
-        const total = typeof coverage === 'number' ? coverage + missingDetectionLabels.length : undefined;
-        return [
-          `YOLO · ${aiYoloModel.title}`,
-          `输入尺寸 ${aiDetectionImageSize(aiYoloModel)}`,
-          `置信度阈值 ${conf.toFixed(2)}`,
-          typeof coverage === 'number' ? `覆盖任务类别 ${coverage}/${total}` : '',
-        ].filter(Boolean).join(' · ');
-      }
     }
     const model = providerCapability?.models?.[0];
     const modelName =
@@ -115,8 +97,8 @@ export default function PreannotateControl({
     const endpoint = providerCapability?.endpoint
       ? providerCapability.endpoint.replace(/^https?:\/\//, '').replace(/\/.*$/, '')
       : '';
-    return [type === 'ai_detection' ? '火山方舟' : providerCapability?.label, modelName, endpoint].filter(Boolean).join(' · ') || '使用系统配置的服务';
-  }, [aiYoloModel, conf, loadingModels, missingDetectionLabels.length, modelsResolved, providerCapability, requiresModelSelection, type]);
+    return [type === 'ai_detection' ? '火山方舟' : providerCapability?.label, modelName, endpoint, type === 'ai_detection' ? `置信度阈值 ${conf.toFixed(2)}` : ''].filter(Boolean).join(' · ') || '使用系统配置的服务';
+  }, [conf, loadingModels, modelsResolved, providerCapability, requiresModelSelection, type]);
 
   const handleOpen = useCallback(() => {
     setOpen(true);
@@ -236,7 +218,6 @@ export default function PreannotateControl({
         onCancel={() => setOpen(false)}
         okButtonProps={{
           disabled: (requiresModelSelection && !selectedModel)
-            || (type === 'ai_detection' && (!modelsResolved || loadingModels))
             || isRunning,
           loading: isRunning || (type === 'ai_detection' && loadingModels),
         }}
@@ -264,15 +245,6 @@ export default function PreannotateControl({
               <Typography.Text type="secondary">服务配置</Typography.Text>
               <Typography.Text style={{ display: 'block', marginTop: 4 }}>{providerSummary || '正在读取服务配置...'}</Typography.Text>
             </div>
-          )}
-
-          {type === 'ai_detection' && aiYoloModel && missingDetectionLabels.length > 0 && (
-            <Alert
-              type="warning"
-              showIcon
-              message="当前模型未覆盖全部任务类别"
-              description={`本次仅检测模型支持的类别，缺少：${missingDetectionLabels.join('、')}。这些类别需要人工补充或使用支持它们的模型。`}
-            />
           )}
 
           {type === 'yolo' && (

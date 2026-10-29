@@ -63,18 +63,16 @@ describe('AI detection service summary', () => {
     await act(async () => action?.click());
   }
 
-  it('shows the selected detector and warns when task classes are missing', async () => {
+  it('shows the configured Ark detector without loading a YOLO model', async () => {
     state.selectedModel = {
       kind: 'imported', id: 4, title: '道路专用检测模型', imgsz: 640,
       matched_labels: ['car', 'person'], missing_task_labels: ['person_motorbike', 'person_tricycle'],
     };
     await open();
-    expect(container.textContent).toContain('道路专用检测模型');
-    expect(container.textContent).toContain('输入尺寸 2560');
+    expect(container.textContent).toContain('火山方舟');
+    expect(container.textContent).toContain('doubao-seed-2-1-pro-260915');
     expect(container.textContent).toContain('置信度阈值 0.15');
-    expect(container.textContent).toContain('覆盖任务类别 2/4');
-    expect(container.querySelector('[role="alert"]')?.textContent).toContain('person_motorbike、person_tricycle');
-    expect(container.textContent).not.toContain('doubao-seed');
+    expect(container.textContent).not.toContain('道路专用检测模型');
   });
 
   it('looks up the ai_bbox_detection capability to show the actual Ark model when no detector is compatible', async () => {
@@ -84,12 +82,12 @@ describe('AI detection service summary', () => {
     expect(container.textContent).toContain('ark.cn-beijing.volces.com');
   });
 
-  it('keeps execution disabled while compatible detectors are being resolved', async () => {
+  it('does not block execution on a YOLO model list', async () => {
     state.loadingModels = true;
     state.modelsResolved = false;
     await open();
     const run = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === '开始执行');
-    expect(run?.disabled).toBe(true);
-    expect(container.textContent).toContain('正在选择兼容的目标检测模型');
+    expect(run?.disabled).toBe(false);
+    expect(container.textContent).not.toContain('正在选择兼容的目标检测模型');
   });
 });

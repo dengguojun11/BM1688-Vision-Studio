@@ -21,7 +21,7 @@ from typing import Any, Iterable, List, Optional, Tuple
 
 from fastapi import UploadFile, status
 from loguru import logger
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -278,7 +278,7 @@ from labelu.internal.domain.models.annotation_taxonomy import (
     DatasetCategory,
     TrainingRecipe,
 )
-from labelu.internal.domain.models.model_version import ModelArtifact
+from labelu.internal.domain.models.model_version import ModelArtifact, ModelVersion
 from labelu.internal.domain.models.strategy_task_integration import (
     StrategyTaskIntegration,
 )
@@ -6210,10 +6210,12 @@ def _imported_to_response(
     creator_email: Optional[str] = None,
     can_delete: bool = False,
     registered_model_count: int = 0,
+    registered_display_name: Optional[str] = None,
 ) -> YoloImportedModelRowResponse:
     return YoloImportedModelRowResponse(
         id=row.id,
         display_name=row.display_name or "",
+        registered_display_name=(registered_display_name or "").strip() or None,
         category=getattr(row, "category", None) or "",
         original_filename=row.original_filename or "",
         file_size=int(row.file_size) if row.file_size is not None else None,
@@ -6228,6 +6230,35 @@ def _imported_to_response(
         ),
         ai_eval_metrics=[],
     )
+
+
+def _registration_import_ids(*raw_values: Any) -> set[int]:
+    """Read the source upload id persisted on an external registration.
+
+    New registrations copy the id into both the artifact metadata and model
+    manifest.  Keeping this parser tolerant lets legacy rows continue to use
+    the path association when those audit fields are absent.
+    """
+    imported_ids: set[int] = set()
+    for raw in raw_values:
+        if isinstance(raw, dict):
+            payload = raw
+        elif isinstance(raw, str) and raw.strip():
+            try:
+                payload = json.loads(raw)
+            except (TypeError, ValueError):
+                continue
+        else:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        try:
+            imported_id = int(payload.get("imported_model_id"))
+        except (TypeError, ValueError):
+            continue
+        if imported_id > 0:
+            imported_ids.add(imported_id)
+    return imported_ids
 
 
 async def create_imported_weights_model(
@@ -6353,28 +6384,80 @@ def list_imported_models_global(
     )
     creators = _creator_emails_by_user_ids(db, (r.user_id for r in rows))
     paths = [str(r.weights_rel_path or "") for r in rows if r.weights_rel_path]
-    registered_counts = {
-        str(relative_path): int(count)
-        for relative_path, count in (
+    registered_counts: dict[int, int] = {}
+    registered_display_names: dict[int, str] = {}
+    if paths:
+        registration_query = (
             db.query(
                 ModelArtifact.relative_path,
-                func.count(func.distinct(ModelArtifact.model_version_id)),
+                ModelArtifact.metadata_json,
+                ModelVersion.manifest_json,
+                ModelVersion.display_name,
+                ModelVersion.id,
             )
-            .filter(ModelArtifact.relative_path.in_(paths))
-            .group_by(ModelArtifact.relative_path)
-            .all()
-            if paths
-            else []
+            .join(
+                ModelVersion,
+                ModelVersion.id == ModelArtifact.model_version_id,
+            )
+            .filter(
+                ModelArtifact.relative_path.in_(paths),
+                ModelArtifact.artifact_type == "pt",
+                func.upper(func.coalesce(ModelArtifact.status, "")) == "READY",
+                ModelVersion.training_job_id.is_(None),
+            )
         )
-    }
+        if not unrestricted:
+            registration_query = registration_query.filter(
+                or_(
+                    ModelVersion.created_by == int(current_user.id),
+                    ModelVersion.status == "PUBLISHED",
+                )
+            )
+        registration_rows = registration_query.order_by(
+            ModelArtifact.relative_path.asc(),
+            ModelVersion.created_at.desc(),
+            ModelVersion.id.desc(),
+        ).all()
+        registrations_by_path: dict[str, list[tuple[set[int], str, int]]] = {}
+        for (
+            relative_path,
+            metadata_json,
+            manifest_json,
+            display_name,
+            model_id,
+        ) in registration_rows:
+            path_key = str(relative_path or "")
+            registrations_by_path.setdefault(path_key, []).append(
+                (
+                    _registration_import_ids(metadata_json, manifest_json),
+                    str(display_name or "").strip(),
+                    int(model_id),
+                )
+            )
+        for imported_row in rows:
+            imported_id = int(imported_row.id)
+            path_key = str(imported_row.weights_rel_path or "")
+            candidates = registrations_by_path.get(path_key, [])
+            exact = [
+                candidate
+                for candidate in candidates
+                if imported_id in candidate[0]
+            ]
+            legacy = [candidate for candidate in candidates if not candidate[0]]
+            selected = exact or legacy
+            model_ids: set[int] = set()
+            for _source_ids, display_name, model_id in selected:
+                model_ids.add(model_id)
+                if display_name and imported_id not in registered_display_names:
+                    registered_display_names[imported_id] = display_name
+            registered_counts[imported_id] = len(model_ids)
     return [
         _imported_to_response(
             r,
             creator_email=creators.get(int(r.user_id)) if r.user_id else None,
             can_delete=unrestricted or int(r.user_id) == int(current_user.id),
-            registered_model_count=registered_counts.get(
-                str(r.weights_rel_path or ""), 0
-            ),
+            registered_model_count=registered_counts.get(int(r.id), 0),
+            registered_display_name=registered_display_names.get(int(r.id)),
         )
         for r in rows
     ], total

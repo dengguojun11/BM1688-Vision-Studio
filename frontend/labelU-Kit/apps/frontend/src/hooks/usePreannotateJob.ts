@@ -62,7 +62,7 @@ const TYPE_ACTION_TEXT = {
 } as const;
 
 const MODEL_SELECTION_TYPES = new Set<PreannotateType>(['yolo', 'tagtool']);
-const MODEL_LOADING_TYPES = new Set<PreannotateType>(['yolo', 'tagtool', 'ai_detection']);
+const MODEL_LOADING_TYPES = new Set<PreannotateType>(['yolo', 'tagtool']);
 
 export const AI_DETECTION_MIN_IMAGE_SIZE = 2560;
 export const AI_DETECTION_DEFAULT_CONF = 0.15;
@@ -101,7 +101,6 @@ export function usePreannotateJob({ type, mode }: PreannotateJobOptions) {
       setLoadingModels(true);
       setModelsResolved(false);
       setModels([]);
-      if (type === 'ai_detection') setSelectedModelKey(undefined);
       try {
         if (!MODEL_LOADING_TYPES.has(type)) {
           setModels([]);
@@ -207,12 +206,11 @@ export function usePreannotateJob({ type, mode }: PreannotateJobOptions) {
       const selected = selectedModel;
       if (
         (MODEL_SELECTION_TYPES.has(type) && !selected)
-        || (type === 'ai_detection' && (!modelsResolved || loadingModels))
         || isRunning
       ) {
         return;
       }
-      const useYolo = type === 'yolo' || (type === 'ai_detection' && Boolean(selected));
+      const useYolo = type === 'yolo';
 
       setIsRunning(true);
       setProgress(null);

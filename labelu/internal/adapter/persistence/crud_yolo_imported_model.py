@@ -1,10 +1,11 @@
 from typing import List, Optional, Tuple
 
-from sqlalchemy import String, cast, or_
+from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 
 from labelu.internal.common.sql_like import LIKE_ESCAPE, literal_like_pattern
 from labelu.internal.common.task_access import is_task_superuser
+from labelu.internal.domain.models.model_version import ModelArtifact, ModelVersion
 from labelu.internal.domain.models.yolo_imported_model import YoloImportedModel
 from labelu.internal.domain.models.user import User
 
@@ -101,6 +102,27 @@ def list_for_user(
     normalized_name = str(search or name or "").strip()
     if normalized_name:
         term = literal_like_pattern(normalized_name)
+        registration_filters = [
+            ModelArtifact.relative_path == YoloImportedModel.weights_rel_path,
+            ModelArtifact.artifact_type == "pt",
+            func.upper(func.coalesce(ModelArtifact.status, "")) == "READY",
+            ModelVersion.training_job_id.is_(None),
+        ]
+        if not list_all_users_models:
+            registration_filters.append(
+                or_(
+                    ModelVersion.created_by == int(user_id),
+                    ModelVersion.status == "PUBLISHED",
+                )
+            )
+        registered_display_name_match = (
+            db.query(ModelArtifact.id)
+            .join(ModelVersion, ModelVersion.id == ModelArtifact.model_version_id)
+            .filter(*registration_filters)
+            .filter(ModelVersion.display_name.ilike(term, escape=LIKE_ESCAPE))
+            .correlate(YoloImportedModel)
+            .exists()
+        )
         q = q.filter(
             or_(
                 cast(YoloImportedModel.id, String).ilike(
@@ -109,6 +131,7 @@ def list_for_user(
                 YoloImportedModel.display_name.ilike(term, escape=LIKE_ESCAPE),
                 YoloImportedModel.original_filename.ilike(term, escape=LIKE_ESCAPE),
                 YoloImportedModel.category.ilike(term, escape=LIKE_ESCAPE),
+                registered_display_name_match,
             )
         )
     if category is not None and str(category).strip():

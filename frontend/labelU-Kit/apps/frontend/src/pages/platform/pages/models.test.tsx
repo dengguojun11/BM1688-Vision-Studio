@@ -1147,7 +1147,9 @@ describe('external model registration selectors', () => {
     renderModels('/models?view=external');
     expect(await screen.findByText('全量外部模型')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /登记外部模型/ }));
-    expect(await screen.findByRole('dialog')).toBeTruthy();
+    const dialog = within(await screen.findByRole('dialog'));
+    expect(dialog.queryByText('目标芯片', { exact: true })).toBeNull();
+    expect(dialog.queryByText('精度', { exact: true })).toBeNull();
 
     await waitFor(() => {
       expect(mockedGet).toHaveBeenCalledWith('/v1/yolo-imported-models', {
@@ -1282,6 +1284,7 @@ describe('model repository gate presentation', () => {
               {
                 id: 7,
                 display_name: '车辆检测外部模型',
+                registered_display_name: '登记后的车辆检测模型',
                 original_filename: 'vehicle.pt',
                 file_size: 1048576,
                 creator_email: 'annotator@example.com',
@@ -1313,7 +1316,7 @@ describe('model repository gate presentation', () => {
       </QueryClientProvider>,
     );
 
-    await waitFor(() => expect(screen.getByText('车辆检测外部模型')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('登记后的车辆检测模型')).toBeTruthy());
     expect(screen.getByText('共享安全帽模型')).toBeTruthy();
     expect(screen.getAllByText('共 2 个外部模型').length).toBeGreaterThanOrEqual(1);
     expect(mockedGet).toHaveBeenCalledWith('/v1/yolo-imported-models', { params: { page: 0, size: 20 } });
