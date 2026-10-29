@@ -1079,7 +1079,6 @@ export default function EdgeDevicesPanel() {
               }}
               placeholder="搜索设备名称、地址或账号"
               ariaLabel="搜索边端设备"
-              loading={devicesQuery.isFetching}
               style={{ width: 260, maxWidth: '100%' }}
             />
             <Select
