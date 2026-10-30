@@ -32,7 +32,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import styled from 'styled-components';
 
 import request from '@/api/request';
@@ -1075,6 +1075,17 @@ function TagBindingTransfer({
   const [labelCache, setLabelCache] = useState<Record<number, AnnotationLabel>>({});
   const [leftChecked, setLeftChecked] = useState<number[]>([]);
   const [rightChecked, setRightChecked] = useState<number[]>([]);
+  const initialRows = useMemo(
+    () =>
+      initialLabels
+        .map((item) => normalizeAnnotationLabel(item))
+        .filter((item): item is AnnotationLabel => Boolean(item)),
+    [initialLabels],
+  );
+  const initialLabelMap = useMemo(
+    () => new Map(initialRows.map((label) => [Number(label.id), label] as const)),
+    [initialRows],
+  );
 
   const labelsQuery = useQuery({
     queryKey: ['annotation-labels', 'active', page, pageSize, search],
@@ -1094,20 +1105,6 @@ function TagBindingTransfer({
   const total = labelsQuery.data?.total ?? 0;
 
   useEffect(() => {
-    const normalized = initialLabels
-      .map((item) => normalizeAnnotationLabel(item))
-      .filter((item): item is AnnotationLabel => Boolean(item));
-    if (!normalized.length) return;
-    setLabelCache((previous) => {
-      const next = { ...previous };
-      normalized.forEach((label) => {
-        next[label.id] = label;
-      });
-      return next;
-    });
-  }, [initialLabels]);
-
-  useEffect(() => {
     if (!currentRows.length) return;
     setLabelCache((previous) => {
       const next = { ...previous };
@@ -1125,7 +1122,7 @@ function TagBindingTransfer({
   ]);
   const availableLabels = currentRows.filter((label) => !selectedSet.has(Number(label.id)));
   const boundLabels = selectedIds
-    .map((id) => labelMap.get(id))
+    .map((id) => initialLabelMap.get(id) || labelMap.get(id))
     .map((label, index) => label || ({ id: selectedIds[index] } as AnnotationLabel));
 
   const availableIdsKey = availableLabels.map((label) => Number(label.id)).join(',');

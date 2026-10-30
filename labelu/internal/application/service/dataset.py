@@ -32,6 +32,7 @@ from labelu.internal.domain.models.dataset_label_contract import (
     DatasetLabelContract,
     DatasetLabelContractItem,
 )
+from labelu.internal.domain.models.annotation_prompt import AnnotationPromptBinding
 from labelu.internal.domain.models.annotation_taxonomy import (
     AnnotationLabel,
     DatasetCategory,
@@ -40,6 +41,8 @@ from labelu.internal.domain.models.sample import SampleState, TaskSample
 from labelu.internal.domain.models.task import Task, TaskStatus
 from labelu.internal.application.service.annotation_contract import (
     active_labels_by_ids,
+    create_contract as create_task_annotation_contract,
+    current_contract as current_task_annotation_contract,
     current_contracts_for_tasks,
     ensure_legacy_rect_contract,
     labels_snapshot,
@@ -362,6 +365,15 @@ async def list_by(
     )
     if not rows:
         return [], total
+    # A global taxonomy edit may have happened while this dataset was not
+    # open. Refresh the pointer before serializing the management list so the
+    # list view and the contract endpoint expose the same vocabulary.
+    with begin_transaction(db):
+        for row in rows:
+            ensure_current_dataset_contract(
+                db, row, created_by=current_user.id
+            )
+            db.refresh(row)
     version_counts = dict(
         db.query(DatasetVersion.dataset_id, func.count(DatasetVersion.id))
         .filter(DatasetVersion.dataset_id.in_([row.id for row in rows]))
@@ -380,6 +392,11 @@ async def list_by(
 
 async def get(db: Session, dataset_id: int, current_user: User) -> DatasetResponse:
     dataset = _dataset_or_raise(db, dataset_id, current_user)
+    with begin_transaction(db):
+        ensure_current_dataset_contract(
+            db, dataset, created_by=current_user.id
+        )
+        db.refresh(dataset)
     version_count = (
         db.query(func.count(DatasetVersion.id))
         .filter(DatasetVersion.dataset_id == dataset.id)
@@ -454,6 +471,265 @@ def _dataset_contract_or_none(
     # rule.  Empty or malformed historical snapshots are skipped so a newer
     # usable contract can still be selected.
     return crud_dataset.effective_dataset_contract(db, dataset)
+
+
+def _label_snapshot_semantic_rows(value: Any) -> list[dict[str, Any]] | None:
+    """Return the label fields that define the current taxonomy semantics.
+
+    Contract colors and the global taxonomy version are presentation/audit
+    metadata.  A color-only edit must not create a new prompt vocabulary, but
+    a label name, value, kind, attributes, or description change must create a
+    new dataset contract revision.
+    """
+
+    if isinstance(value, str):
+        try:
+            value = json.loads(value or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if not isinstance(value, list):
+        return None
+    rows: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            return None
+        raw_id = item.get("label_id")
+        try:
+            label_id = int(raw_id) if raw_id is not None else None
+        except (TypeError, ValueError):
+            label_id = None
+        row = {
+            "label_id": label_id,
+            "label_key": str(item.get("label_key") or item.get("key") or "").strip(),
+            "label_value": str(
+                item.get("label_value") or item.get("value") or ""
+            ).strip(),
+            "annotation_kind": str(item.get("annotation_kind") or "").strip(),
+            "attributes": (
+                item.get("attributes") if isinstance(item.get("attributes"), list) else []
+            ),
+        }
+        description = str(item.get("description") or "").strip()
+        if description:
+            row["description"] = description
+        rows.append(row)
+    return rows
+
+
+def _dataset_contract_matches_labels(
+    contract: DatasetLabelContract,
+    *,
+    label_ids: list[int],
+    snapshot: list[dict[str, Any]],
+    annotation_kind: str,
+    label_set_signature_value: str,
+    class_order_signature_value: str,
+) -> bool:
+    try:
+        existing_ids = [
+            int(value) for value in json.loads(contract.label_ids_json or "[]")
+        ]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        existing_ids = []
+    expected_semantics = _label_snapshot_semantic_rows(snapshot)
+    existing_semantics = _label_snapshot_semantic_rows(
+        contract.labels_snapshot_json or "[]"
+    )
+    return (
+        existing_ids == label_ids
+        and str(contract.annotation_kind) == str(annotation_kind)
+        and str(contract.label_set_signature) == str(label_set_signature_value)
+        and str(contract.class_order_signature) == str(class_order_signature_value)
+        and expected_semantics is not None
+        and existing_semantics == expected_semantics
+    )
+
+
+def _stored_label_ids(value: Any) -> list[int]:
+    try:
+        raw = json.loads(value or "[]") if isinstance(value, str) else value
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(raw, (list, tuple)):
+        return []
+    result: list[int] = []
+    seen: set[int] = set()
+    for item in raw:
+        try:
+            label_id = int(item)
+        except (TypeError, ValueError):
+            continue
+        if label_id > 0 and label_id not in seen:
+            seen.add(label_id)
+            result.append(label_id)
+    return result
+
+
+def _sync_tasks_to_dataset_contract(
+    db: Session,
+    *,
+    dataset: Dataset,
+    previous: DatasetLabelContract,
+    current: DatasetLabelContract,
+    created_by: int | None,
+) -> int:
+    """Move task contracts to a newly materialized dataset revision.
+
+    Task contracts remain immutable history. FULL tasks inherit the complete
+    dataset label set; SUBSET tasks retain only their previously selected IDs.
+    A task with completed annotations receives the normal ``review_required``
+    status from ``create_contract`` instead of silently rewriting annotation
+    history.
+    """
+
+    dataset_label_ids = _stored_label_ids(current.label_ids_json)
+    if not dataset_label_ids:
+        return 0
+    dataset_label_id_set = set(dataset_label_ids)
+    tasks = (
+        db.query(Task)
+        .filter(
+            Task.deleted_at.is_(None),
+            or_(
+                Task.dataset_id == int(dataset.id),
+                Task.dataset_label_contract_id == int(previous.id),
+            ),
+        )
+        .all()
+    )
+    refreshed = 0
+    for task in tasks:
+        task_contract = current_task_annotation_contract(db, int(task.id))
+        if task_contract is None:
+            # A migration-era task may have a dataset pointer but no task
+            # contract yet. Point it at the new immutable dataset revision;
+            # the normal legacy-contract migration can materialize its task
+            # snapshot later when labels are applied.
+            task.dataset_label_contract_id = int(current.id)
+            db.add(task)
+            continue
+
+        if (
+            getattr(task, "dataset_label_contract_id", None) is not None
+            and int(task.dataset_label_contract_id) == int(current.id)
+            and getattr(task_contract, "dataset_label_contract_id", None) is not None
+            and int(task_contract.dataset_label_contract_id) == int(current.id)
+        ):
+            continue
+
+        scope = str(
+            getattr(task_contract, "label_scope_mode", None)
+            or getattr(task, "task_label_scope_mode", None)
+            or "FULL"
+        ).upper()
+        if scope == "FULL":
+            next_label_ids = list(dataset_label_ids)
+        else:
+            next_label_ids = [
+                label_id
+                for label_id in _stored_label_ids(task_contract.label_ids_json)
+                if label_id in dataset_label_id_set
+            ]
+        if not next_label_ids:
+            # Keep an invalid/malformed historical task closed rather than
+            # manufacturing an unrelated full-label contract.
+            continue
+
+        previous_task_contract_id = int(task_contract.id)
+        try:
+            next_contract = create_task_annotation_contract(
+                db,
+                task=task,
+                label_ids=next_label_ids,
+                created_by=created_by,
+                dataset_label_contract_id=int(current.id),
+                label_scope_mode=scope,
+            )
+        except LabelUException:
+            # A malformed legacy task must not prevent the dataset itself
+            # from exposing the latest global vocabulary. It remains gated
+            # until an operator repairs its task-level label contract.
+            continue
+        task.dataset_id = int(dataset.id)
+        task.dataset_label_contract_id = int(current.id)
+        task.task_label_scope_mode = scope
+        db.add(task)
+        if int(next_contract.id) != previous_task_contract_id:
+            refreshed += 1
+    db.flush()
+    return refreshed
+
+
+def ensure_current_dataset_contract(
+    db: Session,
+    dataset: Dataset,
+    *,
+    created_by: int | None = None,
+) -> DatasetLabelContract | None:
+    """Refresh a dataset contract when its global label definitions changed.
+
+    Historical revisions remain immutable.  The current dataset pointer is
+    advanced only when the active global rows no longer match the current
+    contract snapshot, which also invalidates prompts through
+    ``_create_dataset_contract``.
+    """
+
+    current = _dataset_contract_or_none(db, dataset)
+    if current is None:
+        return None
+    try:
+        label_ids = [
+            int(value) for value in json.loads(current.label_ids_json or "[]")
+        ]
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return current
+    if not label_ids:
+        return current
+    try:
+        labels = active_labels_by_ids(db, label_ids)
+    except LabelUException:
+        # A disabled/deleted global label must not silently rewrite a
+        # historical contract into an incomplete label set.
+        return current
+    snapshot = labels_snapshot(labels)
+    values = [str(row.label_value) for row in labels]
+    expected_label_set_signature = label_set_signature(label_ids)
+    expected_class_order_signature = class_order_signature(values)
+    if _dataset_contract_matches_labels(
+        current,
+        label_ids=label_ids,
+        snapshot=snapshot,
+        annotation_kind=str(current.annotation_kind or "bbox"),
+        label_set_signature_value=expected_label_set_signature,
+        class_order_signature_value=expected_class_order_signature,
+    ):
+        # A prior deployment may have materialized the dataset revision but
+        # stopped before updating every task pointer. Repair those pointers
+        # lazily on the next governed read without creating another dataset
+        # revision.
+        _sync_tasks_to_dataset_contract(
+            db,
+            dataset=dataset,
+            previous=current,
+            current=current,
+            created_by=created_by,
+        )
+        return current
+    refreshed = _create_dataset_contract(
+        db,
+        dataset=dataset,
+        label_ids=label_ids,
+        annotation_kind=str(current.annotation_kind or "bbox"),
+        created_by=created_by,
+    )
+    _sync_tasks_to_dataset_contract(
+        db,
+        dataset=dataset,
+        previous=current,
+        current=refreshed,
+        created_by=created_by,
+    )
+    return refreshed
 
 
 def _normalized_int_list(value: Any) -> list[int]:
@@ -1033,6 +1309,46 @@ def _dataset_contract_payload(
     }
 
 
+def _invalidate_annotation_prompts_for_contract(
+    db: Session,
+    *,
+    dataset_id: int,
+    contract_id: int,
+    contract_revision: int,
+    now: datetime | None = None,
+) -> int:
+    """Mark prompt artifacts from a replaced dataset contract as invalid.
+
+    Prompt rows are immutable historical artifacts, so the row is retained and
+    only its lifecycle status changes.  A dataset revision is unique per
+    dataset; matching both the old contract id and dataset/revision also covers
+    legacy rows that were created before ``dataset_label_contract_id`` was
+    populated.
+    """
+
+    changed_at = now or datetime.now()
+    return int(
+        db.query(AnnotationPromptBinding)
+        .filter(
+            AnnotationPromptBinding.contract_revision == int(contract_revision),
+            or_(
+                AnnotationPromptBinding.dataset_label_contract_id == int(contract_id),
+                AnnotationPromptBinding.dataset_id == int(dataset_id),
+            ),
+            AnnotationPromptBinding.status != "INVALIDATED",
+        )
+        .update(
+            {"status": "INVALIDATED", "updated_at": changed_at},
+            # Contract replacement can happen in a session that already
+            # loaded prompt rows (for example, an admin workflow that
+            # previews before saving). Keep the identity map consistent so a
+            # subsequent history read cannot expose the old executable state.
+            synchronize_session="fetch",
+        )
+        or 0
+    )
+
+
 def _create_dataset_contract(
     db: Session,
     *,
@@ -1078,18 +1394,35 @@ def _create_dataset_contract(
         if labels_snapshot_override is not None
         else [str(row.label_value) for row in labels]
     )
+    snapshot = (
+        labels_snapshot_override
+        if labels_snapshot_override is not None
+        else labels_snapshot(labels)
+    )
+    expected_label_set_signature = label_set_signature_override or label_set_signature(ids)
+    expected_class_order_signature = (
+        class_order_signature_override or class_order_signature(values)
+    )
     existing = _dataset_contract_or_none(db, dataset)
     if existing is not None:
-        try:
-            existing_ids = [
-                int(value) for value in json.loads(existing.label_ids_json or "[]")
-            ]
-        except (TypeError, ValueError):
-            existing_ids = []
-        if existing_ids == ids and str(existing.annotation_kind) == str(
-            annotation_kind
+        if _dataset_contract_matches_labels(
+            existing,
+            label_ids=ids,
+            snapshot=snapshot,
+            annotation_kind=annotation_kind,
+            label_set_signature_value=expected_label_set_signature,
+            class_order_signature_value=expected_class_order_signature,
         ):
             return existing
+        # A new label contract revision changes the model vocabulary.  Keep
+        # every old prompt row for audit/history, but make it impossible for
+        # callers or operators to mistake it for an executable artifact.
+        _invalidate_annotation_prompts_for_contract(
+            db,
+            dataset_id=int(dataset.id),
+            contract_id=int(existing.id),
+            contract_revision=int(existing.revision),
+        )
         if str(existing.status).upper() == "FROZEN":
             existing.status = "SUPERSEDED"
     revision = (
@@ -1101,11 +1434,6 @@ def _create_dataset_contract(
         )
         + 1
     )
-    snapshot = (
-        labels_snapshot_override
-        if labels_snapshot_override is not None
-        else labels_snapshot(labels)
-    )
     contract = DatasetLabelContract(
         dataset_id=int(dataset.id),
         revision=revision,
@@ -1114,10 +1442,8 @@ def _create_dataset_contract(
         labels_snapshot_json=json.dumps(
             snapshot, ensure_ascii=False, separators=(",", ":")
         ),
-        label_set_signature=(label_set_signature_override or label_set_signature(ids)),
-        class_order_signature=(
-            class_order_signature_override or class_order_signature(values)
-        ),
+        label_set_signature=expected_label_set_signature,
+        class_order_signature=expected_class_order_signature,
         status="DRAFT",
         created_by=created_by,
         created_at=datetime.now(),
@@ -1169,6 +1495,14 @@ async def create_label_contract(
 
 async def current_label_contract(db: Session, dataset_id: int, current_user: User):
     dataset = _dataset_or_raise(db, dataset_id, current_user)
+    # A taxonomy administrator may have renamed a globally managed label after
+    # this dataset was created.  Materialize the new immutable revision before
+    # returning the contract so the editor and prompt compiler see one source.
+    with begin_transaction(db):
+        ensure_current_dataset_contract(
+            db, dataset, created_by=current_user.id
+        )
+        db.refresh(dataset)
     from labelu.internal.application.response.dataset import (
         DatasetLabelContractResponse,
     )
@@ -1181,6 +1515,11 @@ async def current_label_contract(db: Session, dataset_id: int, current_user: Use
 
 async def list_label_contracts(db: Session, dataset_id: int, current_user: User):
     dataset = _dataset_or_raise(db, dataset_id, current_user)
+    with begin_transaction(db):
+        ensure_current_dataset_contract(
+            db, dataset, created_by=current_user.id
+        )
+        db.refresh(dataset)
     rows = (
         db.query(DatasetLabelContract)
         .filter(DatasetLabelContract.dataset_id == int(dataset.id))

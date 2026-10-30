@@ -13,8 +13,15 @@ from labelu.internal.common.system_dataset_category import (
     CONSISTENT_POOL_CATEGORY_NAME,
     CONSISTENT_POOL_CATEGORY_SORT_ORDER,
 )
+from labelu.internal.application.service.annotation_contract import create_contract
+from labelu.internal.application.service.annotation_prompt import (
+    resolve_published_prompt_for_task,
+)
+from labelu.internal.domain.models.annotation_contract import TaskAnnotationContract
 from labelu.internal.domain.models.annotation_taxonomy import AnnotationLabel, DatasetCategory
+from labelu.internal.domain.models.dataset import Dataset
 from labelu.internal.domain.models.sample import SampleState, TaskSample
+from labelu.internal.domain.models.task import MediaType, Task, TaskStatus
 from labelu.internal.domain.models.user import User
 
 
@@ -106,6 +113,185 @@ def test_taxonomy_write_requires_admin_and_enforces_normalized_uniqueness(
         json={"version": 1, "label_value": "system_vehicle_v3", "color": "#00ff00"},
     )
     assert stale.status_code == 409, stale.text
+
+
+def test_label_semantic_update_creates_new_dataset_contract_revision(
+    client, testadmin_token_headers, db
+):
+    created = _create_label(
+        client,
+        testadmin_token_headers,
+        key="行人",
+        value="pedestrian",
+    )
+    assert created.status_code == 201, created.text
+    label = created.json()["data"]
+
+    dataset = client.post(
+        f"{settings.API_V1_STR}/datasets",
+        headers=testadmin_token_headers,
+        json={"name": "标签同步数据集", "label_ids": [label["id"]]},
+    )
+    assert dataset.status_code == 201, dataset.text
+    dataset_id = dataset.json()["data"]["id"]
+
+    # Keep a task bound to the old revision. The taxonomy update must move its
+    # current task contract together with the dataset contract.
+    dataset_row = db.query(Dataset).filter(Dataset.id == dataset_id).one()
+    admin = db.query(User).filter(User.username == "admin@123.com").one()
+    task = Task(
+        name="标签同步任务",
+        media_type=MediaType.IMAGE.value,
+        status=TaskStatus.CONFIGURED.value,
+        created_by=admin.id,
+        updated_by=admin.id,
+        dataset_id=dataset_id,
+        dataset_label_contract_id=dataset_row.dataset_label_contract_id,
+        task_label_scope_mode="FULL",
+        config=json.dumps(
+            {
+                "tools": [
+                    {
+                        "tool": "rectTool",
+                        "config": {
+                            "attributes": [
+                                {
+                                    "labelId": label["id"],
+                                    "key": "行人",
+                                    "value": "pedestrian",
+                                }
+                            ]
+                        },
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+    )
+    db.add(task)
+    db.flush()
+    create_contract(
+        db,
+        task=task,
+        label_ids=[label["id"]],
+        created_by=admin.id,
+        dataset_label_contract_id=dataset_row.dataset_label_contract_id,
+        label_scope_mode="FULL",
+    )
+    db.commit()
+
+    before = client.get(
+        f"{settings.API_V1_STR}/datasets/{dataset_id}/label-contracts/current",
+        headers=testadmin_token_headers,
+    )
+    assert before.status_code == 200, before.text
+    before_revision = before.json()["data"]["revision"]
+    assert before_revision == 1
+    assert before.json()["data"]["labels"][0]["label_value"] == "pedestrian"
+
+    changed = client.patch(
+        f"{settings.API_V1_STR}/annotation-taxonomy/labels/{label['id']}",
+        headers=testadmin_token_headers,
+        json={"version": label["version"], "label_value": "person"},
+    )
+    assert changed.status_code == 200, changed.text
+
+    current = client.get(
+        f"{settings.API_V1_STR}/datasets/{dataset_id}/label-contracts/current",
+        headers=testadmin_token_headers,
+    )
+    assert current.status_code == 200, current.text
+    current_payload = current.json()["data"]
+    assert current_payload["revision"] == 2
+    assert current_payload["labels"][0]["label_key"] == "行人"
+    assert current_payload["labels"][0]["label_value"] == "person"
+
+    db.expire_all()
+    refreshed_task = db.query(Task).filter(Task.id == task.id).one()
+    refreshed_task_contract = (
+        db.query(TaskAnnotationContract)
+        .filter_by(id=refreshed_task.current_annotation_contract_id)
+        .one()
+    )
+    assert refreshed_task.dataset_label_contract_id == current_payload["id"]
+    assert json.loads(refreshed_task_contract.labels_snapshot_json)[0]["label_value"] == "person"
+
+    # Dataset management reads must converge to the same current snapshot;
+    # they must not keep exposing the old immutable revision through a stale
+    # pointer.
+    dataset_view = client.get(
+        f"{settings.API_V1_STR}/datasets/{dataset_id}",
+        headers=testadmin_token_headers,
+    )
+    assert dataset_view.status_code == 200, dataset_view.text
+    assert dataset_view.json()["data"]["dataset_labels"][0]["label_value"] == "person"
+    dataset_list = client.get(
+        f"{settings.API_V1_STR}/datasets",
+        headers=testadmin_token_headers,
+    )
+    assert dataset_list.status_code == 200, dataset_list.text
+    listed = next(
+        row for row in dataset_list.json()["data"] if row["id"] == dataset_id
+    )
+    assert listed["dataset_labels"][0]["label_value"] == "person"
+
+    # A cached revision in the prompt UI is transparently redirected to the
+    # current revision for generation; historical contract rows remain intact.
+    stale_preview = client.post(
+        f"{settings.API_V1_STR}/datasets/{dataset_id}/label-contracts/{before_revision}/ai-prompts/preview",
+        headers=testadmin_token_headers,
+        json={"operation": "bbox_detection", "provider_key": "volcengine"},
+    )
+    assert stale_preview.status_code == 200, stale_preview.text
+    assert stale_preview.json()["data"]["contract_revision"] == 2
+    assert "person" in stale_preview.json()["data"]["generated_prompt"]
+    assert "pedestrian" not in stale_preview.json()["data"]["generated_prompt"]
+
+    saved = client.post(
+        f"{settings.API_V1_STR}/datasets/{dataset_id}/label-contracts/{current_payload['revision']}/ai-prompts",
+        headers=testadmin_token_headers,
+        json={
+            "operation": "bbox_detection",
+            "provider_key": "volcengine",
+            "effective_prompt": stale_preview.json()["data"]["generated_prompt"],
+            "expected_label_set_signature": current_payload["label_set_signature"],
+            "expected_class_order_signature": current_payload["class_order_signature"],
+        },
+    )
+    assert saved.status_code == 201, saved.text
+    saved_prompt = saved.json()["data"]
+    published = client.post(
+        f"{settings.API_V1_STR}/datasets/{dataset_id}/label-contracts/{current_payload['revision']}/ai-prompts/{saved_prompt['id']}/publish",
+        headers=testadmin_token_headers,
+        json={"expected_prompt_sha256": saved_prompt["prompt_sha256"]},
+    )
+    assert published.status_code == 200, published.text
+
+    db.expire_all()
+    runtime_task = db.query(Task).filter(Task.id == task.id).one()
+    resolved = resolve_published_prompt_for_task(db, runtime_task)
+    assert resolved is not None
+    assert "person" in resolved["effective_prompt"]
+    assert "pedestrian" not in resolved["effective_prompt"]
+
+    preview = client.post(
+        f"{settings.API_V1_STR}/datasets/{dataset_id}/label-contracts/{current_payload['revision']}/ai-prompts/preview",
+        headers=testadmin_token_headers,
+        json={"operation": "bbox_detection", "provider_key": "volcengine"},
+    )
+    assert preview.status_code == 200, preview.text
+    generated_prompt = preview.json()["data"]["generated_prompt"]
+    assert "person" in generated_prompt
+    assert "pedestrian" not in generated_prompt
+
+    history = client.get(
+        f"{settings.API_V1_STR}/datasets/{dataset_id}/label-contracts",
+        headers=testadmin_token_headers,
+    )
+    assert history.status_code == 200, history.text
+    history_payload = history.json()["data"]
+    assert [item["revision"] for item in history_payload] == [2, 1]
+    assert history_payload[1]["labels"][0]["label_value"] == "pedestrian"
 
 
 def test_one_canonical_label_can_be_reused_by_multiple_presets(

@@ -355,6 +355,10 @@ def update_label(
         _conflict("标签已被其他管理员更新，请刷新后重试")
     before = _label_resp(db, row).dict()
     values = cmd.dict(exclude_unset=True, exclude={"version", "change_reason"})
+    semantic_changed = any(
+        key in values
+        for key in ("label_key", "label_value", "annotation_kind", "attributes", "description")
+    )
     if "label_value" in values:
         next_label_value = str(values["label_value"]).strip()
         normalized_value = next_label_value.lower()
@@ -392,6 +396,13 @@ def update_label(
             label_id=int(row.id),
             label_value=str(row.label_value),
             color=str(row.color),
+        )
+        db.flush()
+    if semantic_changed:
+        _refresh_dataset_contracts_for_label(
+            db,
+            label_id=int(row.id),
+            created_by=user.id,
         )
         db.flush()
     after = _label_resp(db, row)
@@ -469,6 +480,48 @@ def _sync_label_color_references(
             contract.labels_snapshot_json = json.dumps(snapshot, ensure_ascii=False)
             contract_count += 1
     return task_count, contract_count
+
+
+def _refresh_dataset_contracts_for_label(
+    db: Session, *, label_id: int, created_by: int | None
+) -> int:
+    """Create current dataset-contract revisions after a taxonomy edit.
+
+    Dataset contracts remain immutable history.  Only datasets whose current
+    effective contract contains the changed label are advanced, and the
+    dataset service decides whether the snapshot actually differs.
+    """
+
+    from labelu.internal.application.service import dataset as dataset_service
+
+    refreshed = 0
+    datasets = (
+        db.query(Dataset)
+        .filter(Dataset.deleted_at.is_(None))
+        .all()
+    )
+    for dataset in datasets:
+        contract = dataset_service._dataset_contract_or_none(db, dataset)
+        if contract is None:
+            continue
+        try:
+            label_ids = {
+                int(value)
+                for value in json.loads(contract.label_ids_json or "[]")
+            }
+        except (TypeError, ValueError, json.JSONDecodeError):
+            label_ids = set()
+        if int(label_id) not in label_ids:
+            continue
+        previous_id = int(contract.id)
+        current = dataset_service.ensure_current_dataset_contract(
+            db,
+            dataset,
+            created_by=created_by,
+        )
+        if current is not None and int(current.id) != previous_id:
+            refreshed += 1
+    return refreshed
 
 
 def disable_label(

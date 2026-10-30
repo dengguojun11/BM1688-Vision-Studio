@@ -11,7 +11,7 @@ import time
 from email.utils import parsedate_to_datetime
 from threading import Lock
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import unquote_to_bytes, urlsplit
 
 import httpx
 from loguru import logger
@@ -204,6 +204,31 @@ def _chat_url(base: str) -> str:
 
 
 def _download_image(url: str) -> tuple[bytes, str]:
+    """Read an image from an HTTP(S) URL or a bounded data URI.
+
+    Prompt trials upload an image without persisting an attachment first.  A
+    data URI keeps that transient image inside the existing vision chain and
+    avoids adding a second model client.  HTTP(S) handling remains unchanged.
+    """
+    if str(url or "").strip().lower().startswith("data:"):
+        header, separator, payload = str(url).partition(",")
+        if not separator:
+            raise ValueError("invalid image data URI")
+        metadata = header[5:].split(";")
+        mime = (metadata[0] or "image/jpeg").strip().lower()
+        if not mime.startswith("image/"):
+            raise ValueError("image data URI must use an image MIME type")
+        try:
+            if any(item.strip().lower() == "base64" for item in metadata[1:]):
+                raw = base64.b64decode(payload, validate=True)
+            else:
+                raw = unquote_to_bytes(payload)
+        except (ValueError, UnicodeError, base64.binascii.Error) as exc:
+            raise ValueError("invalid image data URI payload") from exc
+        if not raw:
+            raise ValueError("image data URI is empty")
+        return raw, mime
+
     with httpx.Client(
         timeout=min(settings.AI_MODEL_TIMEOUT_SECONDS, 120), follow_redirects=True
     ) as client:

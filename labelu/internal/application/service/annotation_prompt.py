@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from labelu.internal.application.command.annotation_prompt import (
@@ -81,10 +82,30 @@ def _contract_for_revision(
     current_user: User,
     *,
     manage: bool = False,
+    prefer_current: bool = False,
+    require_current: bool = False,
 ) -> tuple[Any, DatasetLabelContract]:
     dataset = dataset_service._dataset_or_raise(
         db, int(dataset_id), current_user, manage=manage
     )
+    # The global taxonomy is mutable, while dataset contracts are immutable
+    # snapshots. Materialize the next revision before any prompt operation so
+    # a stale UI revision cannot silently compile the old vocabulary.
+    with begin_transaction(db):
+        current = dataset_service.ensure_current_dataset_contract(
+            db,
+            dataset,
+            created_by=getattr(current_user, "id", None),
+        )
+        db.refresh(dataset)
+    if current is not None and int(revision) != int(current.revision):
+        if require_current:
+            raise _error(
+                "数据集标签契约已更新，请刷新后重试",
+                http_status=status.HTTP_409_CONFLICT,
+            )
+        if prefer_current:
+            revision = int(current.revision)
     contract = (
         db.query(DatasetLabelContract)
         .filter(
@@ -387,7 +408,13 @@ async def preview(
     cmd: AnnotationPromptPreviewCommand,
     current_user: User,
 ) -> AnnotationPromptResponse:
-    _, contract = _contract_for_revision(db, dataset_id, revision, current_user)
+    _, contract = _contract_for_revision(
+        db,
+        dataset_id,
+        revision,
+        current_user,
+        prefer_current=True,
+    )
     return _row_response(None, preview=_preview_payload(contract, cmd))
 
 
@@ -399,7 +426,12 @@ async def save_draft(
     current_user: User,
 ) -> AnnotationPromptResponse:
     dataset, contract = _contract_for_revision(
-        db, dataset_id, revision, current_user, manage=True
+        db,
+        dataset_id,
+        revision,
+        current_user,
+        manage=True,
+        require_current=True,
     )
     if (
         cmd.expected_label_set_signature
@@ -492,7 +524,13 @@ async def list_prompts(
     revision: int,
     current_user: User,
 ) -> list[AnnotationPromptResponse]:
-    _, contract = _contract_for_revision(db, dataset_id, revision, current_user)
+    _, contract = _contract_for_revision(
+        db,
+        dataset_id,
+        revision,
+        current_user,
+        prefer_current=True,
+    )
     rows = (
         db.query(AnnotationPromptBinding)
         .filter(
@@ -501,6 +539,52 @@ async def list_prompts(
         )
         .order_by(
             AnnotationPromptBinding.updated_at.desc(), AnnotationPromptBinding.id.desc()
+        )
+        .all()
+    )
+    return [_row_response(row) for row in rows]
+
+
+async def list_prompt_history(
+    db: Session,
+    dataset_id: int,
+    current_user: User,
+) -> list[AnnotationPromptResponse]:
+    """List every prompt artifact for a dataset, including invalidated rows.
+
+    The revision-scoped endpoint remains the runtime/editor API.  This
+    history view deliberately does not filter by ``PUBLISHED`` or the current
+    revision so operators can inspect why an older prompt stopped being
+    executable after a contract change.
+    """
+
+    dataset = dataset_service._dataset_or_raise(
+        db, int(dataset_id), current_user, manage=False
+    )
+    with begin_transaction(db):
+        dataset_service.ensure_current_dataset_contract(
+            db,
+            dataset,
+            created_by=getattr(current_user, "id", None),
+        )
+        db.refresh(dataset)
+    rows = (
+        db.query(AnnotationPromptBinding)
+        .outerjoin(
+            DatasetLabelContract,
+            AnnotationPromptBinding.dataset_label_contract_id
+            == DatasetLabelContract.id,
+        )
+        .filter(
+            or_(
+                AnnotationPromptBinding.dataset_id == int(dataset.id),
+                DatasetLabelContract.dataset_id == int(dataset.id),
+            )
+        )
+        .order_by(
+            AnnotationPromptBinding.contract_revision.desc(),
+            AnnotationPromptBinding.updated_at.desc(),
+            AnnotationPromptBinding.id.desc(),
         )
         .all()
     )
@@ -516,7 +600,12 @@ async def publish(
     current_user: User,
 ) -> AnnotationPromptResponse:
     _, contract = _contract_for_revision(
-        db, dataset_id, revision, current_user, manage=True
+        db,
+        dataset_id,
+        revision,
+        current_user,
+        manage=True,
+        require_current=True,
     )
     if cmd.expected_contract_revision is not None and int(
         cmd.expected_contract_revision
@@ -594,15 +683,13 @@ def resolve_published_prompt_for_task(
     """
 
     task_contract = annotation_contract.current_contract(db, int(task.id))
-    dataset_contract_id = (
-        getattr(task_contract, "dataset_label_contract_id", None)
-        if task_contract is not None
-        else None
-    ) or getattr(task, "dataset_label_contract_id", None)
-    # A dataset-bound task created during a rolling contract migration may not
-    # have a materialized task contract yet. Resolve the dataset pointer so
-    # the runtime still uses the governed label vocabulary.
-    if dataset_contract_id is None and getattr(task, "dataset_id", None):
+    dataset_row = None
+    dataset_current_contract = None
+    # Always inspect the logical dataset before trusting a task's persisted
+    # contract pointer. Existing tasks can retain an older pointer after a
+    # taxonomy edit; refreshing here keeps runtime lookup on the latest
+    # dataset vocabulary even when no UI page was opened first.
+    if getattr(task, "dataset_id", None):
         from labelu.internal.domain.models.dataset import Dataset
 
         dataset_row = (
@@ -613,11 +700,33 @@ def resolve_published_prompt_for_task(
             )
             .one_or_none()
         )
-        dataset_contract_id = (
-            getattr(dataset_row, "dataset_label_contract_id", None)
-            if dataset_row is not None
-            else None
-        )
+        if dataset_row is not None and isinstance(db, Session):
+            with begin_transaction(db):
+                dataset_current_contract = dataset_service.ensure_current_dataset_contract(
+                    db,
+                    dataset_row,
+                    created_by=None,
+                )
+                db.refresh(dataset_row)
+            # The refresh can create a new dataset revision and invalidate the
+            # old task-linked prompt. Re-read the task contract after the
+            # transaction boundary so callers do not use expired ORM state.
+            task_contract = annotation_contract.current_contract(db, int(task.id))
+
+    dataset_contract_id = (
+        getattr(dataset_current_contract, "id", None)
+        if dataset_current_contract is not None
+        else None
+    ) or (
+        getattr(task_contract, "dataset_label_contract_id", None)
+        if task_contract is not None
+        else None
+    ) or getattr(task, "dataset_label_contract_id", None)
+    # A dataset-bound task created during a rolling contract migration may not
+    # have a materialized task contract yet. Resolve the dataset pointer so
+    # the runtime still uses the governed label vocabulary.
+    if dataset_contract_id is None and dataset_row is not None:
+        dataset_contract_id = getattr(dataset_row, "dataset_label_contract_id", None)
     if dataset_contract_id:
         dataset_contract = (
             db.query(DatasetLabelContract)
