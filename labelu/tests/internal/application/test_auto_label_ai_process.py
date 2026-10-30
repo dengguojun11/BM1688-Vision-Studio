@@ -1,12 +1,14 @@
 """AI 目标检测坐标空间换算、畸形返回容错与过程留痕。"""
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from labelu.internal.application.service.auto_label import (
     NORMALIZED_COORDINATE_SPACE,
     PIXEL_COORDINATE_SPACE,
+    _ai_global_tags_merge_failure,
     _detect_coordinate_space,
     _normalize_results,
 )
@@ -350,3 +352,70 @@ def test_preannotation_kind_distinguishes_geometry_and_global_tags():
 
     assert _ai_preannotations_for_mode([geometry_row, tag_row], include_geometry_tools=True) == [geometry_row]
     assert _ai_preannotations_for_mode([geometry_row, tag_row], include_geometry_tools=False) == [tag_row]
+
+
+def _tag_only_task_config():
+    return {
+        "tools": [
+            {
+                "tool": "tagTool",
+                "config": {
+                    "attributes": [
+                        {
+                            "key": "场景类型",
+                            "value": "sceneType",
+                            "type": "enum",
+                            "options": [{"key": "城市主干道", "value": "urbanArterial"}],
+                        }
+                    ]
+                },
+            }
+        ]
+    }
+
+
+def _tag_sample(values):
+    return SimpleNamespace(
+        id=1,
+        inner_id=1,
+        file=None,
+        data=json.dumps(
+            {"result": {"tagTool": {"toolName": "tagTool", "result": [{"value": values}]}}}
+        ),
+    )
+
+
+def test_ai_tag_noop_merge_is_success_when_tags_already_complete():
+    assert (
+        _ai_global_tags_merge_failure(
+            changed=False,
+            include_geometry_tools=False,
+            sample=_tag_sample({"sceneType": ["urbanArterial"]}),
+            task_config=_tag_only_task_config(),
+        )
+        is False
+    )
+
+
+def test_ai_tag_noop_merge_is_failure_when_tags_missing():
+    assert (
+        _ai_global_tags_merge_failure(
+            changed=False,
+            include_geometry_tools=False,
+            sample=_tag_sample({}),
+            task_config=_tag_only_task_config(),
+        )
+        is True
+    )
+
+
+def test_ai_tag_noop_merge_never_fails_in_geometry_mode():
+    assert (
+        _ai_global_tags_merge_failure(
+            changed=False,
+            include_geometry_tools=True,
+            sample=_tag_sample({}),
+            task_config=_tag_only_task_config(),
+        )
+        is False
+    )

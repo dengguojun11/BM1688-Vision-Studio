@@ -1758,6 +1758,25 @@ def _sample_global_tags_complete(sample: TaskSample, task_config: dict[str, Any]
     return bool(audit_one_sample(sample, task_config).get("tags_ok"))
 
 
+def _ai_global_tags_merge_failure(
+    *,
+    changed: bool,
+    include_geometry_tools: bool,
+    sample: TaskSample,
+    task_config: dict[str, Any],
+) -> bool:
+    """A no-op tag merge is only a failure when dimensions are still missing.
+
+    Batch AI tag runs may intentionally target already-complete samples (for
+    example when ``skip_complete_global_tags`` is false).  Rejecting every
+    no-op merge made those runs report failures even though annotator values
+    were correctly preserved.
+    """
+    if changed or include_geometry_tools:
+        return False
+    return not _sample_global_tags_complete(sample, task_config)
+
+
 def _raise_if_ai_global_tags_incomplete(sample: TaskSample, task_config: dict[str, Any]) -> None:
     audit = audit_one_sample(sample, task_config)
     if audit.get("tags_ok"):
@@ -2657,7 +2676,12 @@ def _process_single_sample(
                 )
                 if changed and _extract_tool_configs(task_config)[2]:
                     _raise_if_ai_global_tags_incomplete(sample, task_config)
-                elif not changed and not include_geometry_tools:
+                elif _ai_global_tags_merge_failure(
+                    changed=changed,
+                    include_geometry_tools=include_geometry_tools,
+                    sample=sample,
+                    task_config=task_config,
+                ):
                     raise ValueError("AI did not return global tagTool values")
         try:
             bridge_legacy_preannotation(
