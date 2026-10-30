@@ -177,10 +177,6 @@ const LabelWrapper = styled.button<{ $color: string; $active: boolean }>`
   }
 `;
 
-const ToolNameText = styled.span<{ $active: boolean }>`
-  color: ${({ $active }) => ($active ? 'inherit' : '#666')};
-`;
-
 const LabelCount = styled.span<{ $active: boolean }>`
   min-width: 1.25rem;
   padding: 0 0.25rem;
@@ -193,12 +189,10 @@ const LabelCount = styled.span<{ $active: boolean }>`
 
 function LabelItem({
   entry,
-  toolNameText,
   active,
   onSelect,
 }: {
   entry: ToolLabelEntry;
-  toolNameText: string;
   active: boolean;
   onSelect: (entry: ToolLabelEntry, e: React.MouseEvent) => void;
 }) {
@@ -206,7 +200,7 @@ function LabelItem({
     onSelect(entry, e);
   };
 
-  const title = `${toolNameText} · ${entry.label.key}${entry.count > 0 ? ` ${entry.count}` : ''}`;
+  const title = `${entry.label.key}${entry.count > 0 ? ` ${entry.count}` : ''}`;
 
   return (
     <EllipsisText maxWidth={224} title={title}>
@@ -217,8 +211,6 @@ function LabelItem({
         $color={entry.label.color ?? '#000'}
         onClick={handleClick}
       >
-        <ToolNameText $active={active}>{toolNameText}</ToolNameText>
-        <span>·</span>
         <span>{entry.label.key}</span>
         {entry.count > 0 && <LabelCount $active={active}>{entry.count}</LabelCount>}
       </LabelWrapper>
@@ -234,18 +226,6 @@ export function LabelSection() {
   const [collapsed, setCollapsed] = useState(false);
   // @ts-ignore
   const { t } = useTranslation();
-
-  const toolNameTextMapping = useMemo<Record<ToolName, string>>(
-    () => ({
-      point: t('point'),
-      line: t('line'),
-      rect: t('rect'),
-      polygon: t('polygon'),
-      cuboid: t('cuboid'),
-      relation: t('relationWithTips'),
-    }),
-    [t],
-  );
 
   const labelEntries = useMemo(
     () => buildToolLabelEntries(tools, config, sortedImageAnnotations),
@@ -406,7 +386,6 @@ export function LabelSection() {
           return (
             <LabelItem
               entry={entry}
-              toolNameText={toolNameTextMapping[entry.toolName]}
               key={`${entry.toolName}:${entry.label.value}`}
               onSelect={handleSelect}
               active={currentTool === entry.toolName && selectedLabel?.value === entry.label.value}
@@ -427,7 +406,6 @@ export function LabelSection() {
           {extraLabels.map((entry) => (
             <LabelItem
               entry={entry}
-              toolNameText={toolNameTextMapping[entry.toolName]}
               key={`${entry.toolName}:${entry.label.value}`}
               onSelect={handleSelect}
               active={currentTool === entry.toolName && selectedLabel?.value === entry.label.value}
