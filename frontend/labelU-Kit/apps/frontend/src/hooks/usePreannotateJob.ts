@@ -62,7 +62,9 @@ const TYPE_ACTION_TEXT = {
 } as const;
 
 const MODEL_SELECTION_TYPES = new Set<PreannotateType>(['yolo', 'tagtool']);
-const MODEL_LOADING_TYPES = new Set<PreannotateType>(['yolo', 'tagtool', 'ai_detection']);
+// AI 目标检测 must stay on the managed vision model (contract prompt).  YOLO
+// has its own entry and is never selected implicitly for this action.
+const MODEL_LOADING_TYPES = new Set<PreannotateType>(['yolo', 'tagtool']);
 
 export const AI_DETECTION_MIN_IMAGE_SIZE = 2560;
 export const AI_DETECTION_DEFAULT_CONF = 0.15;
@@ -212,7 +214,7 @@ export function usePreannotateJob({ type, mode }: PreannotateJobOptions) {
       ) {
         return;
       }
-      const useYolo = type === 'yolo' || (type === 'ai_detection' && Boolean(selected));
+      const useYolo = type === 'yolo';
 
       setIsRunning(true);
       setProgress(null);
@@ -261,16 +263,6 @@ export function usePreannotateJob({ type, mode }: PreannotateJobOptions) {
                 ...commonBody,
                 model_kind: selected?.kind as 'imported' | 'trained',
                 conf,
-                ...(type === 'ai_detection' ? {
-                  imgsz: aiDetectionImageSize(selected),
-                  agnostic_nms: true,
-                  // A current-image action is an explicit request to replace
-                  // the visible geometry preview. It still writes only a
-                  // pre-annotation; formal sample data changes only after
-                  // the annotator reviews and saves it. Batch runs stay
-                  // protective of existing completed annotations.
-                  apply_to_canvas_overwrite: mode === 'sample',
-                } : {}),
               },
               sampleId,
             )

@@ -19,12 +19,20 @@ python scripts/upload_to_server.py --dry-run
 python scripts/upload_to_server.py
 ```
 
-上传完成后，只重启独立 Web 进程；训练、编译、回流、预标注、边端验证和发布 Worker 由同一份 supervisor 配置管理：
+上传完成后，先按生产环境文件重建前端静态资源，再重启独立 Web 进程：
 
 ```bash
+cd /data/7G_AI/app
+LABELU_ENV_FILE=/data/7G_AI/config/app.env \
+  /data/7G_AI/runtime/venv/bin/python -m labelu.main frontend-build
 supervisorctl -c /data/7G_AI/config/supervisord.conf restart 7gai-web
 supervisorctl -c /data/7G_AI/config/supervisord.conf status
 ```
+
+> 必须显式设置 `LABELU_ENV_FILE=/data/7G_AI/config/app.env`。否则 `frontend-build`
+> 会优先读取服务器上遗留的 `/data/labeIU/labeIuMedia/.env`，用其中的
+> `SAMPLE_LOCKING_ENABLED=true` 编译出与 18001 后端（默认关闭）不一致的前端：
+> 标注页 WebSocket 握手 403、`isMeTheCurrentUser=false`，导致所有预标注/标注按钮被禁用。
 
 验证入口：
 

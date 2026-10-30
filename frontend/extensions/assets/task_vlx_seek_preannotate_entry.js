@@ -373,6 +373,10 @@
       window.alert("该预标注入口尚未加载，或当前页面不支持此操作。");
       return;
     }
+    if (target.disabled) {
+      window.alert("当前图片暂不可执行该预标注：页面可能仍在加载，或该图片正由其他用户标注。");
+      return;
+    }
     target.click();
   }
   function renderMenu(root) {

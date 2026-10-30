@@ -104,7 +104,7 @@ export default function PreannotateControl({
     const endpoint = providerCapability?.endpoint
       ? providerCapability.endpoint.replace(/^https?:\/\//, '').replace(/\/.*$/, '')
       : '';
-    return [type === 'ai_detection' ? '火山方舟' : providerCapability?.label, modelName, endpoint, type === 'ai_detection' ? `置信度阈值 ${conf.toFixed(2)}` : ''].filter(Boolean).join(' · ') || '使用系统配置的服务';
+    return [type === 'ai_detection' ? '火山方舟' : providerCapability?.label, modelName, endpoint].filter(Boolean).join(' · ') || '使用系统配置的服务';
   }, [conf, loadingModels, modelsResolved, providerCapability, requiresModelSelection, type]);
 
   const handleOpen = useCallback(() => {
