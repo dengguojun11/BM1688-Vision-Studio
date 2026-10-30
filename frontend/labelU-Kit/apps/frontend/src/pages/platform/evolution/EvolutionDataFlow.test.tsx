@@ -29,10 +29,12 @@ describe('EvolutionDataFlow', () => {
   });
 
   it('never invents a sample image outside preview mode', () => {
-    render(<EvolutionDataFlow active={false} preview={false} />);
+    const { container } = render(<EvolutionDataFlow active={false} preview={false} />);
 
     expect(screen.queryByRole('img', { name: /数据集图片/ })).toBeNull();
     expect(screen.queryByText('样本接入进化链路')).toBeNull();
-    expect(screen.getByText(/难例样本/)).toBeTruthy();
+    expect(container.textContent).not.toContain('难例样本');
+    expect(container.textContent).not.toContain('冻结快照');
+    expect(container.textContent).not.toContain('mAP');
   });
 });

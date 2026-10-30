@@ -115,6 +115,50 @@ def test_polygon_boundary_rounding_error_is_clamped():
     assert rects[0]["height"] == 90
 
 
+def test_plate_detection_accepts_legacy_duplicate_closing_point_with_four_point_limit():
+    config = {
+        "defaultRectPresetId": "plateDetection",
+        "tools": [
+            {
+                "tool": "polygonTool",
+                "config": {
+                    "lowerLimitPointNum": 4,
+                    "upperLimitPointNum": 4,
+                    "attributes": [{"value": "platePoint"}],
+                },
+            }
+        ],
+    }
+    rects = detection_rects_for_result(
+        {
+            "polygonTool": {
+                "result": [
+                    {
+                        "label": "platePoint",
+                        "points": [
+                            {"x": 10, "y": 10},
+                            {"x": 90, "y": 10},
+                            {"x": 90, "y": 40},
+                            {"x": 10, "y": 40},
+                            {"x": 10, "y": 10},
+                        ],
+                    }
+                ]
+            }
+        },
+        config,
+        ["platePoint"],
+    )
+
+    assert len(rects) == 1
+    assert (rects[0]["x"], rects[0]["y"], rects[0]["width"], rects[0]["height"]) == (
+        10,
+        10,
+        80,
+        30,
+    )
+
+
 def test_rect_tasks_keep_existing_rect_semantics():
     config = {
         "tools": [

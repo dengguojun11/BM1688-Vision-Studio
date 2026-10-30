@@ -1,0 +1,14 @@
+---
+description: Enforce one integration branch and file-scoped multi-window commits
+alwaysApply: true
+---
+
+# 单一总分支与多窗口协作
+
+- 唯一总分支是 `codex/7g-ai-labelu`；所有窗口和代理只在此分支工作，不新建、切换或保留其他本地工作分支。
+- 每个窗口开始前声明文件或目录责任范围，并先检查 `git status --short`。不同窗口不得同时修改同一个文件；同一文件必须串行处理。
+- 窗口独立性靠文件责任和精确暂存实现。A 窗口提交时，只能包含 A 的文件或明确选中的代码块，B 窗口的未提交修改必须保留。
+- 只使用 `git add -- <path>` 或 `git add -p`；禁止 `git add .`、`git add -A`、`git commit -am`，也不得对其他窗口的修改执行 stash、reset、restore 或 clean。
+- 提交前检查 `git status --short`、`git diff`、`git diff --cached`；提交后核对提交文件列表和差异。
+- 先本地分析和验证；只有用户明确说 `提交代码` 后，才可提交、推送总分支、部署和做生产验证。
+- 旧的功能分支合并脚本和 hook 不属于当前流程；不得用它们创建或合并功能分支。

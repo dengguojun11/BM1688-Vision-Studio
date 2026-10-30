@@ -9,8 +9,10 @@ from starlette.requests import Request
 
 from labelu.internal.common.config import settings
 from labelu.internal.common.error_code import ErrorCode
+from labelu.internal.common.error_code import LabelUException
 from labelu.internal.common.error_code import _is_spa_navigation_request
 from labelu.internal.common.error_code import http_exception_handler
+from labelu.internal.common.error_code import labelu_exception_handler
 from labelu.internal.common.error_code import sqlalchemy_exception_handler
 from labelu.internal.common.error_code import unexpected_exception_handler
 from labelu.internal.common.error_code import validation_exception_handler
@@ -134,3 +136,25 @@ def test_sqlalchemy_exception_handler_hides_internal_details_by_default():
     assert response.status_code == status.HTTP_500_INTERNAL_SERVER_ERROR
     assert data["err_code"] == ErrorCode.CODE_30000_SQL_ERROR.value[0]
     assert data["msg"] == ErrorCode.CODE_30000_SQL_ERROR.value[1]
+
+
+def test_labelu_exception_handler_preserves_cleaning_partial_payload():
+    request = _make_request()
+    exc = LabelUException(
+        code=ErrorCode.CODE_50000_TASK_ERROR,
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        message="样本创建失败",
+        extra={
+            "data": {
+                "cleaning_partial": True,
+                "deleted_attachment_ids": [12],
+            }
+        },
+    )
+
+    response = asyncio.run(labelu_exception_handler(request, exc))
+    data = _json_body(response)
+
+    assert data["msg"] == "样本创建失败"
+    assert data["err_code"] == ErrorCode.CODE_50000_TASK_ERROR.value[0]
+    assert data["data"]["deleted_attachment_ids"] == [12]

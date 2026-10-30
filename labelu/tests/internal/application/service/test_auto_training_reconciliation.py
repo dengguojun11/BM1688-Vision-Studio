@@ -805,6 +805,42 @@ def test_all_training_series_materialize_lineage_without_starting_gpu(
             assert job.queue_source == "AUTO"
             assert job.status == "PENDING"
             assert round_row.state == "QUEUED"
+            if series in {"plate_detection", "plate_recognition"}:
+                expected_profile = f"{series}_v1"
+                assert training_task.training_recipe_key == expected_profile
+                assert training_task.training_recipe_version == 1
+                assert training_task.runtime_profile == expected_profile
+                assert training_task.runtime_interface_version == 1
+                assert job.training_recipe_key == expected_profile
+                assert job.training_recipe_version == 1
+                assert job.runtime_profile == expected_profile
+                assert job.runtime_interface_version == 1
+            else:
+                assert training_task.training_recipe_key is None
+                assert training_task.training_recipe_version is None
+                assert training_task.runtime_profile is None
+                assert training_task.runtime_interface_version is None
+                assert job.training_recipe_key is None
+                assert job.training_recipe_version is None
+                assert job.runtime_profile is None
+                assert job.runtime_interface_version is None
+            preset_snapshot = json.loads(
+                training_task.selected_presets_snapshot_json or "[]"
+            )
+            if series == "plate_detection":
+                assert preset_snapshot[0]["preset_slug"] == "plateDetection"
+                assert preset_snapshot[0]["training_profile"] == "plate_detection_v1"
+                assert preset_snapshot[0]["training_profile_config"] == {
+                    "profile": "plate_detection_v1",
+                    "rect_label": "doubleEP",
+                    "polygon_label": "platePoint",
+                    "attributes": {},
+                }
+            elif series == "plate_recognition":
+                assert preset_snapshot[0]["preset_slug"] == "plate_recognition"
+                assert preset_snapshot[0]["training_profile"] == "plate_recognition_v1"
+                assert preset_snapshot[0]["training_profile_config"]["rect_label"] == "doubleEP"
+                assert preset_snapshot[0]["training_profile_config"]["polygon_label"] == "platePoint"
             assert (
                 db.query(AutoTrainingOutbox)
                 .filter_by(

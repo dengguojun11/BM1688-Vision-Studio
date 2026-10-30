@@ -405,18 +405,34 @@ def _is_spa_navigation_request(request: Request) -> bool:
 
 class LabelUException(HTTPException):
     def __init__(
-        self, code: ErrorCode, status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, message: str = None
+        self,
+        code: ErrorCode,
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        message: str = None,
+        extra: dict | None = None,
     ):
         self.msg = message or code.value[1]
         self.code = code.value[0]
+        self.extra = dict(extra or {})
         super().__init__(status_code=status_code, detail=self.msg)
 
 
 async def labelu_exception_handler(request: Request, exc: LabelUException):
     logger.warning("{} - {}", _request_context(request), exc)
+    content = {"msg": exc.msg, "err_code": exc.code}
+    # A few workflows need to report a committed partial result (for example,
+    # an irreversible object deletion followed by a later operation failure).
+    # Keep the default error envelope unchanged when no extra payload is set.
+    content.update(
+        {
+            key: value
+            for key, value in getattr(exc, "extra", {}).items()
+            if key not in {"msg", "err_code"}
+        }
+    )
     return JSONResponse(
         status_code=exc.status_code,
-        content={"msg": exc.msg, "err_code": exc.code},
+        content=content,
     )
 
 

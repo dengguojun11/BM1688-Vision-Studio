@@ -20,6 +20,7 @@ const StatusStrip = styled.div`
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 20px;
+  min-width: 0;
 
   @media (max-width: 680px) {
     grid-template-columns: 1fr;
@@ -48,10 +49,26 @@ const StatusItem = styled.div`
 `;
 
 const WorkPanel = styled.section`
+  min-width: 0;
   padding: 20px;
   border: 1px solid #e3e8f0;
   border-radius: 6px;
   background: #fff;
+
+  button:focus-visible,
+  a:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  button:active {
+    transform: translateY(1px);
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
 `;
 
 export function WorkspaceSummaryPanel({

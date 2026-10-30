@@ -82,7 +82,11 @@ labelu/internal/statics/*
 docs/_generated_*
 .agents/
 .codex/
-.cursor/
+# Keep Cursor local state ignored, but version the project rule files.
+.cursor/*
+!.cursor/
+!.cursor/rules/
+!.cursor/rules/*.mdc
 .codex_tmp/
 /.tmp/
 /.codex_*

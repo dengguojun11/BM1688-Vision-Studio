@@ -142,9 +142,12 @@ def list_active_edge_validation_external(db: Session) -> List[TaskAttachment]:
     )
 
 
-def hard_delete_by_ids(db: Session, attachment_ids: List[int]) -> None:
+def hard_delete_by_ids(
+    db: Session, attachment_ids: List[int], task_id: int | None = None
+) -> None:
     if not attachment_ids:
         return
-    db.query(TaskAttachment).filter(TaskAttachment.id.in_(attachment_ids)).delete(
-        synchronize_session=False
-    )
+    query = db.query(TaskAttachment).filter(TaskAttachment.id.in_(attachment_ids))
+    if task_id is not None:
+        query = query.filter(TaskAttachment.task_id == int(task_id))
+    query.delete(synchronize_session=False)

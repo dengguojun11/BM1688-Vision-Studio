@@ -256,6 +256,7 @@ describe('dataset version governance', () => {
       class_order_signature: 'order-signature',
     };
     mockedGet.mockImplementation(async (path: string) => {
+      if (path.includes('/label-contracts/current')) return { data: { data: contract } } as never;
       if (path.includes('/ai-prompts')) return { data: { data: promptRows } } as never;
       return { data: { data: [] } } as never;
     });
@@ -387,6 +388,7 @@ describe('dataset version governance', () => {
     };
     let promptRows: any[] = [publishedPrompt];
     mockedGet.mockImplementation(async (path: string) => {
+      if (path.includes('/label-contracts/current')) return { data: { data: contract } } as never;
       if (path.includes('/ai-prompts')) return { data: { data: promptRows } } as never;
       return { data: { data: [] } } as never;
     });
@@ -433,7 +435,6 @@ describe('dataset version governance', () => {
   });
 
   it('resets model and prompt profile when the contract prompt modal is reopened', async () => {
-    mockedGet.mockResolvedValue({ data: { data: [] } } as never);
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const contract = {
       id: 41,
@@ -443,6 +444,10 @@ describe('dataset version governance', () => {
       label_set_signature: 'labels-signature',
       class_order_signature: 'order-signature',
     };
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.includes('/label-contracts/current')) return { data: { data: contract } } as never;
+      return { data: { data: [] } } as never;
+    });
     const view = render(
       <QueryClientProvider client={queryClient}>
         <AnnotationPromptModal dataset={{ id: 7, name: '道路数据' }} contract={contract} open onClose={() => undefined} />
@@ -505,7 +510,10 @@ describe('dataset version governance', () => {
       model_name: 'doubao-vision',
       profile_key: 'custom_bbox_v2',
     };
-    mockedGet.mockResolvedValue({ data: { data: [publishedPrompt, draftPrompt] } } as never);
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.includes('/label-contracts/current')) return { data: { data: contract } } as never;
+      return { data: { data: [publishedPrompt, draftPrompt] } } as never;
+    });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const view = render(
       <QueryClientProvider client={queryClient}>
@@ -534,14 +542,29 @@ describe('dataset version governance', () => {
   });
 
   it('does not show a global-tag binding in the bbox prompt editor', async () => {
-    mockedGet.mockResolvedValue({
-      data: {
-        data: [
-          { id: 99, operation: 'global_tag', status: 'PUBLISHED', effective_prompt: '全局标签提示词' },
-          { id: 100, operation: 'bbox_detection', status: 'DRAFT', effective_prompt: '目标框提示词' },
-        ],
-      },
-    } as never);
+    mockedGet.mockImplementation(async (path: string) => {
+      if (path.includes('/label-contracts/current')) {
+        return {
+          data: {
+            data: {
+              id: 41,
+              dataset_id: 7,
+              revision: 3,
+              annotation_kind: 'bbox',
+              labels: [{ label_id: 18, label_key: '行人', label_value: 'person' }],
+            },
+          },
+        } as never;
+      }
+      return {
+        data: {
+          data: [
+            { id: 99, operation: 'global_tag', status: 'PUBLISHED', effective_prompt: '全局标签提示词' },
+            { id: 100, operation: 'bbox_detection', status: 'DRAFT', effective_prompt: '目标框提示词' },
+          ],
+        },
+      } as never;
+    });
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={queryClient}>

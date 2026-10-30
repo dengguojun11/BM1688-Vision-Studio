@@ -318,6 +318,10 @@ function trainingAlgorithmLabel(value: unknown): string {
   return ({
     yolo_detection: 'YOLO 目标检测',
     yolo_detection_v1: 'YOLO 通用目标检测',
+    plate_detection: '车牌定位（车牌框 + 四角点）',
+    plate_detection_v1: '车牌定位（车牌框 + 四角点）',
+    plate_recognition: '历史复合车牌识别（兼容）',
+    plate_recognition_v1: '历史复合车牌识别（兼容）',
   } as Record<string, string>)[code] || (code ? String(value) : '未指定');
 }
 
@@ -336,9 +340,15 @@ function trainingExecutionLabel(value: unknown): string {
   return ({ local: '本机训练', remote: '远程训练节点', container: '标准容器训练' } as Record<string, string>)[code] || String(value || '未指定');
 }
 
-function trainingRecipeLabel(value: unknown, version?: unknown): string {
+export function trainingRecipeLabel(value: unknown, version?: unknown): string {
   const code = String(value || '').trim().toLowerCase();
-  const label = code === 'yolo_detection_v1' ? 'YOLO 通用目标检测配方' : code || '未指定';
+  const label = ({
+    yolo_detection_v1: 'YOLO 通用目标检测配方',
+    plate_detection: '车牌框 + 四角点（仅定位）',
+    plate_detection_v1: '车牌框 + 四角点（仅定位）',
+    plate_recognition: '历史复合车牌识别（兼容）',
+    plate_recognition_v1: '历史复合车牌识别（兼容）',
+  } as Record<string, string>)[code] || code || '未指定';
   const suffix = version !== undefined && version !== null && String(version).trim() ? `（第 ${version} 版）` : '';
   return `${label}${suffix}`;
 }

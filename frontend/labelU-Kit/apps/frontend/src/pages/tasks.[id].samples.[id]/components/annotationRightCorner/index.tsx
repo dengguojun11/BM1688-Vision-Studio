@@ -13,6 +13,7 @@ import { ReactComponent as SparklesIcon } from '@/assets/svg/spark.svg';
 import commonController from '@/utils/common';
 import {
   CANVAS_PRE_ANNOTATION_MANUAL_LOADED,
+  PRE_ANNOTATION_COMPLETED_EVENT,
   imageAnnotationRef,
   videoAnnotationRef,
   audioAnnotationRef,
@@ -1391,6 +1392,11 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
               buttonType="text"
               disabled={isGlobalLoading || !isMeTheCurrentUser}
               onCompleted={() => {
+                window.dispatchEvent(
+                  new CustomEvent(PRE_ANNOTATION_COMPLETED_EVENT, {
+                    detail: { taskId: Number(taskId), sampleId: Number(sampleId) },
+                  }),
+                );
                 void fetchCurrentCanvasPreAnnotation().finally(() => revalidator.revalidate());
               }}
             />
@@ -1402,6 +1408,11 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
               buttonType="text"
               disabled={isGlobalLoading || !isMeTheCurrentUser}
               onCompleted={() => {
+                window.dispatchEvent(
+                  new CustomEvent(PRE_ANNOTATION_COMPLETED_EVENT, {
+                    detail: { taskId: Number(taskId), sampleId: Number(sampleId) },
+                  }),
+                );
                 void fetchCurrentCanvasPreAnnotation().finally(() => revalidator.revalidate());
               }}
             />
@@ -1410,6 +1421,11 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
               sampleFilename={currentSample?.file?.filename || ''}
               disabled={isGlobalLoading || !isMeTheCurrentUser}
               onCompleted={async () => {
+                window.dispatchEvent(
+                  new CustomEvent(PRE_ANNOTATION_COMPLETED_EVENT, {
+                    detail: { taskId: Number(taskId), sampleId: Number(sampleId) },
+                  }),
+                );
                 await fetchCurrentCanvasPreAnnotation();
                 await revalidator.revalidate();
               }}

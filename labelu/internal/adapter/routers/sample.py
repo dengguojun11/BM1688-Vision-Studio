@@ -1,4 +1,4 @@
-from typing import List, Optional, Union
+from typing import Any, List, Optional, Union
 from pathlib import Path
 
 from sqlalchemy.orm import Session
@@ -411,6 +411,29 @@ async def auto_label(
         current_user=current_user,
     )
     return OkResp[AutoLabelResponse](data=data)
+
+
+@router.get(
+    "/{task_id}/samples/{sample_id}/ai_process",
+    response_model=OkResp[dict[str, Any]],
+    status_code=status.HTTP_200_OK,
+)
+def get_ai_process(
+    task_id: int,
+    sample_id: int,
+    authorization: HTTPAuthorizationCredentials = Security(security),
+    db: Session = Depends(db_module.get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return the latest AI detection prompt/response trace for one sample."""
+
+    data = auto_label_service.get_latest_ai_process(
+        db=db,
+        task_id=task_id,
+        sample_id=sample_id,
+        current_user=current_user,
+    )
+    return OkResp[dict[str, Any]](data=data)
 
 
 @router.post(

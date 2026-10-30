@@ -10,6 +10,7 @@ import pytest
 
 from labelu.internal.application.service import plate_recognition_train as service
 from labelu.internal.common.plate_recognition_profile import (
+    DEFAULT_PLATE_DETECTION_CONFIG,
     DEFAULT_PLATE_RECOGNITION_CONFIG,
     PlateInstance,
     PlateSampleAudit,
@@ -571,6 +572,54 @@ def test_prepare_dataset_writes_pose_labels_crops_and_negative_empty_label(
     )
     assert len(pose_values) == 17
     assert pose_values[0] == "0"
+
+
+def test_prepare_detection_dataset_is_pose_only_with_four_keypoints(
+    tmp_path, monkeypatch
+):
+    media_root = tmp_path / "media"
+    source_dir = media_root / "source"
+    source_dir.mkdir(parents=True)
+    image = np.full((72, 128, 3), 180, dtype=np.uint8)
+    assert cv2.imwrite(str(source_dir / "positive.jpg"), image)
+    assert cv2.imwrite(str(source_dir / "negative.jpg"), image)
+    work_root = tmp_path / "job-8"
+    monkeypatch.setattr(service.settings, "MEDIA_ROOT", str(media_root))
+    monkeypatch.setattr(service, "_job_work_root", lambda _job_id: work_root)
+    samples = [
+        _sample(1, 124, "source/positive.jpg", plate_number="陕A12345"),
+        _sample(2, 124, "source/negative.jpg"),
+    ]
+
+    dataset_root, manifest = service.prepare_plate_recognition_dataset(
+        job_id=8,
+        profile_config=DEFAULT_PLATE_DETECTION_CONFIG,
+        source_task_ids=[124],
+        samples=samples,
+        seed=42,
+        training_profile=service.PLATE_DETECTION_PROFILE,
+    )
+
+    assert manifest["format"] == "labelu_plate_detection_dataset_v1"
+    assert manifest["training_profile"] == service.PLATE_DETECTION_PROFILE
+    assert manifest["component_sample_count"] == 0
+    assert manifest["component_sample_counts"] == {
+        "pose": 1,
+        "ocr": 0,
+        "color": 0,
+        "plate_type": 0,
+    }
+    pose_yaml = (dataset_root / "pose" / "data.yaml").read_text(encoding="utf-8")
+    assert "kpt_shape: [4, 3]" in pose_yaml
+    assert "0: doubleEP" in pose_yaml
+
+    positive_row = next(row for row in manifest["samples"] if row["kind"] == "positive")
+    positive_label = dataset_root / positive_row["pose_label"]
+    assert len(positive_label.read_text(encoding="utf-8").split()) == 17
+    assert positive_label.read_text(encoding="utf-8").split()[0] == "0"
+    assert not (dataset_root / "ocr").exists()
+    assert not (dataset_root / "classification").exists()
+    assert (dataset_root / "component_samples.jsonl").read_text(encoding="utf-8") == ""
 
 
 def test_final_fit_rows_preserve_original_split_and_use_all_rows():

@@ -98,6 +98,13 @@ from labelu.internal.application.service.yolo_quality_assessment import (
     quality_policy_snapshot_for_job,
 )
 from labelu.internal.common.config import settings
+from labelu.internal.common.plate_recognition_profile import (
+    PLATE_DETECTION_PRESET_SLUG,
+    PLATE_DETECTION_PROFILE,
+    PLATE_PROFILE_NAMES,
+    PLATE_RECOGNITION_PRESET_SLUG,
+    PLATE_RECOGNITION_PROFILE,
+)
 from labelu.internal.common.phase_one_contract import ensure_phase_one_training_job_type
 from labelu.internal.common.training_contract import (
     branch_identity_sha256,
@@ -4100,14 +4107,46 @@ async def create_train_job(
             }
         )
 
+        # The compatibility create endpoint historically required callers to
+        # send the plate preset slug separately.  The unified training form
+        # already identifies the plate profile through the recipe, so infer
+        # the matching preset only when the caller did not provide one.
+        # Ordinary recipes deliberately remain on the regular YOLO path.
+        if not str(cmd.rect_preset_slug or "").strip():
+            recipe_plate_defaults = {
+                PLATE_DETECTION_PROFILE: (
+                    PLATE_DETECTION_PRESET_SLUG,
+                    "plate_detection",
+                ),
+                PLATE_RECOGNITION_PROFILE: (
+                    PLATE_RECOGNITION_PRESET_SLUG,
+                    "plate_recognition",
+                ),
+            }.get(requested_recipe_key)
+            if recipe_plate_defaults is not None:
+                inferred_preset_slug, default_plate_target = recipe_plate_defaults
+                inferred_weights = str(cmd.model_weights or "").strip()
+                if inferred_weights in {"", "yolo11n.pt"}:
+                    inferred_weights = plate_recognition_train.PLATE_POSE_PRETRAINED_MODEL
+                cmd = cmd.copy(
+                    update={
+                        "rect_preset_slug": inferred_preset_slug,
+                        "plate_training_target": (
+                            str(cmd.plate_training_target or "").strip()
+                            or default_plate_target
+                        ),
+                        "model_weights": inferred_weights,
+                    }
+                )
+
     requested_preset_slug = str(cmd.rect_preset_slug or "").strip()
     requested_preset = (
         crud_annotation_taxonomy.label_preset_get_by_slug(db, requested_preset_slug)
         if requested_preset_slug
         else None
     )
-    if requested_preset and requested_preset.training_profile == "plate_recognition_v1":
-        if retry_key:
+    if requested_preset and requested_preset.training_profile in PLATE_PROFILE_NAMES:
+        if retry_key and requested_preset.training_profile == "plate_recognition_v1":
             raise LabelUException(
                 code=ErrorCode.CODE_30004_PHASE_ONE_CAPABILITY_RETIRED,
                 status_code=status.HTTP_409_CONFLICT,
@@ -4128,6 +4167,12 @@ async def create_train_job(
             suffix_text = f"-v{suffix}"
             candidate_name = f"{base_name[:128 - len(suffix_text)]}{suffix_text}"
             suffix += 1
+        plate_profile = str(requested_preset.training_profile or "").strip()
+        plate_recipe_key = str(cmd.training_recipe_key or "").strip() or plate_profile
+        plate_recipe_version = int(cmd.training_recipe_version or 1)
+        # Carry the selected recipe/profile into the compatibility task path.
+        # Without this, the legacy adapter's command defaults to generic YOLO
+        # metadata even though the created job is a plate worker.
         created = training_task_service.create_label_dimension_training_task(
             db,
             current_user=current_user,
@@ -4146,6 +4191,10 @@ async def create_train_job(
                 model_weights=cmd.model_weights,
                 weights_source=cmd.weights_source or "preset",
                 weights_ref_id=cmd.weights_ref_id,
+                training_recipe_key=plate_recipe_key,
+                training_recipe_version=plate_recipe_version,
+                runtime_profile=plate_profile,
+                runtime_interface_version=1,
                 epochs=cmd.epochs,
                 imgsz=cmd.imgsz,
                 hyperparams=cmd.hyperparams or {},

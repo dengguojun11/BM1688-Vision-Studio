@@ -43,6 +43,10 @@ class CreateTrainingJobCommand(BaseModel):
     # it is snapshotted into the job lineage for reproducible reruns.
     training_recipe_key: str | None = Field(default=None, max_length=128)
     training_recipe_version: int | None = Field(default=None, ge=1)
+    rect_preset_slug: str | None = Field(default=None, max_length=128)
+    plate_training_target: Literal[
+        "plate_detection", "plate_recognition"
+    ] | None = None
     epochs: int = Field(default=50, ge=1, le=3000)
     imgsz: int = Field(default=640, ge=320, le=1280)
     chip_type: str | None = Field(default=None, max_length=64)
@@ -62,6 +66,7 @@ class CreateTrainingJobCommand(BaseModel):
         "precision",
         "container_image",
         "training_recipe_key",
+        "rect_preset_slug",
         pre=True,
     )
     def normalize_text(cls, value):

@@ -8,6 +8,11 @@ from typing import Any, Iterable
 
 PLATE_RECOGNITION_PROFILE = "plate_recognition_v1"
 PLATE_RECOGNITION_PRESET_SLUG = "plateRecognition"
+PLATE_DETECTION_PROFILE = "plate_detection_v1"
+PLATE_DETECTION_PRESET_SLUG = "plateDetection"
+PLATE_PROFILE_NAMES = frozenset(
+    {PLATE_RECOGNITION_PROFILE, PLATE_DETECTION_PROFILE}
+)
 
 _PLATE_ATTRIBUTE_NAMES = {
     "plateNumber": "车牌号",
@@ -45,6 +50,17 @@ DEFAULT_PLATE_RECOGNITION_CONFIG: dict[str, Any] = {
     },
 }
 
+# Detection-only training uses the same geometry labels as the historical
+# composite profile, but deliberately has no rectangle attributes.  Keeping a
+# profile marker in this config lets old clients that only send the config
+# still be classified correctly.
+DEFAULT_PLATE_DETECTION_CONFIG: dict[str, Any] = {
+    "profile": PLATE_DETECTION_PROFILE,
+    "rect_label": "doubleEP",
+    "polygon_label": "platePoint",
+    "attributes": {},
+}
+
 
 @dataclass(frozen=True)
 class PlateInstance:
@@ -73,6 +89,7 @@ def normalize_token(value: Any) -> str:
 def task_config_has_plate_recognition_marker(raw: Any) -> bool:
     expected = {
         PLATE_RECOGNITION_PRESET_SLUG,
+        PLATE_DETECTION_PRESET_SLUG,
         DEFAULT_PLATE_RECOGNITION_CONFIG["rect_label"],
         "doebleEP",
         DEFAULT_PLATE_RECOGNITION_CONFIG["polygon_label"],
@@ -88,9 +105,31 @@ def task_config_has_plate_recognition_marker(raw: Any) -> bool:
     return isinstance(raw, str) and raw.strip() in expected
 
 
-def parse_profile_config(raw: Any) -> dict[str, Any]:
+def is_plate_profile(profile: Any) -> bool:
+    return normalize_token(profile) in PLATE_PROFILE_NAMES
+
+
+def profile_preset_slug(profile: Any) -> str | None:
+    normalized = normalize_token(profile)
+    if normalized == PLATE_RECOGNITION_PROFILE:
+        return PLATE_RECOGNITION_PRESET_SLUG
+    if normalized == PLATE_DETECTION_PROFILE:
+        return PLATE_DETECTION_PRESET_SLUG
+    return None
+
+
+def parse_profile_config(
+    raw: Any,
+    *,
+    profile: str | None = None,
+) -> dict[str, Any]:
     if raw in (None, ""):
-        parsed: Any = copy.deepcopy(DEFAULT_PLATE_RECOGNITION_CONFIG)
+        requested_profile = normalize_token(profile) or PLATE_RECOGNITION_PROFILE
+        parsed: Any = copy.deepcopy(
+            DEFAULT_PLATE_DETECTION_CONFIG
+            if requested_profile == PLATE_DETECTION_PROFILE
+            else DEFAULT_PLATE_RECOGNITION_CONFIG
+        )
     elif isinstance(raw, str):
         try:
             parsed = json.loads(raw)
@@ -101,13 +140,45 @@ def parse_profile_config(raw: Any) -> dict[str, Any]:
     if not isinstance(parsed, dict):
         raise ValueError("training_profile_config must be an object")
 
+    embedded_profile = normalize_token(parsed.get("profile"))
+    # Older callers passed the profile body without a marker.  An explicitly
+    # empty attribute map is the unambiguous detection-only shape; retain the
+    # historical recognition default for all other unmarked payloads.
+    inferred_profile = (
+        PLATE_DETECTION_PROFILE
+        if not profile and not embedded_profile and parsed.get("attributes") == {}
+        else PLATE_RECOGNITION_PROFILE
+    )
+    requested_profile = (
+        normalize_token(profile)
+        or embedded_profile
+        or inferred_profile
+    )
+    if requested_profile not in PLATE_PROFILE_NAMES:
+        raise ValueError(f"unsupported training profile: {requested_profile}")
+
     rect_label = normalize_token(parsed.get("rect_label"))
     polygon_label = normalize_token(parsed.get("polygon_label"))
     attributes = parsed.get("attributes")
-    if not rect_label or not polygon_label or not isinstance(attributes, dict):
+    if not rect_label or not polygon_label:
         raise ValueError(
-            "plate profile requires rect_label, polygon_label and attributes"
+            "plate profile requires rect_label and polygon_label"
         )
+
+    if requested_profile == PLATE_DETECTION_PROFILE:
+        if attributes in (None, ""):
+            attributes = {}
+        if not isinstance(attributes, dict) or attributes:
+            raise ValueError("plate detection profile must not define attributes")
+        return {
+            "profile": PLATE_DETECTION_PROFILE,
+            "rect_label": rect_label,
+            "polygon_label": polygon_label,
+            "attributes": {},
+        }
+
+    if not isinstance(attributes, dict):
+        raise ValueError("plate profile requires rect_label, polygon_label and attributes")
 
     plate_number = attributes.get("plateNumber")
     if (
@@ -131,15 +202,18 @@ def parse_profile_config(raw: Any) -> dict[str, Any]:
         normalized_attrs[key] = normalized_values
 
     return {
+        "profile": PLATE_RECOGNITION_PROFILE,
         "rect_label": rect_label,
         "polygon_label": polygon_label,
         "attributes": normalized_attrs,
     }
 
 
-def dump_profile_config(raw: Any) -> str:
+def dump_profile_config(raw: Any, *, profile: str | None = None) -> str:
     return json.dumps(
-        parse_profile_config(raw), ensure_ascii=False, separators=(",", ":")
+        parse_profile_config(raw, profile=profile),
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
 
 
@@ -199,6 +273,38 @@ def task_config_matches_profile(task_config: Any, profile_config: Any = None) ->
     return all(key in rect_tokens for key in profile["attributes"])
 
 
+def profile_for_task_config(task_config: Any) -> str | None:
+    """Infer the plate profile represented by a saved task config.
+
+    The preset slug is authoritative when present.  For legacy configs without
+    a slug, the presence of the historical attributes distinguishes the
+    composite profile from the detection-only geometry.
+    """
+    if isinstance(task_config, str):
+        try:
+            task_config = json.loads(task_config)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if not isinstance(task_config, dict):
+        return None
+    for key in ("training_profile", "trainingProfile"):
+        marker = normalize_token(task_config.get(key))
+        if marker in PLATE_PROFILE_NAMES:
+            return marker
+    slug = normalize_token(task_config.get("defaultRectPresetId"))
+    if slug == PLATE_RECOGNITION_PRESET_SLUG:
+        return PLATE_RECOGNITION_PROFILE
+    if slug == PLATE_DETECTION_PRESET_SLUG:
+        return PLATE_DETECTION_PROFILE
+    # Prefer the strict composite match because its required attributes are a
+    # superset of the detection-only geometry.
+    if task_config_matches_profile(task_config, DEFAULT_PLATE_RECOGNITION_CONFIG):
+        return PLATE_RECOGNITION_PROFILE
+    if task_config_matches_profile(task_config, DEFAULT_PLATE_DETECTION_CONFIG):
+        return PLATE_DETECTION_PROFILE
+    return None
+
+
 def build_plate_recognition_rect_attribute(
     profile_config: Any = None,
     *,
@@ -207,13 +313,17 @@ def build_plate_recognition_rect_attribute(
 ) -> dict[str, Any]:
     """Build the full LabelU rect attribute required by the plate profile."""
     profile = parse_profile_config(profile_config)
-    color_values = profile["attributes"]["color"]
-    plate_type_values = profile["attributes"]["plateType"]
-    return {
+    payload = {
         "key": label_key,
         "value": profile["rect_label"],
         "color": color,
-        "attributes": [
+    }
+    if profile.get("profile") == PLATE_DETECTION_PROFILE:
+        payload["attributes"] = []
+        return payload
+    color_values = profile["attributes"]["color"]
+    plate_type_values = profile["attributes"]["plateType"]
+    payload["attributes"] = [
             {
                 "key": _PLATE_ATTRIBUTE_NAMES["plateNumber"],
                 "value": "plateNumber",
@@ -244,8 +354,8 @@ def build_plate_recognition_rect_attribute(
                     for value in plate_type_values
                 ],
             },
-        ],
-    }
+    ]
+    return payload
 
 
 def normalize_plate_recognition_task_config(
@@ -309,8 +419,15 @@ def normalize_plate_recognition_task_config(
     )
     polygon_config.setdefault("attributeConfigurable", True)
     polygon_config.setdefault("lineType", 1)
-    polygon_config.setdefault("lowerLimitPointNum", 5)
-    polygon_config.setdefault("upperLimitPointNum", 6)
+    if profile.get("profile") == PLATE_DETECTION_PROFILE:
+        # Detection-only annotations are exactly the four plate corners.  An
+        # existing task config may still carry the historical 5-6 point
+        # limits, so overwrite rather than relying on setdefault here.
+        polygon_config["lowerLimitPointNum"] = 4
+        polygon_config["upperLimitPointNum"] = 4
+    else:
+        polygon_config.setdefault("lowerLimitPointNum", 5)
+        polygon_config.setdefault("upperLimitPointNum", 6)
     polygon_config["attributes"] = [
         {
             "key": polygon_key,
@@ -320,7 +437,7 @@ def normalize_plate_recognition_task_config(
     ]
     polygon["config"] = polygon_config
 
-    cfg["defaultRectPresetId"] = PLATE_RECOGNITION_PRESET_SLUG
+    cfg["defaultRectPresetId"] = profile_preset_slug(profile.get("profile"))
     cfg.setdefault("commonAttributeConfigurable", True)
     return cfg
 
@@ -545,6 +662,7 @@ def audit_plate_sample(result: Any, profile_config: Any = None) -> PlateSampleAu
             kind="invalid", errors=("annotation result is not an object",)
         )
     profile = parse_profile_config(profile_config)
+    detection_only = profile.get("profile") == PLATE_DETECTION_PROFILE
     rect_label = profile["rect_label"]
     polygon_label = profile["polygon_label"]
     rects = [
@@ -614,23 +732,24 @@ def audit_plate_sample(result: Any, profile_config: Any = None) -> PlateSampleAu
         plate_number = _attribute_value(rect, "plateNumber")
         color = _attribute_value(rect, "color")
         plate_type = _attribute_value(rect, "plateType")
-        missing = [
-            key
-            for key, value in (
-                ("plateNumber", plate_number),
-                ("color", color),
-                ("plateType", plate_type),
-            )
-            if not value
-        ]
-        if missing:
-            sample_errors.append(
-                f"plate rectangle missing attributes: {', '.join(missing)}"
-            )
-        if color and color not in profile["attributes"]["color"]:
-            sample_errors.append(f"unsupported color: {color}")
-        if plate_type and plate_type not in profile["attributes"]["plateType"]:
-            sample_errors.append(f"unsupported plateType: {plate_type}")
+        if not detection_only:
+            missing = [
+                key
+                for key, value in (
+                    ("plateNumber", plate_number),
+                    ("color", color),
+                    ("plateType", plate_type),
+                )
+                if not value
+            ]
+            if missing:
+                sample_errors.append(
+                    f"plate rectangle missing attributes: {', '.join(missing)}"
+                )
+            if color and color not in profile["attributes"]["color"]:
+                sample_errors.append(f"unsupported color: {color}")
+            if plate_type and plate_type not in profile["attributes"]["plateType"]:
+                sample_errors.append(f"unsupported plateType: {plate_type}")
         instances.append(
             PlateInstance(
                 rect=dict(rect),

@@ -109,6 +109,20 @@ def _points(item: dict[str, Any]) -> list[tuple[float, float]]:
     return [value for value in points if value is not None]
 
 
+def _normalize_plate_detection_points(
+    points: list[tuple[float, float]], task_config: Any
+) -> list[tuple[float, float]]:
+    """Ignore the optional legacy closing vertex for plate detection."""
+    config = parse_task_config(task_config)
+    if (
+        str(config.get("defaultRectPresetId") or "").strip() == "plateDetection"
+        and len(points) == 5
+        and points[0] == points[-1]
+    ):
+        return points[:-1]
+    return points
+
+
 def _configured_point_limit(task_config: Any, tool_name: str, key: str) -> int | None:
     value = _number(_tool_config(task_config, tool_name).get(key))
     if value is None or value <= 0:
@@ -148,6 +162,8 @@ def _item_bbox(
         return x, y, width, height
     if tool_name in {"polygonTool", "lineTool"}:
         points = _points(item)
+        if tool_name == "polygonTool":
+            points = _normalize_plate_detection_points(points, task_config)
         minimum = _configured_point_limit(task_config, tool_name, "lowerLimitPointNum")
         maximum = _configured_point_limit(task_config, tool_name, "upperLimitPointNum")
         if minimum and len(points) < minimum:

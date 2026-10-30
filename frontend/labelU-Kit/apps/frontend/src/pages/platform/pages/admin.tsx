@@ -15,6 +15,7 @@ import GlobalTagDimensionsPanel from './globalTagDimensions';
 import PublishConfigPanel from './publishConfig';
 import ExpertS3ConfigPanel from './expertS3Config';
 import ModelAccessConfigPanel from './modelAccessConfig';
+import ImageCleaningConfigPanel from './imageCleaningConfig';
 
 function errorText(error: unknown) {
   const status = responseStatus(error);
@@ -415,6 +416,7 @@ export default function AdminPage() {
   const publishConfig = currentView === 'publish-config';
   const expertS3Config = currentView === 'expert-s3-config';
   const modelAccessConfig = currentView === 'model-access-config';
+  const imageCleaningConfig = currentView === 'image-cleaning';
   const [userSearch, setUserSearch] = useState('');
   const [userSearchDraft, setUserSearchDraft] = useState('');
   const [userPage, setUserPage] = useState(0);
@@ -427,7 +429,13 @@ export default function AdminPage() {
       if (normalizedUserSearch) params.q = normalizedUserSearch;
       return request.get('/v1/users', { params });
     },
-    enabled: !governance && !edgeDevices && !publishConfig && !expertS3Config && !modelAccessConfig,
+    enabled:
+      !governance &&
+      !edgeDevices &&
+      !publishConfig &&
+      !expertS3Config &&
+      !modelAccessConfig &&
+      !imageCleaningConfig,
     staleTime: 30_000,
     placeholderData: (previous) => previous,
   });
@@ -517,6 +525,15 @@ export default function AdminPage() {
     );
   }
 
+  if (imageCleaningConfig) {
+    return (
+      <>
+        <ModuleHeader module="admin" />
+        <ImageCleaningConfigPanel />
+      </>
+    );
+  }
+
   const dataState = usersQuery.error ? 'error' : usersQuery.isLoading ? 'loading' : userTotal ? 'ready' : 'empty';
   return (
     <>
@@ -552,6 +569,9 @@ export default function AdminPage() {
         </Button>
         <Button icon={<ApiOutlined />} onClick={() => navigate('/admin?view=model-access-config')}>
           模型接入配置
+        </Button>
+        <Button icon={<SettingOutlined />} onClick={() => navigate('/admin?view=image-cleaning')}>
+          图片清洗配置
         </Button>
       </Space>
       {usersQuery.error ? (

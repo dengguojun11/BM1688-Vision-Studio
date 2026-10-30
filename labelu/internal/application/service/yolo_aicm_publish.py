@@ -141,6 +141,57 @@ PUBLISH_VERSION_SEQ_FILE = "publish_version_seq.json"
 LABELS_FIRST_LINE_PLACEHOLDER = "?????"
 DIRECT_LABELS_FIRST_LINE_PLACEHOLDER = "??????"
 
+_PLATE_DETECTION_JOB_TYPE = "plate_detection"
+_PLATE_RECOGNITION_JOB_TYPE = "plate_recognition"
+_PLATE_DETECTION_BMODEL_FILENAME = "plate_detection_fp16_1b.bmodel"
+_PLATE_RECOGNITION_BMODEL_FILENAME = "plate_recognition_fp16_1b.bmodel"
+_PLATE_DETECTION_CONTRACT_FILENAME = "plate_detection_contract.json"
+_PLATE_RECOGNITION_CONTRACT_FILENAME = "plate_recognition_contract.json"
+_PLATE_RUNTIME_PROFILE = "plate_recognition_v1"
+_PLATE_RUNTIME_NETWORKS = ["plate_pose", "plate_ocr", "plate_color", "plate_type"]
+_PLATE_DETECTION_KEYPOINT_ORDER = [
+    "top_left",
+    "top_right",
+    "bottom_right",
+    "bottom_left",
+]
+
+
+def _job_type(job: Any) -> str:
+    return str(getattr(job, "job_type", "") or "").strip()
+
+
+def _is_plate_detection_job(job: Any) -> bool:
+    return _job_type(job) == _PLATE_DETECTION_JOB_TYPE
+
+
+def _is_plate_recognition_job(job: Any) -> bool:
+    return _job_type(job) == _PLATE_RECOGNITION_JOB_TYPE
+
+
+def _is_plate_job(job: Any) -> bool:
+    return _is_plate_detection_job(job) or _is_plate_recognition_job(job)
+
+
+def _required_precisions_for_job(job: Any) -> Tuple[str, ...]:
+    return ("fp16",) if _is_plate_job(job) else ("fp32", "fp16", "int8")
+
+
+def _required_plate_bmodel_filename(job: Any) -> Optional[str]:
+    if _is_plate_detection_job(job):
+        return _PLATE_DETECTION_BMODEL_FILENAME
+    if _is_plate_recognition_job(job):
+        return _PLATE_RECOGNITION_BMODEL_FILENAME
+    return None
+
+
+def _required_plate_contract_filename(job: Any) -> Optional[str]:
+    if _is_plate_detection_job(job):
+        return _PLATE_DETECTION_CONTRACT_FILENAME
+    if _is_plate_recognition_job(job):
+        return _PLATE_RECOGNITION_CONTRACT_FILENAME
+    return None
+
 
 def _assert_project_access(
     db: Session,
@@ -799,6 +850,7 @@ def _publish_gate_reason_codes(
     validation_pass: Optional[YoloValidationPassAssessment] = None,
     artifact_manifest: Optional[Dict[str, Any]] = None,
     export_id: Optional[int] = None,
+    required_precisions: Tuple[str, ...] = ("fp32", "fp16", "int8"),
 ) -> List[str]:
     codes: List[str] = []
     if edge_validation is None:
@@ -851,7 +903,7 @@ def _publish_gate_reason_codes(
             if execution_signature:
                 expected["execution_generation"] = execution_signature
                 expected["require_execution_generation_state"] = True
-            expected["required_precisions"] = ["fp32", "fp16", "int8"]
+            expected["required_precisions"] = list(required_precisions)
             compiler = manifest.get("compiler")
             compiler_cfg = compiler.get("config") if isinstance(compiler, dict) else {}
             if isinstance(compiler_cfg, dict) and isinstance(
@@ -2262,13 +2314,24 @@ def _publish_bmodel_options_for_job(
     job: Any, bm_names: List[str]
 ) -> List[AicmPublishBmodelOption]:
     options = _build_bmodel_options(bm_names)
-    if str(getattr(job, "job_type", "") or "").strip() == "plate_recognition":
+    required_filename = _required_plate_bmodel_filename(job)
+    if required_filename:
         return [
             option
             for option in options
-            if option.filename == "plate_recognition_fp16_1b.bmodel"
+            if option.filename == required_filename
         ]
     return options
+
+
+def _ensure_aicm_job_supported(job: Any) -> None:
+    """Keep the detection-only plate artifact out of generic YOLO packages."""
+    if _is_plate_detection_job(job):
+        raise LabelUException(
+            code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="车牌检测模型必须使用专用 plate_detection 发布链，不能套用通用 YOLO/AICM 包",
+        )
 
 
 def _default_bmodel_rel_path(options: List[AicmPublishBmodelOption]) -> Optional[str]:
@@ -2325,7 +2388,7 @@ def _prepare_publish_bmodel_options(
     allow_quality_risk: bool = False,
 ) -> List[AicmPublishBmodelOption]:
     """Attach validation evidence and mark options selectable for this trigger."""
-    if str(getattr(job, "job_type", "") or "").strip() == "plate_recognition":
+    if _is_plate_recognition_job(job):
         for option in options:
             option.validation_status = "not_applicable"
             option.publishable = True
@@ -2445,6 +2508,7 @@ def _normalize_bmodel_selection(
     *,
     precision: Optional[str] = None,
     rel_path: Optional[str] = None,
+    required_filename: Optional[str] = None,
 ) -> str:
     """
     解析要读取的编译产物（相对 export/models/）。
@@ -2457,6 +2521,32 @@ def _normalize_bmodel_selection(
             status_code=status.HTTP_400_BAD_REQUEST,
             message="导出记录中未找到 bmodel，请先完成 BM1688 编译",
         )
+    expected_name = str(required_filename or "").strip()
+    if expected_name:
+        matching = [name for name in names if Path(name).name == expected_name]
+        if not matching:
+            raise LabelUException(
+                code=ErrorCode.CODE_57016_YOLO_BM1688_FILE_NOT_READY,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"导出记录缺少当前任务要求的 bmodel: {expected_name}",
+            )
+        requested = (rel_path or "").strip().replace("\\", "/")
+        if requested:
+            requested_name = Path(requested).name
+            if requested_name != expected_name:
+                raise LabelUException(
+                    code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message=f"当前车牌发布只能选择 {expected_name}",
+                )
+            if requested in names:
+                return requested
+            raise LabelUException(
+                code=ErrorCode.CODE_57016_YOLO_BM1688_FILE_NOT_READY,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"导出记录中不存在指定 bmodel: {requested}",
+            )
+        return matching[0]
     by_prec = _pick_bmodel_rel_by_precision(names, precision or "")
     if by_prec:
         return by_prec
@@ -2723,6 +2813,7 @@ def _resolve_bmodel(
     *,
     bmodel_precision: Optional[str] = None,
     bmodel_rel_path: Optional[str] = None,
+    required_filename: Optional[str] = None,
 ) -> Tuple[Path, str]:
     """返回 (导出目录内 bmodel 绝对路径, models/ 下相对路径)。"""
     names = bm_export_service._list_bmodel_names(export_id)
@@ -2730,6 +2821,7 @@ def _resolve_bmodel(
         names,
         precision=bmodel_precision,
         rel_path=bmodel_rel_path,
+        required_filename=required_filename,
     )
     root = bm_export_service._export_dir_for_row(export_id)
     path = root / "models" / pick
@@ -2868,12 +2960,22 @@ def _is_output_rknn_bmodel(rel_path: str) -> bool:
 
 
 def _assert_package_files_unchanged(
-    before: frozenset[str], after: frozenset[str]
+    before: frozenset[str],
+    after: frozenset[str],
+    *,
+    allowed_added_paths: Optional[set[str]] = None,
+    allowed_removed_paths: Optional[set[str]] = None,
 ) -> None:
     if before == after:
         return
     added = after - before
     removed = before - after
+    added -= {str(path).replace("\\", "/") for path in (allowed_added_paths or set())}
+    removed -= {
+        str(path).replace("\\", "/") for path in (allowed_removed_paths or set())
+    }
+    if not added and not removed:
+        return
     bmodel_added = {p for p in added if _is_output_rknn_bmodel(p)}
     bmodel_removed = {p for p in removed if _is_output_rknn_bmodel(p)}
     if (
@@ -3178,7 +3280,9 @@ def _class_names_with_source_for_publish(job) -> Tuple[List[str], str]:
     发布包类别顺序与训练 data.yaml names（YOLO id 0..nc-1）一致。
     不使用 BM1688 模板 zip 内旧 running_info 的类别顺序。
     """
-    if str(getattr(job, "job_type", "") or "").strip() == "plate_recognition":
+    if _is_plate_detection_job(job):
+        return ["doubleEP"], "plate_detection_v1"
+    if _is_plate_recognition_job(job):
         return ["doubleEP"], "plate_recognition_v1"
     frozen_names = []
     try:
@@ -3222,25 +3326,49 @@ def _runtime_template_for_job(
     job,
     environment_id: str,
 ) -> RuntimePublishTemplate:
-    runtime_profile = str(getattr(job, "runtime_profile", None) or "").strip()
-    interface_version = getattr(job, "runtime_interface_version", None)
-    if not runtime_profile or interface_version is None:
+    requested_profile = str(getattr(job, "runtime_profile", None) or "").strip()
+    requested_interface = getattr(job, "runtime_interface_version", None)
+    if not requested_profile and not _is_plate_job(job):
         raise LabelUException(
             code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
             status_code=status.HTTP_400_BAD_REQUEST,
             message="训练作业没有新版运行契约，请使用当前版本重新训练后再发布",
         )
-    rows = (
-        db.query(RuntimePublishTemplate)
-        .filter(
-            RuntimePublishTemplate.runtime_profile == runtime_profile,
-            RuntimePublishTemplate.interface_version == int(interface_version),
-            RuntimePublishTemplate.environment_id.in_([environment_id, "default"]),
-            RuntimePublishTemplate.status == "active",
-            RuntimePublishTemplate.deleted_at.is_(None),
+    if requested_interface is None:
+        if not _is_plate_job(job):
+            raise LabelUException(
+                code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="训练作业没有新版运行契约，请使用当前版本重新训练后再发布",
+            )
+        requested_interface = 1
+    interface_version = int(requested_interface)
+    profiles: List[str] = []
+    if requested_profile and not (
+        _is_plate_job(job) and requested_profile == "yolov11_detection"
+    ):
+        profiles.append(requested_profile)
+    if _is_plate_job(job) and _PLATE_RUNTIME_PROFILE not in profiles:
+        # Detection-only jobs may have been created by a legacy client with
+        # the generic runtime profile.  The existing plate runtime template
+        # remains the compatible package source; the contract is replaced
+        # below with the detection-only contract.
+        profiles.append(_PLATE_RUNTIME_PROFILE)
+    rows: List[RuntimePublishTemplate] = []
+    for runtime_profile in profiles:
+        rows = (
+            db.query(RuntimePublishTemplate)
+            .filter(
+                RuntimePublishTemplate.runtime_profile == runtime_profile,
+                RuntimePublishTemplate.interface_version == interface_version,
+                RuntimePublishTemplate.environment_id.in_([environment_id, "default"]),
+                RuntimePublishTemplate.status == "active",
+                RuntimePublishTemplate.deleted_at.is_(None),
+            )
+            .all()
         )
-        .all()
-    )
+        if rows:
+            break
     rows.sort(
         key=lambda row: (
             0 if str(row.environment_id) == str(environment_id) else 1,
@@ -3253,7 +3381,8 @@ def _runtime_template_for_job(
             code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
             status_code=status.HTTP_400_BAD_REQUEST,
             message=(
-                f"未配置运行时模板: {runtime_profile} / interface v{interface_version} "
+                f"未配置运行时模板: {profiles[-1] if profiles else requested_profile} "
+                f"/ interface v{interface_version} "
                 f"/ environment {environment_id}"
             ),
         )
@@ -3301,8 +3430,17 @@ def _validate_runtime_template_capability(row: RuntimePublishTemplate, job, clas
     supported_job_types = {
         str(item).strip() for item in capability.get("supported_job_types", []) if str(item).strip()
     }
-    job_type = str(getattr(job, "job_type", None) or "yolo_detection").strip()
-    if supported_job_types and job_type not in supported_job_types:
+    job_type = _job_type(job) or "yolo_detection"
+    compatible_legacy_plate_template = (
+        _is_plate_detection_job(job)
+        and str(row.runtime_profile or "").strip() == _PLATE_RUNTIME_PROFILE
+        and _PLATE_RECOGNITION_JOB_TYPE in supported_job_types
+    )
+    if (
+        supported_job_types
+        and job_type not in supported_job_types
+        and not compatible_legacy_plate_template
+    ):
         raise LabelUException(
             code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
             status_code=status.HTTP_409_CONFLICT,
@@ -3608,31 +3746,48 @@ def _initialize_direct_yolov11_package(
     return out_rknn
 
 
-_PLATE_RUNTIME_PROFILE = "plate_recognition_v1"
-_PLATE_RUNTIME_NETWORKS = ["plate_pose", "plate_ocr", "plate_color", "plate_type"]
-
-
-def _plate_runtime_contract_path(pkg_root: Path, out_rknn: Path) -> Path:
-    for candidate in (
-        out_rknn / "plate_recognition_contract.json",
-        pkg_root / "plate_recognition_contract.json",
-    ):
-        if not candidate.is_file():
-            continue
-        try:
-            payload = json.loads(candidate.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        profile = str(
-            payload.get("training_profile")
-            or payload.get("profile")
-            or payload.get("format")
-            or ""
+def _plate_runtime_contract_path(
+    pkg_root: Path,
+    out_rknn: Path,
+    job_type: str = _PLATE_RECOGNITION_JOB_TYPE,
+) -> Path:
+    normalized_job_type = str(job_type or "").strip() or _PLATE_RECOGNITION_JOB_TYPE
+    if normalized_job_type == _PLATE_DETECTION_JOB_TYPE:
+        expected_name = _PLATE_DETECTION_CONTRACT_FILENAME
+        candidates = (out_rknn / expected_name, pkg_root / expected_name)
+        for candidate in candidates:
+            if candidate.is_file() and _validate_plate_runtime_contract(
+                candidate, normalized_job_type
+            ):
+                return candidate
+        # A historical plate runtime template may carry only the composite
+        # contract.  Keep its location, but let the package builder replace it
+        # with the detection-only contract under the distinct file name.
+        composite_candidates = (
+            out_rknn / _PLATE_RECOGNITION_CONTRACT_FILENAME,
+            pkg_root / _PLATE_RECOGNITION_CONTRACT_FILENAME,
         )
-        networks = payload.get("networks") or {}
-        network_names = set(networks if isinstance(networks, dict) else networks)
-        if _PLATE_RUNTIME_PROFILE in profile and set(_PLATE_RUNTIME_NETWORKS).issubset(
-            network_names
+        for candidate in composite_candidates:
+            if candidate.is_file() and _validate_plate_runtime_contract(
+                candidate, _PLATE_RECOGNITION_JOB_TYPE
+            ):
+                return candidate.with_name(expected_name)
+        raise LabelUException(
+            code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message=(
+                "当前 AICM 模板不支持车牌检测运行时。模板必须预置 "
+                "plate_detection_contract.json，或提供有效的复合车牌运行时契约作为专用模板。"
+            ),
+        )
+
+    candidates = (
+        out_rknn / _PLATE_RECOGNITION_CONTRACT_FILENAME,
+        pkg_root / _PLATE_RECOGNITION_CONTRACT_FILENAME,
+    )
+    for candidate in candidates:
+        if candidate.is_file() and _validate_plate_runtime_contract(
+            candidate, _PLATE_RECOGNITION_JOB_TYPE
         ):
             return candidate
     raise LabelUException(
@@ -3643,6 +3798,49 @@ def _plate_runtime_contract_path(pkg_root: Path, out_rknn: Path) -> Path:
             "plate_recognition_contract.json，并声明 plate_pose、plate_ocr、"
             "plate_color、plate_type 四个网络；禁止套用单 YOLO 模板发布。"
         ),
+    )
+
+
+def _validate_plate_runtime_contract(path: Path, job_type: str) -> bool:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    normalized_job_type = str(job_type or "").strip()
+    if normalized_job_type == _PLATE_DETECTION_JOB_TYPE:
+        if (
+            str(payload.get("format") or "").strip()
+            != "labelu_plate_detection_bm1688_v1"
+            or str(payload.get("job_type") or "").strip()
+            != _PLATE_DETECTION_JOB_TYPE
+        ):
+            return False
+        network = payload.get("network")
+        if not isinstance(network, dict):
+            return False
+        if str(network.get("name") or "").strip() != "plate_detection":
+            return False
+        keypoint_order = network.get("keypoint_order")
+        if keypoint_order is not None:
+            if not isinstance(keypoint_order, list):
+                return False
+            if list(keypoint_order) != _PLATE_DETECTION_KEYPOINT_ORDER:
+                return False
+        return True
+    if normalized_job_type != _PLATE_RECOGNITION_JOB_TYPE:
+        return False
+    profile = str(
+        payload.get("training_profile")
+        or payload.get("profile")
+        or payload.get("format")
+        or ""
+    )
+    networks = payload.get("networks") or {}
+    network_names = set(networks if isinstance(networks, dict) else networks)
+    return _PLATE_RUNTIME_PROFILE in profile and set(_PLATE_RUNTIME_NETWORKS).issubset(
+        network_names
     )
 
 
@@ -3674,6 +3872,32 @@ def _patch_plate_video_json(video_path: Path, *, model_rel_path: Optional[str]) 
     )
 
 
+def _patch_plate_detection_video_json(
+    video_path: Path, *, model_rel_path: Optional[str]
+) -> None:
+    payload = json.loads(video_path.read_text(encoding="utf-8"))
+    rknn = payload.get("rknn")
+    if not isinstance(rknn, dict):
+        rknn = {}
+    rknn["ModelFunction"] = "plateDetectionV1"
+    rknn["ModelAlgType"] = "plateDetectionV1"
+    if model_rel_path:
+        rknn["ModelPath"] = model_rel_path
+    rknn["NumClass"] = 1
+    rknn["Networks"] = [
+        {
+            "name": "plate_detection",
+            "role": "plate_detection_and_four_corners",
+            "keypoint_order": list(_PLATE_DETECTION_KEYPOINT_ORDER),
+        }
+    ]
+    rknn["Pipeline"] = ["plate_detection"]
+    payload["rknn"] = rknn
+    video_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+
+
 def _patch_plate_running_info(path: Path) -> None:
     text = path.read_text(encoding="utf-8")
     begin = "# labelu_plate_recognition_begin"
@@ -3697,6 +3921,38 @@ def _patch_plate_running_info(path: Path) -> None:
             "  - plate_ocr",
             "  - plate_color",
             "  - plate_type",
+            end,
+        ]
+    )
+    path.write_text(text + "\n" + block + "\n", encoding="utf-8")
+
+
+def _patch_plate_detection_running_info(path: Path) -> None:
+    text = path.read_text(encoding="utf-8")
+    begin = "# labelu_plate_detection_begin"
+    end = "# labelu_plate_detection_end"
+    text = re.sub(
+        rf"\n?{re.escape(begin)}.*?{re.escape(end)}\n?",
+        "\n",
+        text,
+        flags=re.DOTALL,
+    ).rstrip()
+    text = re.sub(
+        r"\n?# labelu_plate_recognition_begin.*?# labelu_plate_recognition_end\n?",
+        "\n",
+        text,
+        flags=re.DOTALL,
+    ).rstrip()
+    block = "\n".join(
+        [
+            begin,
+            "training_profile: plate_detection_v1",
+            "runtime_networks:",
+            "  - plate_detection",
+            "keypoint_order:",
+            *[f"  - {name}" for name in _PLATE_DETECTION_KEYPOINT_ORDER],
+            "runtime_pipeline:",
+            "  - plate_detection",
             end,
         ]
     )
@@ -3937,9 +4193,8 @@ def _build_publish_package(
     if progress is not None:
         progress.start("package", "生成 YOLOv11 标准发布包")
     work = _create_publish_work_dir(export_id)
-    is_plate_job = (
-        str(getattr(job, "job_type", "") or "").strip() == "plate_recognition"
-    )
+    is_plate_job = _is_plate_job(job)
+    is_plate_detection = _is_plate_detection_job(job)
     export_row = crud_yolo_bm1688_export.get(db, export_id)
     package_input_size = int(
         getattr(export_row, "imgsz", None) or getattr(job, "imgsz", None) or 640
@@ -3950,7 +4205,7 @@ def _build_publish_package(
             raise LabelUException(
                 code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message="复合车牌模型必须使用其专用运行包，不能套用标准 YOLOv11 检测包",
+                message="车牌模型必须使用其专用运行包，不能套用标准 YOLOv11 检测包",
             )
         pkg_root = work / "package"
         out_rknn = _initialize_direct_yolov11_package(
@@ -3969,7 +4224,7 @@ def _build_publish_package(
     plate_contract_target = None
     if is_plate_job:
         plate_contract_target = _plate_runtime_contract_path(
-            pkg_root, out_rknn
+            pkg_root, out_rknn, _job_type(job)
         )
     file_snapshot = _snapshot_package_files(pkg_root)
 
@@ -3977,12 +4232,14 @@ def _build_publish_package(
         export_id,
         bmodel_precision=bmodel_precision,
         bmodel_rel_path=bmodel_rel_path,
+        required_filename=_required_plate_bmodel_filename(job),
     )
-    if is_plate_job and bmodel_src.name != "plate_recognition_fp16_1b.bmodel":
+    required_bmodel_name = _required_plate_bmodel_filename(job)
+    if required_bmodel_name and bmodel_src.name != required_bmodel_name:
         raise LabelUException(
             code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
             status_code=status.HTTP_400_BAD_REQUEST,
-            message="复合车牌发布必须选择 plate_recognition_fp16_1b.bmodel 合并模型",
+            message=f"当前车牌发布必须选择 {required_bmodel_name}",
         )
     dest_bmodel, model_path_patch = _deploy_publish_bmodel(
         out_rknn,
@@ -4073,21 +4330,52 @@ def _build_publish_package(
         chip_type=chip_type,
         model_rel_path=model_path_patch,
     )
+    allowed_contract_added: set[str] = set()
+    allowed_contract_removed: set[str] = set()
     if is_plate_job:
-        _patch_plate_video_json(video_json, model_rel_path=model_path_patch)
+        if is_plate_detection:
+            _patch_plate_detection_video_json(
+                video_json, model_rel_path=model_path_patch
+            )
+        else:
+            _patch_plate_video_json(video_json, model_rel_path=model_path_patch)
+        contract_name = _required_plate_contract_filename(job)
         export_contract = (
             Path(settings.MEDIA_ROOT)
             / settings.YOLO_BM1688_EXPORT_SUBDIR
             / str(export_id)
-            / "plate_recognition_contract.json"
+            / str(contract_name)
         )
-        if not export_contract.is_file() or plate_contract_target is None:
+        if (
+            plate_contract_target is None
+            or not export_contract.is_file()
+            or not _validate_plate_runtime_contract(export_contract, _job_type(job))
+        ):
             raise LabelUException(
                 code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message="复合车牌 BM1688 导出缺少 plate_recognition_contract.json",
+                message=(
+                    f"车牌 BM1688 导出缺少有效的 {contract_name}"
+                ),
             )
+        plate_contract_target.parent.mkdir(parents=True, exist_ok=True)
+        target_rel = plate_contract_target.relative_to(pkg_root).as_posix()
+        if not plate_contract_target.exists():
+            allowed_contract_added.add(target_rel)
         shutil.copy2(export_contract, plate_contract_target)
+        if is_plate_detection:
+            # Do not leave the composite contract beside a single-Pose
+            # detection package; its presence can make runtime dispatch
+            # ambiguous.
+            stale_contracts = (
+                out_rknn / _PLATE_RECOGNITION_CONTRACT_FILENAME,
+                pkg_root / _PLATE_RECOGNITION_CONTRACT_FILENAME,
+            )
+            for stale in stale_contracts:
+                if stale == plate_contract_target or not stale.is_file():
+                    continue
+                allowed_contract_removed.add(stale.relative_to(pkg_root).as_posix())
+                stale.unlink()
     if model_path_patch:
         _log_step(
             steps,
@@ -4138,7 +4426,9 @@ def _build_publish_package(
             imgsz=int(job.imgsz or 640),
             metric_lookup_classes=classes,
         )
-    if is_plate_job:
+    if is_plate_detection:
+        _patch_plate_detection_running_info(ri_path)
+    elif is_plate_job:
         _patch_plate_running_info(ri_path)
     _log_step(
         steps,
@@ -4146,11 +4436,22 @@ def _build_publish_package(
         progress,
     )
 
-    _assert_package_files_unchanged(file_snapshot, _snapshot_package_files(pkg_root))
+    _assert_package_files_unchanged(
+        file_snapshot,
+        _snapshot_package_files(pkg_root),
+        allowed_added_paths=allowed_contract_added,
+        allowed_removed_paths=allowed_contract_removed,
+    )
     _log_step(
         steps, "已校验发布包文件列表与模板一致（仅允许 bmodel 文件名替换）", progress
     )
-    if is_plate_job:
+    if is_plate_detection:
+        _log_step(
+            steps,
+            "已校验车牌检测专用模板能力并写入单 Pose 四角定位运行契约",
+            progress,
+        )
+    elif is_plate_job:
         _log_step(
             steps,
             "已校验复合车牌模板能力并写入四网络运行契约",
@@ -4861,10 +5162,24 @@ def list_publishable(
         train_m = _training_val_metrics_for_job(job)
         vp = _validation_pass_row(train_m)
         contract_fields = yolo_train_service._job_contract_response_fields(job)
-        preset_name = "YOLOv11 标准发布包"
+        is_plate_job = _is_plate_job(job)
+        plate_runtime_profile = str(
+            getattr(job, "runtime_profile", None) or ""
+        ).strip()
+        if is_plate_job and plate_runtime_profile == "yolov11_detection":
+            plate_runtime_profile = _PLATE_RUNTIME_PROFILE
+        preset_name = (
+            plate_runtime_profile
+            if is_plate_job
+            else "YOLOv11 标准发布包"
+        ) or ("车牌专用运行包" if is_plate_job else "YOLOv11 标准发布包")
         preset_slug = ""
-        publish_template_key = "yolov11_direct"
-        publish_template_source = "generated"
+        publish_template_key = (
+            plate_runtime_profile
+            if is_plate_job
+            else "yolov11_direct"
+        ) or ("plate_recognition_v1" if is_plate_job else "yolov11_direct")
+        publish_template_source = "runtime_profile" if is_plate_job else "generated"
         template_cached = False
         creators = _creator_emails_by_user_ids(db, [job.created_by])
         dataset_category_fields = yolo_train_service._training_task_response_fields(
@@ -4942,6 +5257,7 @@ def list_publishable(
             validation_pass=vp,
             artifact_manifest=export_manifest,
             export_id=int(export_row.id),
+            required_precisions=_required_precisions_for_job(job),
         )
         if compile_block_reason:
             publish_gate_reason_codes.append("compile_contract_blocked")
@@ -5098,10 +5414,8 @@ def publish_to_aicm(
         edge_validation,
     )
 
-    is_plate_job = (
-        str(getattr(job, "job_type", "") or "").strip() == "plate_recognition"
-    )
-    required_precisions = ("fp16",) if is_plate_job else ("fp32", "fp16", "int8")
+    is_plate_job = _is_plate_job(job)
+    required_precisions = _required_precisions_for_job(job)
     if not bm_export_service.is_bmodel_release_ready(
         row, required_precisions=required_precisions
     ):
@@ -5149,12 +5463,19 @@ def publish_to_aicm(
     selected_precision = "fp16" if is_plate_job else ""
     selected_bmodel_rel = ""
     if publish_cmd:
-        selected_precision = (
+        requested_precision = (
             (publish_cmd.bmodel_precision or "").strip().lower()
             or _bmodel_precision_from_filename(
                 Path((publish_cmd.bmodel_rel_path or "").strip()).name
             )
         )
+        if is_plate_job and requested_precision and requested_precision != "fp16":
+            raise LabelUException(
+                code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="车牌发布仅支持 fp16 专用 BModel",
+            )
+        selected_precision = requested_precision or selected_precision
     if not selected_precision and not is_plate_job:
         fallback_options = _prepare_publish_bmodel_options(
             job,
@@ -5180,6 +5501,7 @@ def publish_to_aicm(
             selected_bmodel_rel
             or (publish_cmd.bmodel_rel_path if publish_cmd else None)
         ),
+        required_filename=_required_plate_bmodel_filename(job),
     )
     selected_precision = _bmodel_precision_from_filename(Path(selected_bmodel_rel).name)
     _log_step(
@@ -6115,11 +6437,8 @@ async def start_publish_job(
             code=ErrorCode.CODE_57004_YOLO_TRAIN_JOB_NOT_FOUND,
             status_code=status.HTTP_404_NOT_FOUND,
         )
-    is_plate_job = (
-        str(getattr(train_job, "job_type", "") or "").strip()
-        == "plate_recognition"
-    )
-    required_precisions = ("fp16",) if is_plate_job else ("fp32", "fp16", "int8")
+    is_plate_job = _is_plate_job(train_job)
+    required_precisions = _required_precisions_for_job(train_job)
     if not bm_export_service.is_bmodel_release_ready(
         row, required_precisions=required_precisions
     ):
@@ -6186,6 +6505,12 @@ async def start_publish_job(
         or _bmodel_precision_from_filename(Path(str(bmodel_rel_path or "")).name)
         or ("fp16" if is_plate_job else "int8")
     )
+    if is_plate_job and selected_precision != "fp16":
+        raise LabelUException(
+            code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="车牌发布仅支持 fp16 专用 BModel",
+        )
     evidence_comparison = bm_export_service._effective_pt_bmodel_comparison(
         row, edge_validation
     )

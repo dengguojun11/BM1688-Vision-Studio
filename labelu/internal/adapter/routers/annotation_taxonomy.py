@@ -36,6 +36,7 @@ from labelu.internal.application.response.base import CommonDataResp, MetaData, 
 from labelu.internal.application.service import annotation_taxonomy as taxonomy_service
 from labelu.internal.application.service import annotation_contract as contract_service
 from labelu.internal.application.service import system_labels as system_label_service
+from labelu.internal.application.service.algorithm import ensure_seeded
 from labelu.internal.common.db import begin_transaction
 from labelu.internal.common import db as db_module
 from labelu.internal.common.security import security
@@ -245,6 +246,7 @@ async def list_training_recipes(
     q: str | None = Query(default=None, max_length=128),
     authorization: HTTPAuthorizationCredentials = Security(security), db: Session = Depends(db_module.get_db), current_user: User = Depends(get_current_user)
 ):
+    ensure_seeded(db)
     data, total = system_label_service.list_recipes_page(
         db, page=page, size=size, search=q
     )

@@ -39,6 +39,10 @@ from labelu.internal.domain.models.sample import TaskSample
 from labelu.internal.domain.models.task import Task
 from labelu.internal.domain.models.training_task import TrainingTask
 from labelu.internal.domain.models.yolo_train_job import YoloTrainJob
+from labelu.internal.common.plate_recognition_profile import (
+    DEFAULT_PLATE_DETECTION_CONFIG,
+    DEFAULT_PLATE_RECOGNITION_CONFIG,
+)
 
 
 class AutoTrainingActiveRoundConflict(RuntimeError):
@@ -71,6 +75,121 @@ def _loads(raw: str | None, default: Any):
         return json.loads(raw)
     except (TypeError, ValueError):
         return default
+
+
+def _snapshot_value(snapshot: Any, keys: tuple[str, ...]) -> Any:
+    """Read a contract field from a serialized catalog snapshot.
+
+    Plan versions created before the catalog snapshot shape was stabilized may
+    contain the fields at the top level, while newer callers can wrap the
+    catalog row under a small ``recipe``/``runtime`` object.  Keep the lookup
+    intentionally narrow so unrelated config values are never interpreted as
+    a training contract.
+    """
+    if not isinstance(snapshot, dict):
+        return None
+    for key in keys:
+        value = snapshot.get(key)
+        if value not in (None, ""):
+            return value
+    for container_key in (
+        "recipe",
+        "training_recipe",
+        "runtime",
+        "contract",
+        "snapshot",
+    ):
+        nested = snapshot.get(container_key)
+        if not isinstance(nested, dict):
+            continue
+        for key in keys:
+            value = nested.get(key)
+            if value not in (None, ""):
+                return value
+    return None
+
+
+def _positive_int(value: Any, default: int = 1) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 1 else default
+
+
+def _plate_contract_fields(
+    *,
+    series_type: str,
+    version: AutoTrainingPlanVersion,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve immutable recipe/runtime fields for an automatic plate job."""
+    if series_type not in {"plate_detection", "plate_recognition"}:
+        return {}
+
+    profile = (
+        "plate_detection_v1"
+        if series_type == "plate_detection"
+        else "plate_recognition_v1"
+    )
+    recipe_snapshot = _loads(version.training_recipe_snapshot_json, {})
+    runtime_snapshot = _loads(version.runtime_profile_snapshot_json, {})
+    recipe_config = config.get("training_recipe")
+    runtime_config = config.get("runtime_profile")
+    recipe_key = (
+        _snapshot_value(
+            recipe_snapshot,
+            ("recipe_key", "training_recipe_key", "key"),
+        )
+        or _snapshot_value(
+            recipe_config,
+            ("recipe_key", "training_recipe_key", "key"),
+        )
+        or config.get("training_recipe_key")
+        or profile
+    )
+    recipe_version = _snapshot_value(
+        recipe_snapshot,
+        ("training_recipe_version", "recipe_version", "version"),
+    )
+    if recipe_version in (None, ""):
+        recipe_version = _snapshot_value(
+            recipe_config,
+            ("training_recipe_version", "recipe_version", "version"),
+        )
+    if recipe_version in (None, ""):
+        recipe_version = config.get("training_recipe_version")
+
+    runtime_profile = (
+        _snapshot_value(
+            runtime_snapshot,
+            ("runtime_profile", "profile", "key"),
+        )
+        or _snapshot_value(
+            runtime_config,
+            ("runtime_profile", "profile", "key"),
+        )
+        or config.get("runtime_profile_key")
+        or profile
+    )
+    runtime_version = _snapshot_value(
+        runtime_snapshot,
+        ("runtime_interface_version", "interface_version", "version"),
+    )
+    if runtime_version in (None, ""):
+        runtime_version = _snapshot_value(
+            runtime_config,
+            ("runtime_interface_version", "interface_version", "version"),
+        )
+    if runtime_version in (None, ""):
+        runtime_version = config.get("runtime_interface_version")
+
+    return {
+        "training_recipe_key": str(recipe_key).strip() or profile,
+        "training_recipe_version": _positive_int(recipe_version),
+        "runtime_profile": str(runtime_profile).strip() or profile,
+        "runtime_interface_version": _positive_int(runtime_version),
+    }
 
 
 def _sha_text(value: str) -> str:
@@ -542,13 +661,34 @@ def materialize_training_job(
     ]
     presets = []
     if plan.series_type in {"plate_detection", "plate_recognition"}:
+        # Keep the automatic-training snapshot bound to the same contract as
+        # the plan.  Detection-only plates must not be materialized as the
+        # historical recognition preset, otherwise downstream dataset and
+        # runtime dispatch loses the four-point-only contract.
+        is_detection = plan.series_type == "plate_detection"
+        plate_profile_config = config.get("plate_profile")
+        if plate_profile_config in (None, ""):
+            plate_profile_config = (
+                DEFAULT_PLATE_DETECTION_CONFIG
+                if is_detection
+                else DEFAULT_PLATE_RECOGNITION_CONFIG
+            )
         presets = [
             {
-                "preset_slug": "plate_recognition",
-                "training_profile": "plate_recognition_v1",
-                "training_profile_config": config.get("plate_profile", {}),
+                "preset_slug": "plateDetection" if is_detection else "plate_recognition",
+                "training_profile": (
+                    "plate_detection_v1"
+                    if is_detection
+                    else "plate_recognition_v1"
+                ),
+                "training_profile_config": plate_profile_config,
             }
         ]
+    contract_fields = _plate_contract_fields(
+        series_type=plan.series_type,
+        version=version,
+        config=config,
+    )
     quality_snapshot = config.get("quality_policy_binding", {})
     training_task = TrainingTask(
         owner_id=plan.owner_id,
@@ -571,6 +711,10 @@ def materialize_training_job(
         label_set_signature=plan.label_set_signature,
         class_order_signature=plan.class_order_signature,
         source_sample_snapshot_json=json.dumps(source_manifest, ensure_ascii=False),
+        training_recipe_key=contract_fields.get("training_recipe_key"),
+        training_recipe_version=contract_fields.get("training_recipe_version"),
+        runtime_profile=contract_fields.get("runtime_profile"),
+        runtime_interface_version=contract_fields.get("runtime_interface_version"),
         quality_policy_snapshot_json=json.dumps(quality_snapshot, ensure_ascii=False),
         auto_training_plan_id=plan.id,
         auto_training_round_id=round_row.id,
@@ -610,6 +754,10 @@ def materialize_training_job(
         class_order_signature=plan.class_order_signature,
         dataset_content_signature=round_row.dataset_signature,
         source_sample_manifest_json=json.dumps(source_manifest, ensure_ascii=False),
+        training_recipe_key=contract_fields.get("training_recipe_key"),
+        training_recipe_version=contract_fields.get("training_recipe_version"),
+        runtime_profile=contract_fields.get("runtime_profile"),
+        runtime_interface_version=contract_fields.get("runtime_interface_version"),
         quality_policy_snapshot_json=json.dumps(quality_snapshot, ensure_ascii=False),
         auto_training_plan_id=plan.id,
         auto_training_round_id=round_row.id,

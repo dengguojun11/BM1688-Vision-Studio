@@ -62,7 +62,7 @@ const TYPE_ACTION_TEXT = {
 } as const;
 
 const MODEL_SELECTION_TYPES = new Set<PreannotateType>(['yolo', 'tagtool']);
-const MODEL_LOADING_TYPES = new Set<PreannotateType>(['yolo', 'tagtool']);
+const MODEL_LOADING_TYPES = new Set<PreannotateType>(['yolo', 'tagtool', 'ai_detection']);
 
 export const AI_DETECTION_MIN_IMAGE_SIZE = 2560;
 export const AI_DETECTION_DEFAULT_CONF = 0.15;
@@ -101,6 +101,7 @@ export function usePreannotateJob({ type, mode }: PreannotateJobOptions) {
       setLoadingModels(true);
       setModelsResolved(false);
       setModels([]);
+      if (type === 'ai_detection') setSelectedModelKey(undefined);
       try {
         if (!MODEL_LOADING_TYPES.has(type)) {
           setModels([]);
@@ -206,11 +207,12 @@ export function usePreannotateJob({ type, mode }: PreannotateJobOptions) {
       const selected = selectedModel;
       if (
         (MODEL_SELECTION_TYPES.has(type) && !selected)
+        || (type === 'ai_detection' && (!modelsResolved || loadingModels))
         || isRunning
       ) {
         return;
       }
-      const useYolo = type === 'yolo';
+      const useYolo = type === 'yolo' || (type === 'ai_detection' && Boolean(selected));
 
       setIsRunning(true);
       setProgress(null);
@@ -264,9 +266,9 @@ export function usePreannotateJob({ type, mode }: PreannotateJobOptions) {
                   agnostic_nms: true,
                   // A current-image action is an explicit request to replace
                   // the visible geometry preview. It still writes only a
-                  // pre-annotation; formal sample data changes only after the
-                  // annotator reviews and saves it. Batch runs stay protective
-                  // of existing completed annotations.
+                  // pre-annotation; formal sample data changes only after
+                  // the annotator reviews and saves it. Batch runs stay
+                  // protective of existing completed annotations.
                   apply_to_canvas_overwrite: mode === 'sample',
                 } : {}),
               },

@@ -62,6 +62,54 @@ def _provider_failure_cooldown_seconds(response: httpx.Response) -> float:
     return max(1.0, min(delay, 300.0)) if math.isfinite(delay) else 60.0
 
 
+def _json_response_constraint_rejected(response: httpx.Response) -> bool:
+    """Detect a provider rejecting only the optional JSON response constraint.
+
+    Some OpenAI-compatible gateways do not implement ``response_format`` and
+    return a generic HTTP 400.  Retrying every 400 would duplicate invalid
+    image/prompt requests, so the fallback is enabled only when the response
+    identifies the JSON-format parameter (or an equivalent unsupported-field
+    error).
+    """
+    if response.status_code != 400:
+        return False
+    parts: list[str] = []
+    try:
+        payload = response.json()
+    except (ValueError, TypeError):
+        payload = None
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            for key in ("message", "code", "type", "param", "parameter"):
+                value = error.get(key)
+                if value is not None:
+                    parts.append(str(value))
+        for key in ("message", "code", "type", "param", "parameter"):
+            value = payload.get(key)
+            if value is not None:
+                parts.append(str(value))
+    if not parts:
+        parts.append(response.text[:4000])
+    text = " ".join(parts).lower()
+    if "response_format" in text or "json_object" in text:
+        return True
+    unsupported = any(
+        marker in text
+        for marker in (
+            "unsupported",
+            "not support",
+            "unknown field",
+            "unknown parameter",
+            "extra inputs",
+            "unrecognized",
+        )
+    )
+    return unsupported and any(
+        marker in text for marker in ("format", "parameter", "field", "json")
+    )
+
+
 def _check_provider_cooldown(connection_key: str) -> None:
     now = time.monotonic()
     with _VISION_PROVIDER_FAILURE_LOCK:
@@ -306,18 +354,36 @@ def _responses_output_text(response: dict[str, Any]) -> str:
     direct = response.get("output_text")
     if isinstance(direct, str) and direct.strip():
         return direct
-    parts: list[str] = []
+    message_parts: list[str] = []
+    fallback_parts: list[str] = []
     for item in response.get("output") or []:
         if not isinstance(item, dict):
             continue
-        content = item.get("content")
-        if isinstance(content, str) and content.strip():
-            parts.append(content)
+        item_type = str(item.get("type") or "").strip().lower()
+        if item_type in {"message", "output_message"} and isinstance(
+            item.get("text"), str
+        ):
+            # A few OpenAI-compatible gateways flatten message content onto
+            # the output item instead of returning ``content[].text``.
+            text = item["text"]
+        elif item_type == "output_text" and isinstance(item.get("text"), str):
+            text = item["text"]
+        else:
+            content = item.get("content")
+            if isinstance(content, str) and content.strip():
+                text = content
+            else:
+                text = _message_content_text(content)
+        if not text.strip():
             continue
-        text = _message_content_text(content)
-        if text.strip():
-            parts.append(text)
-    return "\n".join(parts)
+        fallback_parts.append(text)
+        # Responses may include reasoning/analysis items before the assistant
+        # message.  Those texts are not part of the JSON result and must not
+        # be concatenated with it.  Prefer strictly typed message output while
+        # retaining a fallback for providers that omit item type.
+        if item_type in {"message", "output_message", "output_text"}:
+            message_parts.append(text)
+    return "".join(message_parts or fallback_parts)
 
 
 def _extract_json_obj(text: str) -> dict[str, Any]:
@@ -653,6 +719,9 @@ def _openai_compatible_infer(
             ],
             "max_output_tokens": output_limit,
             "thinking": {"type": "disabled"},
+            # Keep the contract prompt as the semantic source, and require
+            # the provider to return machine-parseable JSON.
+            "text": {"format": {"type": "json_object"}},
         }
     else:
         body = {
@@ -668,6 +737,10 @@ def _openai_compatible_infer(
             ],
             "max_tokens": output_limit,
             "temperature": 0.2,
+            # Ask OpenAI-compatible gateways to keep the model response
+            # machine-parseable.  A one-time compatibility fallback below
+            # removes this field for gateways that reject it.
+            "response_format": {"type": "json_object"},
         }
     headers = {"Content-Type": "application/json"}
     if api_key:
@@ -684,78 +757,205 @@ def _openai_compatible_infer(
         json.dumps([url, model, sorted(headers.items())]).encode("utf-8")
     ).hexdigest()
     _check_provider_cooldown(connection_key)
-    with httpx.Client(
-        timeout=float(timeout_seconds or settings.AI_MODEL_TIMEOUT_SECONDS),
-        verify=bool(verify_tls),
-        follow_redirects=False,
-    ) as client:
-        # A Responses request may consume a Coding Plan inference before the
-        # client observes a transport timeout. Do not resubmit it blindly.
-        max_attempts = 1 if use_responses_api else _VISION_MAX_ATTEMPTS
-        for attempt in range(1, max_attempts + 1):
-            try:
-                r = client.post(url, headers=headers, json=body)
-            except httpx.TransportError as exc:
-                if attempt >= max_attempts:
-                    raise
-                delay = 2 ** (attempt - 1)
-                logger.warning(
-                    "vision chain {} transport error on attempt {}/{}: {}; retrying in {}s",
-                    provider_label,
-                    attempt,
-                    max_attempts,
-                    str(exc)[:300],
-                    delay,
-                )
-                time.sleep(delay)
-                continue
-
-            if r.status_code >= 400:
-                logger.warning(
-                    "vision chain {} HTTP {} on attempt {}/{}: {}",
-                    provider_label,
-                    r.status_code,
-                    attempt,
-                    max_attempts,
-                    r.text[:500],
-                )
-                cooldown = _provider_failure_cooldown_seconds(r)
-                if cooldown:
-                    with _VISION_PROVIDER_FAILURE_LOCK:
-                        _VISION_PROVIDER_FAILURES[connection_key] = (
-                            time.monotonic() + cooldown,
-                            r.status_code,
-                        )
-                    # Fall through to the next configured provider immediately.
-                    # A 429 must not multiply requests inside this same call.
-                    r.raise_for_status()
-                if (
-                    r.status_code in _VISION_RETRYABLE_STATUS_CODES
-                    and attempt < max_attempts
-                ):
+    response_output_limit = output_limit
+    length_retry_used = False
+    parse_retry_used = False
+    format_fallback_used = False
+    json_constraint_enabled = not use_responses_api
+    while True:
+        if use_responses_api:
+            body["max_output_tokens"] = response_output_limit
+        else:
+            body["max_tokens"] = response_output_limit
+            if json_constraint_enabled:
+                body["response_format"] = {"type": "json_object"}
+            else:
+                body.pop("response_format", None)
+        format_fallback_requested = False
+        with httpx.Client(
+            timeout=float(timeout_seconds or settings.AI_MODEL_TIMEOUT_SECONDS),
+            verify=bool(verify_tls),
+            follow_redirects=False,
+        ) as client:
+            # A Responses request may consume a Coding Plan inference before the
+            # client observes a transport timeout. Do not resubmit it blindly.
+            max_attempts = 1 if use_responses_api else _VISION_MAX_ATTEMPTS
+            for attempt in range(1, max_attempts + 1):
+                try:
+                    r = client.post(url, headers=headers, json=body)
+                except httpx.TransportError as exc:
+                    if attempt >= max_attempts:
+                        raise
                     delay = 2 ** (attempt - 1)
                     logger.warning(
-                        "vision chain {} retrying HTTP {} in {}s",
+                        "vision chain {} transport error on attempt {}/{}: {}; retrying in {}s",
                         provider_label,
-                        r.status_code,
+                        attempt,
+                        max_attempts,
+                        str(exc)[:300],
                         delay,
                     )
                     time.sleep(delay)
                     continue
-            r.raise_for_status()
-            with _VISION_PROVIDER_FAILURE_LOCK:
-                _VISION_PROVIDER_FAILURES.pop(connection_key, None)
-            break
+
+                if r.status_code >= 400:
+                    logger.warning(
+                        "vision chain {} HTTP {} on attempt {}/{}: {}",
+                        provider_label,
+                        r.status_code,
+                        attempt,
+                        max_attempts,
+                        r.text[:500],
+                    )
+                    if (
+                        not use_responses_api
+                        and json_constraint_enabled
+                        and not format_fallback_used
+                        and _json_response_constraint_rejected(r)
+                    ):
+                        # The request body is otherwise valid, but this
+                        # gateway does not understand response_format. Retry
+                        # once without the optional constraint; subsequent
+                        # requests retain the normal HTTP retry policy.
+                        format_fallback_used = True
+                        json_constraint_enabled = False
+                        format_fallback_requested = True
+                        logger.warning(
+                            "vision chain {} rejected response_format with HTTP 400; "
+                            "retrying once without JSON constraint",
+                            provider_label,
+                        )
+                        break
+                    cooldown = _provider_failure_cooldown_seconds(r)
+                    if cooldown:
+                        with _VISION_PROVIDER_FAILURE_LOCK:
+                            _VISION_PROVIDER_FAILURES[connection_key] = (
+                                time.monotonic() + cooldown,
+                                r.status_code,
+                            )
+                        # Fall through to the next configured provider immediately.
+                        # A 429 must not multiply requests inside this same call.
+                        r.raise_for_status()
+                    if (
+                        r.status_code in _VISION_RETRYABLE_STATUS_CODES
+                        and attempt < max_attempts
+                    ):
+                        delay = 2 ** (attempt - 1)
+                        logger.warning(
+                            "vision chain {} retrying HTTP {} in {}s",
+                            provider_label,
+                            r.status_code,
+                            delay,
+                        )
+                        time.sleep(delay)
+                        continue
+                r.raise_for_status()
+                with _VISION_PROVIDER_FAILURE_LOCK:
+                    _VISION_PROVIDER_FAILURES.pop(connection_key, None)
+                break
+        if format_fallback_requested:
+            continue
         response_payload = r.json()
-    if use_responses_api:
-        content = _responses_output_text(response_payload)
-    else:
-        choice0 = (response_payload.get("choices") or [{}])[0]
-        msg = choice0.get("message") or {}
-        content = _message_content_text(msg.get("content"))
-    parsed = _extract_json_obj(content)
+
+        if use_responses_api:
+            status_value = str(response_payload.get("status") or "").strip().lower()
+            incomplete_details = response_payload.get("incomplete_details")
+            incomplete_reason = (
+                str(incomplete_details.get("reason") or "").strip().lower()
+                if isinstance(incomplete_details, dict)
+                else ""
+            )
+            if status_value == "incomplete":
+                if incomplete_reason in {"length", "max_output_tokens"}:
+                    expanded_limit = min(max(response_output_limit * 4, 4096), 32768)
+                    if not length_retry_used and expanded_limit > response_output_limit:
+                        length_retry_used = True
+                        logger.warning(
+                            "vision chain {} output reached {} tokens; retrying once with {}",
+                            provider_label,
+                            response_output_limit,
+                            expanded_limit,
+                        )
+                        response_output_limit = expanded_limit
+                        continue
+                    raise ValueError(
+                        "视觉模型输出超过最大长度，请在模型配置中提高最大输出长度后重试"
+                    )
+                raise ValueError(
+                    "视觉模型输出未完成"
+                    + (f"（原因：{incomplete_reason}）" if incomplete_reason else "")
+                )
+            content = _responses_output_text(response_payload)
+        else:
+            choice0 = (response_payload.get("choices") or [{}])[0]
+            msg = choice0.get("message") or {}
+            content = _message_content_text(msg.get("content"))
+
+        try:
+            parsed = _extract_json_obj(content)
+        except json.JSONDecodeError as exc:
+            expanded_limit = min(max(response_output_limit * 4, 4096), 32768)
+            if (
+                not parse_retry_used
+                and expanded_limit > response_output_limit
+            ):
+                parse_retry_used = True
+                logger.warning(
+                    "vision chain {} returned invalid JSON at position {} ({} chars); "
+                    "retrying once with {} output tokens",
+                    provider_label,
+                    exc.pos,
+                    len(content),
+                    expanded_limit,
+                )
+                response_output_limit = expanded_limit
+                continue
+            logger.warning(
+                "vision chain {} returned invalid JSON at position {} ({} chars); "
+                "no further parse retry available",
+                provider_label,
+                exc.pos,
+                len(content),
+            )
+            raise
+        break
     _inject_tag_values_into_results(parsed)
-    return _normalize_parsed(parsed)
+    normalized = _normalize_parsed(parsed)
+    # Keep the raw model text so the annotation audit view can show exactly
+    # what the model returned.  It is never forwarded back to the model.
+    normalized["_raw_text"] = content
+    return normalized
+
+
+def _vision_trace(
+    *,
+    provider_label: str,
+    base_url: str,
+    model: str,
+    request_protocol: str,
+    instruction: str,
+    model_width: int,
+    model_height: int,
+    original_width: int,
+    original_height: int,
+) -> dict[str, Any]:
+    """Non-secret provenance for one vision call (stored with the result)."""
+
+    try:
+        endpoint_host = urlsplit(str(base_url or "")).netloc
+    except Exception:
+        endpoint_host = ""
+    return {
+        "provider_label": provider_label,
+        "endpoint_host": endpoint_host,
+        "model": model,
+        "request_protocol": request_protocol,
+        "instruction": instruction,
+        "model_image_width": model_width,
+        "model_image_height": model_height,
+        "original_image_width": original_width,
+        "original_image_height": original_height,
+    }
 
 
 def call_vision_llm_chain(
@@ -810,13 +1010,23 @@ def call_vision_llm_chain(
                 str(configured_model.get("model") or ""),
                 str(configured_model.get("provider_key") or ""),
             )
+            resolved_protocol = (
+                "responses"
+                if capability == "bbox_detection"
+                and str(configured_model.get("provider_key") or "").strip().lower()
+                == "volcengine"
+                else str(
+                    configured_model.get("request_protocol") or "openai_compatible"
+                )
+            )
+            resolved_model = normalize_volcengine_ark_model_id(
+                str(configured_model.get("model") or "")
+            )
             result = _openai_compatible_infer(
                 provider_label=str(configured_model.get("name") or "通用视觉模型"),
                 base_url=base_url,
                 api_key=str(configured_model.get("api_key") or ""),
-                model=normalize_volcengine_ark_model_id(
-                    str(configured_model.get("model") or "")
-                ),
+                model=resolved_model,
                 instruction=instruction,
                 image_bytes=img_bytes,
                 mime="image/jpeg",
@@ -829,19 +1039,22 @@ def call_vision_llm_chain(
                 # protocol. Keep global-tag/legacy visual calls on Chat
                 # Completions unless an embedded caller explicitly selects
                 # another protocol.
-                request_protocol=(
-                    "responses"
-                    if capability == "bbox_detection"
-                    and str(configured_model.get("provider_key") or "").strip().lower()
-                    == "volcengine"
-                    else str(
-                        configured_model.get("request_protocol") or "openai_compatible"
-                    )
-                ),
+                request_protocol=resolved_protocol,
             )
             result["_image_size"] = [original_w, original_h]
             if (w, h) != (original_w, original_h):
                 result["_geometry_scale"] = [original_w / w, original_h / h]
+            result["_trace"] = _vision_trace(
+                provider_label=str(configured_model.get("name") or "通用视觉模型"),
+                base_url=base_url,
+                model=resolved_model,
+                request_protocol=resolved_protocol,
+                instruction=instruction,
+                model_width=w,
+                model_height=h,
+                original_width=original_w,
+                original_height=original_h,
+            )
             return result
         except Exception as exc:
             logger.warning("configured vision model failed: {}", str(exc)[:300])
@@ -890,6 +1103,17 @@ def call_vision_llm_chain(
                 result["_image_size"] = [original_w, original_h]
                 if (w, h) != (original_w, original_h):
                     result["_geometry_scale"] = [original_w / w, original_h / h]
+                result["_trace"] = _vision_trace(
+                    provider_label=label,
+                    base_url=base,
+                    model=mname,
+                    request_protocol="openai_compatible",
+                    instruction=instruction,
+                    model_width=w,
+                    model_height=h,
+                    original_width=original_w,
+                    original_height=original_h,
+                )
                 return result
             except Exception as exc:
                 last_err = exc

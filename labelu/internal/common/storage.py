@@ -46,6 +46,11 @@ class StorageBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def download_file(self, key: str, target_path: Path) -> None:
+        """Materialize an object at ``target_path`` for local processing."""
+        raise NotImplementedError
+
+    @abstractmethod
     def get_read_url(self, key: str, expires_in: Optional[int] = None) -> str:
         raise NotImplementedError
 
@@ -82,6 +87,11 @@ class LocalStorageBackend(StorageBackend):
 
     def get_local_path(self, key: str) -> Optional[Path]:
         return self._resolve(key)
+
+    def download_file(self, key: str, target_path: Path) -> None:
+        source_path = self._resolve(key)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_path, target_path)
 
     def get_read_url(self, key: str, expires_in: Optional[int] = None) -> str:
         return build_absolute_media_url(build_attachment_api_path(key))
@@ -148,6 +158,10 @@ class S3StorageBackend(StorageBackend):
 
     def get_local_path(self, key: str) -> Optional[Path]:
         return None
+
+    def download_file(self, key: str, target_path: Path) -> None:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        self._client.download_file(self._bucket, key, str(target_path))
 
     def get_read_url(self, key: str, expires_in: Optional[int] = None) -> str:
         expires = expires_in or settings.S3_PRESIGN_EXPIRE_SECONDS

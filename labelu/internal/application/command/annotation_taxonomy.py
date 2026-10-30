@@ -112,13 +112,13 @@ class CreateLabelPresetCommand(BaseModel):
                     "training_profile_config 需要同时指定 training_profile"
                 )
             return None
-        if profile != "plate_recognition_v1":
+        if profile not in {"plate_recognition_v1", "plate_detection_v1"}:
             raise ValueError(f"不支持的 training_profile: {profile}")
         from labelu.internal.common.plate_recognition_profile import (
             parse_profile_config,
         )
 
-        return parse_profile_config(v)
+        return parse_profile_config(v, profile=profile)
 
 
 class UpdateLabelPresetCommand(BaseModel):
@@ -160,19 +160,26 @@ class UpdateLabelPresetCommand(BaseModel):
         if v is None:
             return None
         s = str(v).strip()
-        if s and s != "plate_recognition_v1":
+        if s and s not in {"plate_recognition_v1", "plate_detection_v1"}:
             raise ValueError(f"不支持的 training_profile: {s}")
         return s or None
 
     @validator("training_profile_config")
-    def _validate_training_profile_config(cls, v):
+    def _validate_training_profile_config(cls, v, values):
         if v is None:
             return None
         from labelu.internal.common.plate_recognition_profile import (
             parse_profile_config,
         )
 
-        return parse_profile_config(v)
+        profile = values.get("training_profile")
+        if not profile:
+            raise ValueError(
+                "training_profile_config 需要同时指定 training_profile"
+            )
+        if profile not in {"plate_recognition_v1", "plate_detection_v1"}:
+            raise ValueError(f"不支持的 training_profile: {profile}")
+        return parse_profile_config(v, profile=profile)
 
 
 class GlobalTagOptionInput(BaseModel):

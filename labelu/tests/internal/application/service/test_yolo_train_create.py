@@ -250,3 +250,182 @@ def test_create_train_job_for_plate_preset_preserves_detection_target(monkeypatc
     assert response.id == 265
     assert captured["cmd"].selected_task_ids == [122]
     assert captured["cmd"].plate_training_target == "plate_detection"
+
+
+def test_create_train_job_infers_detection_preset_from_recipe(monkeypatch):
+    task = SimpleNamespace(id=123, name="plate-detection-task", config="{}")
+    recipe = SimpleNamespace(
+        recipe_key="plate_detection_v1",
+        version=1,
+        job_type="plate_detection",
+    )
+    preset = SimpleNamespace(
+        slug="plateDetection",
+        training_profile="plate_detection_v1",
+        items=[SimpleNamespace(label_value="doubleEP")],
+    )
+    created_job = SimpleNamespace(id=266, task_id=123)
+    current_user = SimpleNamespace(id=1)
+    captured = {}
+
+    class RecipeQuery:
+        def filter(self, *args):
+            return self
+
+        def order_by(self, *args):
+            return self
+
+        def first(self):
+            return recipe
+
+    class FakeDB:
+        def query(self, model):
+            assert model is yolo_train_service.TrainingRecipe
+            return RecipeQuery()
+
+    monkeypatch.setattr(yolo_train_service.settings, "YOLO_TRAIN_ENABLED", True)
+    monkeypatch.setattr(
+        yolo_train_service.crud_task,
+        "get",
+        lambda db, task_id: task if task_id == task.id else None,
+    )
+    monkeypatch.setattr(
+        yolo_train_service, "_assert_task_access", lambda loaded_task, user: None
+    )
+    monkeypatch.setattr(
+        yolo_train_service.crud_annotation_taxonomy,
+        "label_preset_get_by_slug",
+        lambda db, slug: preset if slug == "plateDetection" else None,
+    )
+    monkeypatch.setattr(
+        yolo_train_service.training_task_service,
+        "check_training_task_name_available",
+        lambda db, user_id, name: True,
+    )
+
+    def fake_create_training_task(db, current_user, cmd):
+        captured["cmd"] = cmd
+        return SimpleNamespace(latest_job_id=created_job.id)
+
+    monkeypatch.setattr(
+        yolo_train_service.training_task_service,
+        "create_label_dimension_training_task",
+        fake_create_training_task,
+    )
+    monkeypatch.setattr(
+        yolo_train_service.crud_yolo_train_job,
+        "get",
+        lambda db, job_id: created_job if job_id == created_job.id else None,
+    )
+    monkeypatch.setattr(
+        yolo_train_service,
+        "_job_to_response",
+        lambda db, job, response_task, include_training_task_detail=False: SimpleNamespace(
+            id=job.id,
+            task_id=job.task_id,
+        ),
+    )
+
+    response = asyncio.run(
+        yolo_train_service.create_train_job(
+            db=FakeDB(),
+            task_id=task.id,
+            cmd=CreateYoloTrainJobCommand(
+                training_recipe_key="plate_detection_v1",
+                model_weights="yolov8n-pose.pt",
+                weights_source="preset",
+            ),
+            current_user=current_user,
+        )
+    )
+
+    assert response.id == created_job.id
+    assert captured["cmd"].selected_presets[0].preset_slug == "plateDetection"
+    assert captured["cmd"].plate_training_target == "plate_detection"
+    assert captured["cmd"].model_weights == "yolov8n-pose.pt"
+    assert captured["cmd"].training_recipe_key == "plate_detection_v1"
+    assert captured["cmd"].training_recipe_version == 1
+    assert captured["cmd"].runtime_profile == "plate_detection_v1"
+    assert captured["cmd"].runtime_interface_version == 1
+
+
+def test_create_train_job_does_not_map_regular_recipe_to_plate_preset(
+    tmp_path: Path, monkeypatch
+):
+    task = SimpleNamespace(id=124, name="ordinary-detection-task", config="{}")
+    recipe = SimpleNamespace(
+        recipe_key="yolo_detection_v1",
+        version=1,
+        job_type="yolo_detection",
+    )
+    created_job = SimpleNamespace(id=267, task_id=124)
+    current_user = SimpleNamespace(id=1)
+    captured = {}
+    preset_lookups = []
+
+    class RecipeQuery:
+        def filter(self, *args):
+            return self
+
+        def order_by(self, *args):
+            return self
+
+        def first(self):
+            return recipe
+
+    class FakeDB:
+        def query(self, model):
+            assert model is yolo_train_service.TrainingRecipe
+            return RecipeQuery()
+
+    @contextmanager
+    def fake_begin_transaction(_db):
+        yield
+
+    monkeypatch.setattr(yolo_train_service.settings, "YOLO_TRAIN_ENABLED", True)
+    monkeypatch.setattr(yolo_train_service.crud_task, "get", lambda db, task_id: task)
+    monkeypatch.setattr(yolo_train_service, "_assert_task_access", lambda loaded_task, user: None)
+    monkeypatch.setattr(
+        yolo_train_service.crud_annotation_taxonomy,
+        "label_preset_get_by_slug",
+        lambda db, slug: preset_lookups.append(slug) or None,
+    )
+    monkeypatch.setattr(
+        yolo_train_service,
+        "resolve_source_task_ids_for_create",
+        lambda db, primary_task_id, cmd, current_user: ([primary_task_id], {primary_task_id: 1}),
+    )
+    monkeypatch.setattr(yolo_train_service, "ensure_ultralytics_installed", lambda reason=None: True)
+    monkeypatch.setattr(yolo_train_service, "_validate_weights_source_at_create", lambda db, user, cmd: None)
+    monkeypatch.setattr(yolo_train_service, "_model_weights_field_for_storage", lambda cmd: "yolo11n.pt")
+    monkeypatch.setattr(yolo_train_service, "begin_transaction", fake_begin_transaction)
+
+    def fake_create(**kwargs):
+        captured["create_kwargs"] = kwargs
+        return created_job
+
+    monkeypatch.setattr(yolo_train_service.crud_yolo_train_job, "create", fake_create)
+    monkeypatch.setattr(yolo_train_service, "_job_work_root", lambda job_id: tmp_path / f"job-{job_id}")
+    monkeypatch.setattr(yolo_train_service, "_append_train_process_log", lambda *args, **kwargs: None)
+    monkeypatch.setattr(yolo_train_service, "_submit_yolo_train_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        yolo_train_service,
+        "_job_to_response",
+        lambda db, job, response_task, include_training_task_detail=False: SimpleNamespace(
+            id=job.id,
+            task_id=job.task_id,
+        ),
+    )
+
+    response = asyncio.run(
+        yolo_train_service.create_train_job(
+            db=FakeDB(),
+            task_id=task.id,
+            cmd=CreateYoloTrainJobCommand(training_recipe_key="yolov11_detection"),
+            current_user=current_user,
+        )
+    )
+
+    assert response.id == created_job.id
+    assert preset_lookups == []
+    assert captured["create_kwargs"]["training_recipe_key"] == "yolo_detection_v1"

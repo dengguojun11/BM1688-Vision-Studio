@@ -161,6 +161,25 @@ def ensure_seeded(db: Session) -> None:
             "model_family": "custom",
             "annotation_kind": "custom",
         },
+        # Plate recipes are also built into the Alembic catalog.  Keep them in
+        # the lazy seed path so a database created from ORM metadata (or a
+        # partially migrated older database) exposes the same training entry.
+        "plate_detection": {
+            "recipe_key": "plate_detection_v1",
+            "name": "车牌检测与四角定位",
+            "model_family": "plate_detection",
+            "annotation_kind": "bbox",
+            "component_contract": {
+                "geometry": ["rect", "four_corners"],
+                "attributes": [],
+            },
+        },
+        "plate_recognition": {
+            "recipe_key": "plate_recognition_v1",
+            "name": "车牌复合识别",
+            "model_family": "plate_recognition",
+            "annotation_kind": "bbox",
+        },
     }
     missing_recipes = [
         item
@@ -169,7 +188,6 @@ def ensure_seeded(db: Session) -> None:
         .filter(
             TrainingRecipe.recipe_key == item["recipe_key"],
             TrainingRecipe.version == 1,
-            TrainingRecipe.deleted_at.is_(None),
         )
         .first()
         is None
@@ -292,7 +310,11 @@ def ensure_seeded(db: Session) -> None:
                     job_type=item["recipe_key"].removesuffix("_v1"),
                     model_family=item["model_family"],
                     annotation_kind=item["annotation_kind"],
-                    component_contract_json=json.dumps({}, ensure_ascii=False),
+                    component_contract_json=json.dumps(
+                        item.get("component_contract", {}),
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    ),
                     default_hyperparams_json=json.dumps({}, ensure_ascii=False),
                     status="active",
                 )

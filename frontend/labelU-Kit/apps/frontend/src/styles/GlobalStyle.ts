@@ -8,6 +8,11 @@ body,
   margin: 0;
 }
 
+html,
+body {
+  overflow-x: clip;
+}
+
 :root {
   --header-height: 3.5rem;
 }

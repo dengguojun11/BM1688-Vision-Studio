@@ -3,10 +3,11 @@ import { redirect } from 'react-router';
 
 import * as storage from '@/utils/storage';
 import { getUserInfo, ssoLogin } from '@/api/services/user';
+import { isEvolutionScreenPath } from '@/pages/platform/routing';
 
 export async function rootLoader({ request }: LoaderFunctionArgs) {
   const url = new URL(request.url);
-  const visualPreview = url.pathname === '/workspace/evolution-screen' && url.searchParams.get('preview') === '1';
+  const visualPreview = isEvolutionScreenPath(url.pathname) && url.searchParams.get('preview') === '1';
   if (visualPreview) return null;
 
   if (window.IS_ONLINE) {

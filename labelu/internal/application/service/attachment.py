@@ -5,6 +5,7 @@ import tempfile
 import mimetypes
 import shutil
 import hashlib
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -36,6 +37,8 @@ from labelu.internal.common.storage import (
 )
 from labelu.internal.domain.models.user import User
 from labelu.internal.domain.models.attachment import TaskAttachment
+from labelu.internal.domain.models.sample import TaskSample
+from labelu.internal.domain.models.pre_annotation import TaskPreAnnotation
 from labelu.internal.adapter.persistence import crud_task
 from labelu.internal.adapter.persistence import crud_attachment
 from labelu.internal.application.command.attachment import AttachmentCommand
@@ -82,6 +85,32 @@ def normalize_attachment_purpose(purpose: str | None) -> str | None:
 def is_edge_validation_external_attachment_path(path: str | None) -> bool:
     normalized = "/" + str(path or "").replace("\\", "/").strip("/") + "/"
     return f"/{EDGE_VALIDATION_EXTERNAL_IMAGE_PURPOSE}/" in normalized or "/edge_validation_external/" in normalized
+
+
+def _retire_missing_duplicate(db: Session, attachment: TaskAttachment) -> None:
+    """Hide an orphaned local attachment before creating its replacement.
+
+    Sample deletion historically removed the object but left the attachment row
+    active.  A content-hash lookup must not keep returning that unusable row.
+    Do not retire a row that is still referenced by an active sample; that case
+    needs an explicit data repair rather than silently changing a live sample.
+    """
+
+    if getattr(attachment, "data_source_id", None):
+        return
+    active_sample = (
+        db.query(TaskSample.id)
+        .filter(
+            TaskSample.file_id == int(attachment.id),
+            TaskSample.deleted_at.is_(None),
+        )
+        .first()
+    )
+    if active_sample:
+        return
+    with begin_transaction(db):
+        attachment.deleted_at = datetime.now()
+        db.flush()
 
 
 def _build_unique_attachment_relative_path(
@@ -616,20 +645,43 @@ async def create(
         content_sha256 = content_hasher.hexdigest()
         duplicate = crud_attachment.get_by_task_sha256(db, task_id, content_sha256)
         if duplicate is not None:
-            # Preserve the legacy contract for an exact filename collision;
-            # content-addressed deduplication applies when the caller chose a
-            # different name (for example a retried/imported asset).
-            if path_exists_conflict:
-                temp_file_path.unlink(missing_ok=True)
-                logger.error("file already exists:{}", attachment_relative_path)
-                raise LabelUException(
-                    code=ErrorCode.CODE_51002_TASK_ATTACHMENT_ALREADY_EXISTS,
-                    status_code=status.HTTP_400_BAD_REQUEST,
+            # A hash match is reusable only while its physical object still
+            # exists.  Older sample deletion removed the object but left the
+            # attachment row active, so blindly returning this row creates a
+            # queue item that the image-cleaning preview cannot read.
+            duplicate_available = False
+            try:
+                duplicate_available = bool(storage.exists(duplicate.path))
+            except Exception as exc:
+                logger.warning(
+                    "attachment deduplication availability check failed path={} err={}",
+                    duplicate.path,
+                    exc,
                 )
-            # The temporary upload is deliberately discarded. Reusing the
-            # existing object avoids duplicate media and preserves annotations.
-            temp_file_path.unlink(missing_ok=True)
-            return build_attachment_response(duplicate)
+            if duplicate_available:
+                # Preserve the legacy contract for an exact filename
+                # collision; content-addressed deduplication applies when the
+                # caller chose a different name (for example a retry/import).
+                if path_exists_conflict:
+                    temp_file_path.unlink(missing_ok=True)
+                    logger.error("file already exists:{}", attachment_relative_path)
+                    raise LabelUException(
+                        code=ErrorCode.CODE_51002_TASK_ATTACHMENT_ALREADY_EXISTS,
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                    )
+                # The temporary upload is deliberately discarded. Reusing the
+                # existing object avoids duplicate media and preserves
+                # annotations.
+                temp_file_path.unlink(missing_ok=True)
+                return build_attachment_response(duplicate)
+
+            logger.warning(
+                "ignoring stale attachment deduplication row id={} path={}",
+                duplicate.id,
+                duplicate.path,
+            )
+            _retire_missing_duplicate(db, duplicate)
+            duplicate = None
         if path_exists_conflict:
             temp_file_path.unlink(missing_ok=True)
             logger.error("file already exists:{}", attachment_relative_path)
@@ -836,12 +888,42 @@ async def delete(
 
     assert_user_has_task_member_access(task, current_user)
 
-    # delete media
+    # Only remove an attachment object when no active sample or pre-annotation
+    # still references it.  The task editor calls this endpoint before its
+    # sample-delete request, and deleting the object first would break the
+    # sample that is about to be retired (or any other sample sharing it).
+    deletable_ids: list[int] = []
     try:
         attachments = crud_attachment.get_by_ids(
             db=db, attachment_ids=cmd.attachment_ids
         )
         for attachment in attachments:
+            active_sample_ref = (
+                db.query(TaskSample.id)
+                .filter(
+                    TaskSample.file_id == int(attachment.id),
+                    TaskSample.deleted_at.is_(None),
+                )
+                .first()
+            )
+            active_pre_annotation_ref = (
+                db.query(TaskPreAnnotation.id)
+                .filter(
+                    TaskPreAnnotation.file_id == int(attachment.id),
+                    TaskPreAnnotation.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if active_sample_ref or active_pre_annotation_ref:
+                logger.info(
+                    "keep referenced attachment id={} sample_ref={} pre_annotation_ref={}",
+                    attachment.id,
+                    bool(active_sample_ref),
+                    bool(active_pre_annotation_ref),
+                )
+                continue
+
+            deletable_ids.append(int(attachment.id))
             if is_edge_validation_external_attachment_path(getattr(attachment, "path", None)):
                 continue
             storage.delete(attachment.path)
@@ -854,11 +936,11 @@ async def delete(
     if settings.IMAGE_PIPELINE_ENABLED:
         from labelu.internal.common.image_pipeline import staging as pipeline_staging
 
-        pipeline_staging.clear_staging_for_attachments(task_id, list(cmd.attachment_ids))
+        pipeline_staging.clear_staging_for_attachments(task_id, deletable_ids)
 
     # delete
     with begin_transaction(db):
-        crud_attachment.delete(db=db, attachment_ids=cmd.attachment_ids)
+        crud_attachment.delete(db=db, attachment_ids=deletable_ids)
 
     # response
     return CommonDataResp(ok=True)

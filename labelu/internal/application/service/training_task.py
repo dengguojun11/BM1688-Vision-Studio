@@ -48,9 +48,15 @@ from labelu.internal.application.service import (
     yolo_quality_policy as quality_policy_service,
 )
 from labelu.internal.common.plate_recognition_profile import (
+    DEFAULT_PLATE_DETECTION_CONFIG,
+    PLATE_DETECTION_PRESET_SLUG,
+    PLATE_DETECTION_PROFILE,
     PLATE_RECOGNITION_PRESET_SLUG,
     PLATE_RECOGNITION_PROFILE,
+    PLATE_PROFILE_NAMES,
+    is_plate_profile,
     parse_profile_config,
+    profile_preset_slug,
 )
 from labelu.internal.common.yolo_rect_class_slug import looks_like_yolo_class_slug
 from labelu.internal.common.db import begin_transaction
@@ -116,6 +122,37 @@ TRAINING_TASK_MODE_LABEL_DIMENSION = "label_dimension"
 TRAINING_TASK_MODE_TASK_DIMENSION = "task_dimension"
 _DUPLICATE_NAME_MESSAGE = "该任务名称已存在，请重新修改后创建"
 _CORRUPTED_NAME_MESSAGE = "训练任务名称疑似乱码，请使用 UTF-8 编码重新提交"
+
+
+def _plate_target_for_profile(
+    profile: str | None,
+    requested_target: str | None,
+) -> str | None:
+    normalized_profile = str(profile or "").strip()
+    requested = str(requested_target or "").strip()
+    if normalized_profile not in PLATE_PROFILE_NAMES:
+        if requested:
+            raise LabelUException(
+                code=ErrorCode.CODE_30002_VALIDATION_ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="plate_training_target 仅适用于车牌标注预设",
+            )
+        return None
+    if normalized_profile == PLATE_DETECTION_PROFILE:
+        if requested and requested != plate_recognition_train.PLATE_DETECTION_JOB_TYPE:
+            raise LabelUException(
+                code=ErrorCode.CODE_30002_VALIDATION_ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="车牌检测预设只能训练车牌框与四角点",
+            )
+        return plate_recognition_train.PLATE_DETECTION_JOB_TYPE
+    if requested and requested not in plate_recognition_train.PLATE_JOB_TYPES:
+        raise LabelUException(
+            code=ErrorCode.CODE_30002_VALIDATION_ERROR,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="车牌训练目标无效",
+        )
+    return requested or plate_recognition_train.PLATE_RECOGNITION_JOB_TYPE
 
 
 def _effective_dataset_ids(cmd: Any) -> list[int]:
@@ -435,6 +472,24 @@ def _is_task_dimension_request(cmd: PreviewLabelDimensionTrainingTaskCommand) ->
     )
 
 
+def _reject_plate_label_dimension_request(
+    cmd: PreviewLabelDimensionTrainingTaskCommand,
+) -> None:
+    """Keep plate workers on the preset/task-dimension contract.
+
+    The plate dataset builder needs the saved rectangle/polygon profile. The
+    generic label-dimension path intentionally stores no preset snapshot, so
+    accepting it would create a job that cannot be loaded by the plate worker.
+    """
+
+    if cmd.label_ids and str(cmd.training_recipe_key or "").strip() in PLATE_PROFILE_NAMES:
+        raise LabelUException(
+            code=ErrorCode.CODE_30002_VALIDATION_ERROR,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message="车牌训练必须按任务维度选择车牌标注，不能按标签维度训练",
+        )
+
+
 def _validate_task_dimension_dataset_binding(
     db: Session,
     *,
@@ -523,21 +578,26 @@ def _with_plate_profile_for_task_dimension(
     db: Session,
     cmd: PreviewLabelDimensionTrainingTaskCommand,
 ) -> PreviewLabelDimensionTrainingTaskCommand:
-    if str(cmd.training_recipe_key or "").strip() != PLATE_RECOGNITION_PROFILE:
+    requested_profile = str(cmd.training_recipe_key or "").strip()
+    if requested_profile not in PLATE_PROFILE_NAMES:
         return cmd
+    preset_slug = profile_preset_slug(requested_profile)
     preset = crud_annotation_taxonomy.label_preset_get_by_slug(
-        db, PLATE_RECOGNITION_PRESET_SLUG
+        db, preset_slug
     )
     if (
         not preset
-        or str(preset.training_profile or "").strip() != PLATE_RECOGNITION_PROFILE
+        or str(preset.training_profile or "").strip() != requested_profile
     ):
         raise LabelUException(
             code=ErrorCode.CODE_30002_VALIDATION_ERROR,
             status_code=status.HTTP_400_BAD_REQUEST,
-            message="车牌复合识别预设不存在或未启用",
+            message="车牌训练预设不存在或未启用",
         )
-    profile = parse_profile_config(preset.training_profile_config)
+    profile = parse_profile_config(
+        preset.training_profile_config,
+        profile=requested_profile,
+    )
     rect_label = str(profile.get("rect_label") or "").strip()
     if not any(
         str(item.label_value or "").strip() == rect_label for item in preset.items
@@ -550,11 +610,11 @@ def _with_plate_profile_for_task_dimension(
     return cmd.model_copy(
         update={
             "selected_presets": [
-                SelectedPresetInput(preset_slug=PLATE_RECOGNITION_PRESET_SLUG)
+                SelectedPresetInput(preset_slug=preset_slug)
             ],
             "selected_label_items": [
                 SelectedLabelItemInput(
-                    preset_slug=PLATE_RECOGNITION_PRESET_SLUG,
+                    preset_slug=preset_slug,
                     label_value=rect_label,
                 )
             ],
@@ -725,7 +785,10 @@ def _build_preset_catalog(
         profile_config = None
         if preset.training_profile:
             try:
-                profile_config = parse_profile_config(preset.training_profile_config)
+                profile_config = parse_profile_config(
+                    preset.training_profile_config,
+                    profile=preset.training_profile,
+                )
             except ValueError as exc:
                 raise LabelUException(
                     code=ErrorCode.CODE_30002_VALIDATION_ERROR,
@@ -824,7 +887,7 @@ def _task_matches_preset(
     preset_meta: dict[str, Any] | None = None,
 ) -> bool:
     preset_meta = preset_meta or {}
-    if preset_meta.get("training_profile") == PLATE_RECOGNITION_PROFILE:
+    if preset_meta.get("training_profile") in PLATE_PROFILE_NAMES:
         return plate_recognition_train.task_matches_plate_profile(
             task,
             preset_meta.get("training_profile_config"),
@@ -1397,6 +1460,7 @@ def preview_label_dimension_training_task(
     cmd: PreviewLabelDimensionTrainingTaskCommand,
 ) -> LabelDimensionTrainingPreviewResponse:
     cmd = _normalize_training_contract_command(cmd)
+    _reject_plate_label_dimension_request(cmd)
     # Validate selected logical datasets up front.  This also verifies access
     # for datasets that currently have no eligible task, so an empty result
     # cannot be mistaken for a valid cross-dataset selection.
@@ -1405,7 +1469,7 @@ def preview_label_dimension_training_task(
     task_dimension_mode = _is_task_dimension_request(cmd)
     if (
         task_dimension_mode
-        and str(cmd.training_recipe_key or "").strip() == PLATE_RECOGNITION_PROFILE
+        and str(cmd.training_recipe_key or "").strip() in PLATE_PROFILE_NAMES
     ):
         cmd = _with_plate_profile_for_task_dimension(db, cmd)
     elif task_dimension_mode:
@@ -1477,6 +1541,7 @@ def preview_label_dimension_training_task(
             message="复合训练预设不能与普通检测预设混合选择",
         )
     training_profile = next(iter(profiles), None)
+    _plate_target_for_profile(training_profile, cmd.plate_training_target)
 
     task_query = crud_task.visible_query(
         db,
@@ -1537,7 +1602,7 @@ def preview_label_dimension_training_task(
     instance_count = 0
     invalid_image_count = 0
 
-    if training_profile == PLATE_RECOGNITION_PROFILE:
+    if training_profile in PLATE_PROFILE_NAMES:
         if sample_conditions:
             raise LabelUException(
                 code=ErrorCode.CODE_30002_VALIDATION_ERROR,
@@ -1943,7 +2008,7 @@ def _message_for_create(
     *,
     plate_training_target: str | None = None,
 ) -> str:
-    if preview.training_profile == PLATE_RECOGNITION_PROFILE:
+    if preview.training_profile in PLATE_PROFILE_NAMES:
         target_label = (
             "车牌检测"
             if plate_training_target == plate_recognition_train.PLATE_DETECTION_JOB_TYPE
@@ -2373,7 +2438,7 @@ def create_label_dimension_training_task(
     task_dimension_mode = _is_task_dimension_request(cmd)
     if (
         task_dimension_mode
-        and str(cmd.training_recipe_key or "").strip() == PLATE_RECOGNITION_PROFILE
+        and str(cmd.training_recipe_key or "").strip() in PLATE_PROFILE_NAMES
     ):
         cmd = _with_plate_profile_for_task_dimension(db, cmd)
     elif task_dimension_mode:
@@ -2396,6 +2461,7 @@ def create_label_dimension_training_task(
         selected_task_label_ids=cmd.selected_task_label_ids,
         training_recipe_key=cmd.training_recipe_key,
         training_recipe_version=cmd.training_recipe_version,
+        plate_training_target=cmd.plate_training_target,
         runtime_profile=cmd.runtime_profile,
         runtime_interface_version=cmd.runtime_interface_version,
         sample_conditions=cmd.sample_conditions,
@@ -2480,19 +2546,11 @@ def create_label_dimension_training_task(
     )
     is_plate_profile = (
         not contract_mode
-    ) and preview.training_profile == PLATE_RECOGNITION_PROFILE
+    ) and preview.training_profile in PLATE_PROFILE_NAMES
     is_plate_task_dimension = is_plate_profile and task_dimension_mode
-    if not is_plate_profile and cmd.plate_training_target is not None:
-        raise LabelUException(
-            code=ErrorCode.CODE_30002_VALIDATION_ERROR,
-            status_code=status.HTTP_400_BAD_REQUEST,
-            message="plate_training_target 仅适用于车牌标注预设",
-        )
-    plate_training_target = (
-        str(cmd.plate_training_target or "").strip()
-        or plate_recognition_train.PLATE_RECOGNITION_JOB_TYPE
-        if is_plate_profile
-        else None
+    plate_training_target = _plate_target_for_profile(
+        preview.training_profile if is_plate_profile else None,
+        cmd.plate_training_target,
     )
     training_mode = (
         (

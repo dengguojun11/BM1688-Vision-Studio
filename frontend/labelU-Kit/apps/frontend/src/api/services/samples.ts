@@ -433,3 +433,66 @@ export async function getPreSample({
 }: GetPreApiV1TasksTaskIdSamplesSampleIdPreGetParams): Promise<OkRespSampleResponse> {
   return await request.get(`/v1/tasks/${task_id}/samples/${sample_id}/pre`);
 }
+
+/**
+ * 当前图片 AI 目标检测的运行过程快照。
+ * 后端只在单图 AI 检测成功后写入，旧数据可能没有 process 明细。
+ */
+export type AiProcessCoordinateSpace = 'normalized_0_1000' | 'pixels' | string;
+
+export interface AiProcessItem {
+  index: number;
+  tool?: string | null;
+  reason?: string | null;
+}
+
+export interface AiProcessBox {
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  score?: number | string | null;
+}
+
+export interface AiProcessContractPrompt {
+  prompt_binding_id?: number | null;
+  prompt_sha256?: string | null;
+  contract_id?: number | null;
+  contract_revision?: number | null;
+}
+
+export interface AiProcessDetail {
+  provider?: string | null;
+  model?: string | null;
+  endpoint_host?: string | null;
+  request_protocol?: string | null;
+  image_width?: number | null;
+  image_height?: number | null;
+  model_image_width?: number | null;
+  model_image_height?: number | null;
+  coordinate_space?: AiProcessCoordinateSpace | null;
+  coordinate_scale?: number[] | null;
+  latency_ms?: number | null;
+  instruction?: string | null;
+  raw_response_text?: string | null;
+  box_count?: number | null;
+  dropped_items?: AiProcessItem[] | null;
+  repaired_items?: AiProcessItem[] | null;
+  contract_prompt?: AiProcessContractPrompt | null;
+  boxes?: AiProcessBox[] | null;
+}
+
+export interface AiProcessResponse {
+  sample_id: number;
+  pre_annotation_id?: number | null;
+  created_at?: string | null;
+  process: AiProcessDetail | null;
+}
+
+export async function getAiProcess(
+  taskId: number,
+  sampleId: number,
+): Promise<{ data: AiProcessResponse }> {
+  return await request.get(`/v1/tasks/${taskId}/samples/${sampleId}/ai_process`);
+}

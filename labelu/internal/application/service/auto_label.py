@@ -1,9 +1,11 @@
 import asyncio
 import json
 import math
+import re
 import time
 import uuid
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import status
@@ -32,7 +34,11 @@ from labelu.internal.application.service import annotation_prompt as annotation_
 from labelu.internal.application.service import annotation_contract
 from labelu.internal.application.service.provider_job import bridge_legacy_preannotation
 from labelu.internal.application.service.annotation_taxonomy import merge_global_dimensions_into_cfg
-from labelu.internal.application.service.task_background_jobs import assert_no_active_task_background_job
+from labelu.internal.application.service.task_background_jobs import (
+    GROUP_GEOMETRY,
+    GROUP_TAGS,
+    assert_no_active_task_background_job,
+)
 from labelu.internal.application.service.task_training_ready import refresh_task_training_ready
 from labelu.internal.domain.models.auto_label_job import AutoLabelStatus
 from labelu.internal.domain.models.pre_annotation import TaskPreAnnotation
@@ -744,6 +750,56 @@ def _is_ai_generated(pre_annotation: TaskPreAnnotation) -> bool:
         return False
 
 
+GEOMETRY_PREANNOTATION_KIND = "geometry"
+GLOBAL_TAG_PREANNOTATION_KIND = "global_tag"
+_PREANNOTATION_KINDS = {GEOMETRY_PREANNOTATION_KIND, GLOBAL_TAG_PREANNOTATION_KIND}
+
+
+def _preannotation_kind(pre_annotation: TaskPreAnnotation) -> str:
+    """Classify an AI pre-annotation as geometry or global-tag output.
+
+    Both actions store ``source_type=ai_generated`` rows.  Without a subtype a
+    global-tag run would delete the previous detection preview (and vice
+    versa), breaking the "each action owns its own tool" contract.  New rows
+    carry ``meta.preannotation_kind``; legacy rows are inferred from their
+    tool blocks.
+    """
+
+    parsed = _json_loads_maybe(pre_annotation.data)
+    if not isinstance(parsed, dict):
+        return GLOBAL_TAG_PREANNOTATION_KIND
+    meta = parsed.get("meta")
+    kind = str((meta or {}).get("preannotation_kind") or "").strip().lower()
+    if kind in _PREANNOTATION_KINDS:
+        return kind
+    annotations = parsed.get("annotations")
+    if isinstance(annotations, dict):
+        for tool_name, block in annotations.items():
+            if tool_name not in SUPPORTED_IMAGE_TOOLS:
+                continue
+            items = block.get("result") if isinstance(block, dict) else block
+            if isinstance(items, list) and items:
+                return GEOMETRY_PREANNOTATION_KIND
+    return GLOBAL_TAG_PREANNOTATION_KIND
+
+
+def _ai_preannotations_for_mode(
+    pre_annotations: list[TaskPreAnnotation],
+    *,
+    include_geometry_tools: bool,
+) -> list[TaskPreAnnotation]:
+    expected = (
+        GEOMETRY_PREANNOTATION_KIND
+        if include_geometry_tools
+        else GLOBAL_TAG_PREANNOTATION_KIND
+    )
+    return [
+        item
+        for item in pre_annotations
+        if _is_ai_generated(item) and _preannotation_kind(item) == expected
+    ]
+
+
 def _finite_number(value: Any, field: str) -> int | float:
     """Validate a geometry scalar before it reaches the annotation canvas."""
     # JSON booleans are ints in Python but are never valid coordinates.
@@ -893,6 +949,398 @@ def _normalize_single_result(tool_name: str, item: dict[str, Any], order: int) -
     )
 
 
+NORMALIZED_COORDINATE_SPACE = "normalized_0_1000"
+PIXEL_COORDINATE_SPACE = "pixels"
+_NUMERIC_KEY_PATTERN = re.compile(r"^-?\d+(?:\.\d+)?$")
+_AI_PROCESS_TEXT_LIMIT = 40000
+
+
+def _endpoint_host(value: Any) -> str:
+    try:
+        return urlsplit(str(value or "")).netloc
+    except Exception:
+        return ""
+
+
+def _iter_model_geometry_items(
+    model_data: dict[str, Any],
+) -> list[tuple[str, dict[str, Any]]]:
+    """Yield raw model geometry entries from either supported response shape."""
+    results = model_data.get("results") if isinstance(model_data, dict) else None
+    items: list[tuple[str, dict[str, Any]]] = []
+    if isinstance(results, dict):
+        for tool_name, values in results.items():
+            if not isinstance(values, list):
+                continue
+            for item in values:
+                if isinstance(item, dict):
+                    items.append((str(tool_name), item))
+    elif isinstance(results, list):
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            items.append((str(item.get("toolName") or ""), item))
+    return items
+
+
+def _repair_rect_payload(payload: Any) -> tuple[Any, str | None]:
+    """Recover a rect payload whose ``y`` key was corrupted into a number.
+
+    Some VLM gateways occasionally return objects like
+    ``{"x": 58, "128": 118, "width": 142, "height": 236}`` instead of
+    ``{"x": 58, "y": 118, ...}``.  The value under the numeric key is the
+    intended ``y`` coordinate, so keeping the box is strictly better than
+    dropping it.
+    """
+
+    if not isinstance(payload, dict) or "y" in payload:
+        return payload, None
+    if not all(key in payload for key in ("x", "width", "height")):
+        return payload, None
+    candidates = [
+        key
+        for key in payload
+        if key not in {"x", "width", "height"}
+        and _NUMERIC_KEY_PATTERN.match(str(key).strip())
+    ]
+    if len(candidates) != 1:
+        return payload, None
+    numeric_key = candidates[0]
+    repaired = {key: value for key, value in payload.items() if key != numeric_key}
+    repaired["y"] = payload[numeric_key]
+    return repaired, f"recovered missing y from malformed key {numeric_key!r}"
+
+
+def _repair_rect_item(item: Any) -> tuple[Any, str | None]:
+    if not isinstance(item, dict):
+        return item, None
+    container = item.get("result")
+    if isinstance(container, dict):
+        repaired, note = _repair_rect_payload(container)
+        if note:
+            return {**item, "result": repaired}, note
+        return item, None
+    if "result" in item:
+        return item, None
+    repaired, note = _repair_rect_payload(item)
+    return (repaired, note) if note else (item, None)
+
+
+def _repair_normalized_rect_payload(payload: Any) -> tuple[Any, str | None]:
+    """Repair 0-1000 rect payloads whose ``width``/``height`` are edge values.
+
+    The managed grounding model sometimes answers ``{"x": 566, "width": 638}``
+    where ``638`` is the right edge of the box rather than its width.  The
+    overflow itself is the signal: a normalized box cannot end beyond 1000.
+    """
+
+    if not isinstance(payload, dict):
+        return payload, None
+    try:
+        x = float(payload.get("x"))
+        y = float(payload.get("y"))
+        width = float(payload.get("width"))
+        height = float(payload.get("height"))
+    except (TypeError, ValueError):
+        return payload, None
+    repaired_width = width
+    repaired_height = height
+    repaired_fields: list[str] = []
+    if x + width > 1000 and width > x:
+        repaired_width = width - x
+        repaired_fields.append("width")
+    if y + height > 1000 and height > y:
+        repaired_height = height - y
+        repaired_fields.append("height")
+    if not repaired_fields:
+        return payload, None
+    repaired = dict(payload)
+    repaired["width"] = repaired_width
+    repaired["height"] = repaired_height
+    return (
+        repaired,
+        "interpreted "
+        + "/".join(repaired_fields)
+        + " as right/bottom edge (x2/y2) in normalized coordinates",
+    )
+
+
+def _repair_normalized_rect_item(item: Any) -> tuple[Any, str | None]:
+    if not isinstance(item, dict):
+        return item, None
+    container = item.get("result")
+    if isinstance(container, dict):
+        repaired, note = _repair_normalized_rect_payload(container)
+        if note:
+            return {**item, "result": repaired}, note
+        return item, None
+    if "result" in item:
+        return item, None
+    repaired, note = _repair_normalized_rect_payload(item)
+    return (repaired, note) if note else (item, None)
+
+
+def _normalized_rect_payloads(model_data: dict[str, Any]) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    for tool_name, item in _iter_model_geometry_items(model_data):
+        if tool_name != "rectTool":
+            continue
+        repaired_item = _repair_rect_item(item)[0]
+        if not isinstance(repaired_item, dict):
+            continue
+        payload = repaired_item.get("result", repaired_item)
+        if isinstance(payload, dict):
+            payloads.append(payload)
+    return payloads
+
+
+def _detect_normalized_edge_conventions(
+    model_data: dict[str, Any],
+) -> tuple[str, str]:
+    """Decide whether normalized ``width``/``height`` are sizes or edges.
+
+    The managed grounding model switches between two shapes for the same
+    schema: most boxes report a size, but some responses report the right /
+    bottom edge instead (e.g. ``{"x": 566, "width": 638}``).  When many boxes
+    would end outside the normalized canvas, the whole response is treated as
+    edge-based so every box is converted consistently instead of only the
+    overflowing ones.
+    """
+
+    width_override = str(
+        getattr(settings, "AI_BBOX_WIDTH_CONVENTION", "auto") or "auto"
+    ).strip().lower()
+    height_override = str(
+        getattr(settings, "AI_BBOX_HEIGHT_CONVENTION", "auto") or "auto"
+    ).strip().lower()
+    total = 0
+    width_overflow = 0
+    height_overflow = 0
+    for payload in _normalized_rect_payloads(model_data):
+        try:
+            x = float(payload.get("x"))
+            y = float(payload.get("y"))
+            width = float(payload.get("width"))
+            height = float(payload.get("height"))
+        except (TypeError, ValueError):
+            continue
+        total += 1
+        if x + width > 1002:
+            width_overflow += 1
+        if y + height > 1002:
+            height_overflow += 1
+    if width_override in {"right_edge", "x2", "edge"}:
+        width_convention = "right_edge"
+    elif width_override in {"size", "width"}:
+        width_convention = "size"
+    else:
+        width_convention = (
+            "right_edge"
+            if total and width_overflow / total >= 0.25
+            else "size"
+        )
+    if height_override in {"bottom_edge", "y2", "edge"}:
+        height_convention = "bottom_edge"
+    elif height_override in {"size", "height"}:
+        height_convention = "size"
+    else:
+        height_convention = (
+            "bottom_edge"
+            if total and height_overflow / total >= 0.25
+            else "size"
+        )
+    return width_convention, height_convention
+
+
+def _apply_normalized_rect_convention(
+    item: Any,
+    *,
+    width_convention: str,
+    height_convention: str,
+) -> tuple[Any, str | None]:
+    """Convert edge-based normalized width/height into sizes."""
+
+    if not isinstance(item, dict):
+        return item, None
+    container = item.get("result")
+    if isinstance(container, dict):
+        payload = container
+    elif "result" in item:
+        return item, None
+    else:
+        payload = item
+    if not isinstance(payload, dict):
+        return item, None
+    try:
+        x = float(payload.get("x"))
+        y = float(payload.get("y"))
+        width = float(payload.get("width"))
+        height = float(payload.get("height"))
+    except (TypeError, ValueError):
+        return item, None
+    repaired_width = width
+    repaired_height = height
+    repaired_fields: list[str] = []
+    if width_convention == "right_edge" and width > x:
+        repaired_width = width - x
+        repaired_fields.append("width")
+    if height_convention == "bottom_edge" and height > y:
+        repaired_height = height - y
+        repaired_fields.append("height")
+    if not repaired_fields:
+        return item, None
+    repaired_payload = dict(payload)
+    repaired_payload["width"] = repaired_width
+    repaired_payload["height"] = repaired_height
+    note = (
+        "interpreted "
+        + "/".join(repaired_fields)
+        + " as right/bottom edge (x2/y2) in normalized coordinates"
+    )
+    if isinstance(container, dict):
+        return {**item, "result": repaired_payload}, note
+    return repaired_payload, note
+
+
+def _raw_geometry_extent(model_data: dict[str, Any]) -> tuple[float, float] | None:
+    """Largest x/y top-left extent across raw geometry (repaired payloads too).
+
+    Width/height are deliberately not used: grounding models often get the box
+    size wrong while the top-left position stays meaningful, so including
+    ``x + width`` would mask an otherwise clear 0-1000 normalized response.
+    """
+    max_x = 0.0
+    max_y = 0.0
+    seen = False
+    for tool_name, item in _iter_model_geometry_items(model_data):
+        if tool_name == "rectTool":
+            item = _repair_rect_item(item)[0]
+        if not isinstance(item, dict):
+            continue
+        payload = item.get("result", item)
+        if not isinstance(payload, dict):
+            continue
+        if tool_name == "rectTool":
+            try:
+                x = float(payload.get("x"))
+                y = float(payload.get("y"))
+                float(payload.get("width"))
+                float(payload.get("height"))
+            except (TypeError, ValueError):
+                continue
+            max_x = max(max_x, x)
+            max_y = max(max_y, y)
+            seen = True
+        elif tool_name in {"polygonTool", "lineTool", "pointTool"}:
+            points = payload.get("points") or payload.get("pointList")
+            if points is None and tool_name == "pointTool":
+                points = [payload]
+            if not isinstance(points, list):
+                continue
+            for point in points:
+                if not isinstance(point, dict):
+                    continue
+                try:
+                    px = float(point.get("x"))
+                    py = float(point.get("y"))
+                except (TypeError, ValueError):
+                    continue
+                max_x = max(max_x, px)
+                max_y = max(max_y, py)
+                seen = True
+    return (max_x, max_y) if seen else None
+
+
+def _detect_coordinate_space(
+    *,
+    model_width: int | float | None,
+    model_height: int | float | None,
+    extent: tuple[float, float] | None,
+) -> str:
+    """Decide whether the model returned pixels or 0-1000 normalized boxes."""
+
+    override = str(
+        getattr(settings, "AI_BBOX_COORDINATE_SPACE", "auto") or "auto"
+    ).strip().lower()
+    if override in {"pixels", "pixel"}:
+        return PIXEL_COORDINATE_SPACE
+    if override in {"normalized", "normalized_0_1000", "normalized_1000"}:
+        return NORMALIZED_COORDINATE_SPACE
+    if extent is None or not model_width or not model_height:
+        return PIXEL_COORDINATE_SPACE
+    try:
+        max_x, max_y = float(extent[0]), float(extent[1])
+        width = float(model_width)
+        height = float(model_height)
+    except (TypeError, ValueError):
+        return PIXEL_COORDINATE_SPACE
+    if width < 1200 or height < 800:
+        return PIXEL_COORDINATE_SPACE
+    # 0-1000 grounding output is only credible when the top-left corners spread
+    # across a meaningful part of the normalized canvas; tiny clusters stay in
+    # pixel space so synthetic/legacy payloads keep their historical behavior.
+    if max_x < 300 and max_y < 300:
+        return PIXEL_COORDINATE_SPACE
+    if max_x <= 1000 and max_y <= 1000:
+        return NORMALIZED_COORDINATE_SPACE
+    return PIXEL_COORDINATE_SPACE
+
+
+def _build_ai_process_meta(
+    *,
+    model_data: dict[str, Any],
+    coordinate_space: str,
+    coordinate_scale: tuple[float, float],
+    image_width: int | float | None,
+    image_height: int | float | None,
+    model_width: int | float | None,
+    model_height: int | float | None,
+    dropped_items: list[dict[str, Any]],
+    repaired_items: list[dict[str, Any]],
+    box_count: int,
+    width_convention: str = "size",
+    height_convention: str = "size",
+) -> dict[str, Any]:
+    """User-visible audit trail for one AI detection call (no secrets)."""
+
+    trace = model_data.get("_trace") if isinstance(model_data, dict) else None
+    trace = trace if isinstance(trace, dict) else {}
+    instruction = str(trace.get("instruction") or "")
+    raw_text = str(
+        model_data.get("_raw_text")
+        or trace.get("raw_response_text")
+        or ""
+    )
+    return {
+        "provider": trace.get("provider_label") or settings.AI_PROVIDER,
+        "model": (
+            trace.get("model")
+            or model_data.get("model")
+            or _model_runtime().get("model")
+            or settings.AI_MODEL_NAME
+        ),
+        "endpoint_host": str(trace.get("endpoint_host") or ""),
+        "request_protocol": trace.get("request_protocol") or "",
+        "image_width": image_width,
+        "image_height": image_height,
+        "model_image_width": model_width,
+        "model_image_height": model_height,
+        "coordinate_space": coordinate_space,
+        "coordinate_scale": [
+            round(float(coordinate_scale[0]), 6),
+            round(float(coordinate_scale[1]), 6),
+        ],
+        "width_convention": width_convention,
+        "height_convention": height_convention,
+        "latency_ms": model_data.get("latency_ms"),
+        "instruction": instruction[:_AI_PROCESS_TEXT_LIMIT],
+        "raw_response_text": raw_text[:_AI_PROCESS_TEXT_LIMIT],
+        "box_count": int(box_count),
+        "dropped_items": dropped_items,
+        "repaired_items": repaired_items,
+    }
+
+
 def _normalize_results(
     model_data: dict[str, Any],
     sample_name: str,
@@ -900,18 +1348,28 @@ def _normalize_results(
     *,
     include_geometry_tools: bool = False,
     overwrite_existing_annotations: bool = True,
+    apply_to_canvas_overwrite: bool = False,
     filter_by_labels: bool = True,
     image_size: tuple[int, int] | list[int] | None = None,
     contract_prompt: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     results = model_data.get("results", [])
     geometry_warnings: list[str] = []
+    dropped_items: list[dict[str, Any]] = []
+    repaired_items: list[dict[str, Any]] = []
 
     def record_geometry_warning(index: int, tool_name: Any, exc: Exception) -> None:
         message = (
             f"Skipped invalid {tool_name or 'geometry'} result at index {index}: {exc}"
         )
         geometry_warnings.append(message)
+        dropped_items.append(
+            {
+                "index": int(index),
+                "tool": str(tool_name or ""),
+                "reason": str(exc),
+            }
+        )
         logger.warning(
             "AI auto-label geometry result skipped sample={} index={} tool={} reason={}",
             sample_name,
@@ -1023,6 +1481,39 @@ def _normalize_results(
         except ValueError:
             pass
 
+    model_width: int | float | None = None
+    model_height: int | float | None = None
+    if image_width and image_height:
+        model_width = (
+            image_width / geometry_scale_x if geometry_scale_x else image_width
+        )
+        model_height = (
+            image_height / geometry_scale_y if geometry_scale_y else image_height
+        )
+    # Some grounding providers (the managed Volcengine Ark bbox model among
+    # them) answer in 0-1000 normalized coordinates even when the instruction
+    # asks for pixels.  Detect that space from the response extent and convert
+    # straight to the attachment resolution instead of treating the numbers as
+    # 2560x1440 pixels (which squeezes every box into the top-left corner).
+    coordinate_space = _detect_coordinate_space(
+        model_width=model_width,
+        model_height=model_height,
+        extent=_raw_geometry_extent(model_data),
+    )
+    if (
+        coordinate_space == NORMALIZED_COORDINATE_SPACE
+        and image_width
+        and image_height
+    ):
+        geometry_scale_x = float(image_width) / 1000.0
+        geometry_scale_y = float(image_height) / 1000.0
+    width_convention = "size"
+    height_convention = "size"
+    if coordinate_space == NORMALIZED_COORDINATE_SPACE:
+        width_convention, height_convention = _detect_normalized_edge_conventions(
+            model_data
+        )
+
     if not include_geometry_tools:
         raw_tag_values = model_data.get("tag_values")
         if raw_tag_values is None:
@@ -1049,6 +1540,25 @@ def _normalize_results(
             # Keep the task's label taxonomy authoritative even if the model
             # invents a class name in its JSON response.
             continue
+        if tool_name == "rectTool":
+            item, repair_note = _repair_rect_item(item)
+            if coordinate_space == NORMALIZED_COORDINATE_SPACE:
+                if width_convention == "right_edge" or height_convention == "bottom_edge":
+                    item, edge_note = _apply_normalized_rect_convention(
+                        item,
+                        width_convention=width_convention,
+                        height_convention=height_convention,
+                    )
+                else:
+                    item, edge_note = _repair_normalized_rect_item(item)
+                if edge_note:
+                    repair_note = "; ".join(
+                        [note for note in (repair_note, edge_note) if note]
+                    )
+            if repair_note:
+                repaired_items.append(
+                    {"index": int(index), "tool": tool_name, "reason": repair_note}
+                )
         normalized_item = item
         if contract_bound and tool_name in SUPPORTED_IMAGE_TOOLS:
             raw_label = str(item.get("label") or "").strip()
@@ -1143,24 +1653,71 @@ def _normalize_results(
         tool_name: tool_cfg.get("attributes", [])
         for tool_name, tool_cfg in config_by_tool.items()
     }
+    geometry_box_count = sum(
+        len(block.get("result") or [])
+        for tool_name, block in grouped_annotations.items()
+        if tool_name in SUPPORTED_IMAGE_TOOLS and isinstance(block, dict)
+    )
     warning_message = model_data.get("warning_message")
-    if geometry_warnings:
-        warning_messages = ([str(warning_message)] if warning_message else []) + geometry_warnings
+    if geometry_warnings or repaired_items:
+        warning_messages = [str(warning_message)] if warning_message else []
+        if repaired_items:
+            warning_messages.append(
+                f"Recovered {len(repaired_items)} malformed geometry result(s)"
+            )
+        warning_messages.extend(geometry_warnings)
         warning_message = "; ".join(warning_messages)
+    meta: dict[str, Any] = {
+        "source_type": "ai_generated",
+        "preannotation_kind": (
+            GEOMETRY_PREANNOTATION_KIND
+            if include_geometry_tools
+            else GLOBAL_TAG_PREANNOTATION_KIND
+        ),
+        "provider": settings.AI_PROVIDER,
+        "model": model_data.get("model") or _model_runtime().get("model") or settings.AI_MODEL_NAME,
+        "latency_ms": model_data.get("latency_ms"),
+        "warning_message": warning_message,
+        "include_geometry_tools": include_geometry_tools,
+        "overwrite_existing_annotations": overwrite_existing_annotations,
+        "apply_to_canvas_overwrite": apply_to_canvas_overwrite,
+        "coordinate_space": coordinate_space,
+        "coordinate_scale": [
+            round(float(geometry_scale_x), 6),
+            round(float(geometry_scale_y), 6),
+        ],
+        "width_convention": width_convention,
+        "height_convention": height_convention,
+        "image_width": image_width,
+        "image_height": image_height,
+        "model_image_width": model_width,
+        "model_image_height": model_height,
+        "dropped_items": dropped_items,
+        "repaired_items": repaired_items,
+        **_contract_prompt_meta(contract_prompt),
+    }
+    if include_geometry_tools:
+        # Persist the exact prompt / raw response / conversion decisions so the
+        # annotation UI can show the whole AI detection process on demand.
+        meta["ai_process"] = _build_ai_process_meta(
+            model_data=model_data,
+            coordinate_space=coordinate_space,
+            coordinate_scale=(geometry_scale_x, geometry_scale_y),
+            image_width=image_width,
+            image_height=image_height,
+            model_width=model_width,
+            model_height=model_height,
+            dropped_items=dropped_items,
+            repaired_items=repaired_items,
+            box_count=geometry_box_count,
+            width_convention=width_convention,
+            height_convention=height_convention,
+        )
     return {
         "sample_name": sample_name,
         "annotations": grouped_annotations,
         "config": pre_annotation_config,
-        "meta": {
-            "source_type": "ai_generated",
-            "provider": settings.AI_PROVIDER,
-            "model": model_data.get("model") or _model_runtime().get("model") or settings.AI_MODEL_NAME,
-            "latency_ms": model_data.get("latency_ms"),
-            "warning_message": warning_message,
-            "include_geometry_tools": include_geometry_tools,
-            "overwrite_existing_annotations": overwrite_existing_annotations,
-            **_contract_prompt_meta(contract_prompt),
-        },
+        "meta": meta,
     }
 
 
@@ -1238,11 +1795,45 @@ def _merge_ai_global_tags_into_sample_data(
     if not isinstance(result_data, dict):
         result_data = {}
 
+    # Already annotated global dimensions win over the model output.  Only
+    # dimensions without a value are filled, so an automatic/manual tag run
+    # never rewrites what an annotator already reviewed.
+    existing_tag_items: list[Any] = []
+    existing_values: dict[str, Any] = {}
+    existing_block = result_data.get(TAG_TOOL)
+    if isinstance(existing_block, dict) and isinstance(existing_block.get("result"), list):
+        for item in existing_block.get("result") or []:
+            existing_tag_items.append(item)
+            value = item.get("value") if isinstance(item, dict) else None
+            if not isinstance(value, dict):
+                continue
+            for dimension, dimension_value in value.items():
+                if dimension_value not in (None, "", []):
+                    existing_values[str(dimension)] = dimension_value
+
+    new_items: list[dict[str, Any]] = []
+    for item in ai_tag_items:
+        value = item.get("value") if isinstance(item, dict) else None
+        if not isinstance(value, dict):
+            continue
+        remaining = {
+            dimension: dimension_value
+            for dimension, dimension_value in value.items()
+            if str(dimension) not in existing_values
+        }
+        if not remaining:
+            continue
+        for dimension, dimension_value in remaining.items():
+            existing_values[str(dimension)] = dimension_value
+        new_items.append({**item, "value": remaining})
+    if not new_items:
+        return sample_data, False
+
     merged_result = {
         **result_data,
         TAG_TOOL: {
             "toolName": TAG_TOOL,
-            "result": ai_tag_items,
+            "result": existing_tag_items + new_items,
         },
     }
     merged_sample_data = {
@@ -1384,7 +1975,10 @@ async def create(
         page=0,
         size=100,
     )
-    existing_ai_annotations = [item for item in existing_pre_annotations if _is_ai_generated(item)]
+    existing_ai_annotations = _ai_preannotations_for_mode(
+        existing_pre_annotations,
+        include_geometry_tools=include_geometry_tools,
+    )
     if (
         existing_ai_annotations
         and not cmd.overwrite
@@ -1428,7 +2022,12 @@ async def create(
         )
 
     task_cfg_ai = resolve_ai_task_config(db, task)
-    overwrite_existing_annotations = False
+    # A current-image run is an explicit request to replace the visible
+    # geometry preview. Batch runs keep existing human annotations unless the
+    # caller opts in, so the command default stays protective.
+    overwrite_existing_annotations = bool(cmd.overwrite_existing_annotations) and bool(
+        include_geometry_tools
+    )
     if contract_prompt:
         model_payload = _build_model_payload(
             sample,
@@ -1508,6 +2107,7 @@ async def create(
         task_config=task_cfg_ai,
         include_geometry_tools=include_geometry_tools,
         overwrite_existing_annotations=overwrite_existing_annotations,
+        apply_to_canvas_overwrite=overwrite_existing_annotations,
         filter_by_labels=cmd.filter_by_labels,
         image_size=model_data.get("_image_size") if isinstance(model_data, dict) else None,
         contract_prompt=contract_prompt,
@@ -1673,14 +2273,17 @@ async def create_batch_job(
         skip_complete_global_tags=cmd.skip_complete_global_tags,
     )
 
+    job_mode = BATCH_MODE_BOX_AND_TAGS if requested_include_geometry else BATCH_MODE_TAGS_ONLY
+    job_group = GROUP_GEOMETRY if requested_include_geometry else GROUP_TAGS
     with begin_transaction(db):
-        assert_no_active_task_background_job(db=db, task_id=task_id)
+        assert_no_active_task_background_job(db=db, task_id=task_id, group=job_group)
         job = crud_auto_label_job.create(
             db=db,
             task_id=task_id,
             user_id=current_user.id,
             sample_count=len(sample_ids),
             filter_by_labels=cmd.filter_by_labels,
+            payload_json=json.dumps({"mode": job_mode}, ensure_ascii=False),
         )
         job_id = job.id
 
@@ -1996,7 +2599,10 @@ def _process_single_sample(
         existing_pre_annotations, _ = crud_pre_annotation.list_by(
             db=db, task_id=task_id, sample_name=sample_name, page=0, size=100,
         )
-        existing_ai = [item for item in existing_pre_annotations if _is_ai_generated(item)]
+        existing_ai = _ai_preannotations_for_mode(
+            existing_pre_annotations,
+            include_geometry_tools=effective_include_geometry,
+        )
         with begin_transaction(db):
             if existing_ai:
                 crud_pre_annotation.delete(
@@ -2043,3 +2649,92 @@ def _process_single_sample(
                 task_id,
                 sample_id,
             )
+
+
+def get_latest_ai_process(
+    db: Session,
+    *,
+    task_id: int,
+    sample_id: int,
+    current_user: User,
+) -> dict[str, Any]:
+    """Return the most recent AI detection process trace for one sample.
+
+    The trace is stored in the pre-annotation meta of the newest AI result.
+    Returns ``process=None`` for legacy rows created before the process audit
+    existed so the UI can explain the missing detail instead of failing.
+    """
+
+    task = crud_task.get(db=db, task_id=task_id)
+    if not task:
+        raise LabelUException(
+            code=ErrorCode.CODE_50002_TASK_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    assert_user_has_task_access(task, current_user)
+    sample = crud_sample.get(db=db, sample_id=sample_id)
+    if not sample or sample.task_id != task_id or not sample.file:
+        raise LabelUException(
+            code=ErrorCode.CODE_55001_SAMPLE_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    rows, _total = crud_pre_annotation.list_by(
+        db=db,
+        task_id=task_id,
+        sample_name=sample.file.filename,
+        page=0,
+        size=100,
+    )
+    ai_rows = [row for row in rows if _is_ai_generated(row)]
+    # Global-tag runs are also AI rows but have no detection process trace.
+    # Prefer the newest row that actually captured one.
+    process_rows = [
+        row
+        for row in ai_rows
+        if isinstance(_annotation_meta(row.data).get("ai_process"), dict)
+    ]
+    if process_rows:
+        ai_rows = process_rows
+    if not ai_rows:
+        return {
+            "sample_id": sample_id,
+            "pre_annotation_id": None,
+            "created_at": None,
+            "process": None,
+        }
+    latest = ai_rows[-1]
+    data = _json_loads_maybe(latest.data) or {}
+    meta = data.get("meta") if isinstance(data, dict) else {}
+    process = meta.get("ai_process") if isinstance(meta, dict) else None
+    if not isinstance(process, dict):
+        process = None
+    result: dict[str, Any] = {
+        "sample_id": sample_id,
+        "pre_annotation_id": latest.id,
+        "created_at": str(latest.created_at) if latest.created_at else None,
+        "process": None,
+    }
+    if process is None:
+        return result
+    boxes: list[dict[str, Any]] = []
+    annotations = data.get("annotations") if isinstance(data, dict) else None
+    rect_block = annotations.get("rectTool") if isinstance(annotations, dict) else None
+    rect_items = rect_block.get("result") if isinstance(rect_block, dict) else None
+    for item in rect_items or []:
+        if not isinstance(item, dict):
+            continue
+        attributes = item.get("attributes")
+        boxes.append(
+            {
+                "label": item.get("label"),
+                "x": item.get("x"),
+                "y": item.get("y"),
+                "width": item.get("width"),
+                "height": item.get("height"),
+                "score": (attributes or {}).get("score")
+                if isinstance(attributes, dict)
+                else None,
+            }
+        )
+    result["process"] = {**process, "boxes": boxes}
+    return result

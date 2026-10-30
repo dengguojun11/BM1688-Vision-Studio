@@ -5,6 +5,31 @@ export function projectQueryKey(resource: string, projectId?: number, ...parts: 
   return [resource, projectId ?? null, ...parts] as const;
 }
 
+function normalizedPath(pathname: string) {
+  return pathname.replace(/\/+$/, '') || '/';
+}
+
+/** Treat a trailing slash as the same route so direct links keep the cockpit isolated. */
+export function isEvolutionScreenPath(pathname: string) {
+  return normalizedPath(pathname) === '/workspace/evolution-screen';
+}
+
+/** The clean default entry for the read-only model evolution data screen. */
+export function isWorkspaceDataScreenPath(pathname: string) {
+  const normalized = normalizedPath(pathname);
+  return normalized === '/workspace' || isEvolutionScreenPath(normalized);
+}
+
+/** The operational workbench remains available as a deliberately named route. */
+export function isWorkspaceWorkbenchPath(pathname: string) {
+  return normalizedPath(pathname) === '/workspace/workbench';
+}
+
+/** The root workspace path is the data screen and opens without the platform shell. */
+export function isWorkspaceRootPath(pathname: string) {
+  return normalizedPath(pathname) === '/workspace';
+}
+
 export function reviewReasonRequired(status: string) {
   return status === 'REJECTED' || status === 'INVALIDATED' || status === 'ARBITRATION';
 }

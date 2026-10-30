@@ -42,6 +42,8 @@ from labelu.internal.adapter.routers import data_governance
 from labelu.internal.adapter.routers import edge_agent
 from labelu.internal.adapter.routers import provider_registry
 from labelu.internal.adapter.routers import model_access_config
+from labelu.internal.adapter.routers import image_cleaning_policy
+from labelu.internal.adapter.routers import image_cleaning_task
 from labelu.internal.adapter.routers import provider_job
 from labelu.internal.adapter.routers import ingestion
 from labelu.internal.adapter.routers import project_ownership
@@ -82,6 +84,8 @@ def add_router(app: FastAPI):
     _include(app, edge_agent.router)
     _include(app, provider_registry.router)
     _include(app, model_access_config.router)
+    _include(app, image_cleaning_policy.router)
+    _include(app, image_cleaning_task.router)
     _include(app, provider_job.router)
     _include(app, ingestion.router)
     _include(app, project_ownership.router)

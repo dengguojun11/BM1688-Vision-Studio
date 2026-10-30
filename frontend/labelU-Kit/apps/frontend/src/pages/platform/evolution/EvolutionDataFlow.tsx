@@ -38,11 +38,11 @@ export default function EvolutionDataFlow({ active, preview }: { active: boolean
       <FlowParticleLayer $active={active} aria-hidden="true">
         {Array.from({ length: 7 }, (_, index) => <i key={index} style={{ '--particle-index': index } as React.CSSProperties} />)}
       </FlowParticleLayer>
-      <PacketLayer $active={active} aria-hidden="true">
+      {preview && <PacketLayer $active={active} aria-hidden="true">
         <Packet $index={0}>难例样本 <b>+24</b></Packet>
         <Packet $index={1}>冻结快照 <b>v12</b></Packet>
         <Packet $index={2}>mAP <b>+6.3 pts</b></Packet>
-      </PacketLayer>
+      </PacketLayer>}
       {preview && <SampleFlash key={sample.id} data-sample-id={sample.id}>
         <div className="sample-image"><RealDatasetSample sample={sample} /><span className="sample-live">LIVE</span></div>
         <div className="sample-copy"><span>{sample.dataset} · {sample.split}</span><strong>样本接入进化链路</strong><small title={sample.fileName}>{sample.fileName}</small><em>{String(sampleIndex + 1).padStart(2, '0')} / {evolutionPreviewSamples.length} · 数据治理 →</em></div>

@@ -241,7 +241,7 @@ def test_user_requested_yolo_payload_marks_geometry_only_canvas_overwrite():
     }
 
 
-def test_plate_detection_builds_rect_attributes_and_closed_polygon():
+def test_plate_detection_builds_four_point_polygon_without_plate_attributes():
     rects, polygons = _plate_detections_to_annotation_results(
         [
             {
@@ -263,26 +263,50 @@ def test_plate_detection_builds_rect_attributes_and_closed_polygon():
         ],
         rect_label="doubleEP",
         polygon_label="platePoint",
+        detection_only=True,
     )
 
     assert len(rects) == 1
     assert rects[0]["label"] == "doubleEP"
-    assert rects[0]["attributes"] == {
-        "plateNumber": "H27465",
-        "color": "white",
-        "plateType": "whitePlate",
-        "score": "0.9236",
-    }
+    assert "attributes" not in rects[0]
     assert len(polygons) == 1
     assert polygons[0]["label"] == "platePoint"
-    assert len(polygons[0]["points"]) == 5
-    assert polygons[0]["points"][0] == polygons[0]["points"][-1]
-    assert polygons[0]["points"][:4] == [
+    assert len(polygons[0]["points"]) == 4
+    assert polygons[0]["points"] == [
         {"x": 12.0, "y": 22.0},
         {"x": 108.0, "y": 21.0},
         {"x": 109.0, "y": 68.0},
         {"x": 11.0, "y": 69.0},
     ]
+
+
+def test_plate_recognition_keeps_legacy_closed_polygon_and_attributes():
+    rects, polygons = _plate_detections_to_annotation_results(
+        [
+            {
+                "confidence": 0.9236,
+                "x1": 10,
+                "y1": 20,
+                "x2": 110,
+                "y2": 70,
+                "corners": [
+                    {"x": 12, "y": 22},
+                    {"x": 108, "y": 21},
+                    {"x": 109, "y": 68},
+                    {"x": 11, "y": 69},
+                ],
+                "plate_number": "H27465",
+                "color": "white",
+                "plate_type": "whitePlate",
+            }
+        ],
+        rect_label="doubleEP",
+        polygon_label="platePoint",
+    )
+
+    assert rects[0]["attributes"]["plateNumber"] == "H27465"
+    assert len(polygons[0]["points"]) == 5
+    assert polygons[0]["points"][0] == polygons[0]["points"][-1]
 
 
 def test_plate_detection_without_four_corners_keeps_rect_only():

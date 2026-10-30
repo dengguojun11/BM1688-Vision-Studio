@@ -645,8 +645,8 @@ def _export_detail_plate_detection_runtime() -> dict[str, Any]:
                 "network_names": ["plate_detection"],
                 "precision_variants": ["fp16"],
                 "compiled_components": ["pose"],
-                "expected_components": ["pose", "ocr", "color", "plate_type"],
-                "missing_components": ["ocr", "color", "plate_type"],
+                "expected_components": ["pose"],
+                "missing_components": [],
                 "compile_status": "pass",
                 "generic_validation_status": "not_applicable",
                 "specialized_runtime_status": "pass",
@@ -669,7 +669,7 @@ def _export_detail_plate_detection_runtime() -> dict[str, Any]:
                 },
                 "verdict": "component_compatible",
                 "verdict_label": "车牌检测组件可在 BM1688 运行",
-                "release_scope_label": "仅检测组件，不代表完整车牌复合识别",
+                "release_scope_label": "车牌框与四角点定位运行链路（不包含号码、颜色或类型识别）",
             },
         }
     )
@@ -2143,7 +2143,9 @@ def test_bm1688_plate_detection_renders_layered_compatibility_evidence():
         expect(panel).to_contain_text("64 个检测结果")
         expect(panel).to_contain_text("通用 Sophon Demo")
         expect(panel).to_contain_text("不适用")
-        expect(panel).to_contain_text("仅检测组件，不代表完整车牌复合识别")
+        expect(panel).to_contain_text(
+            "车牌框与四角点定位运行链路（不包含号码、颜色或类型识别）"
+        )
 
         browser.close()
 

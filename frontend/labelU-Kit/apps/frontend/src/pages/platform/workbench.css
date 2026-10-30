@@ -1,0 +1,35 @@
+/* Hallmark · app screen · workbench interaction states · genre: modern-minimal · theme: existing platform · v2.0.0 */
+/* critique: the platform shell needs one shared keyboard, pressed and disabled state language. */
+:root {
+  --workspace-focus-ring: var(--color-primary);
+  --workspace-focus-offset: 2px;
+  --workspace-disabled-opacity: 0.55;
+  --workspace-scrim: rgba(15, 23, 42, 0.2);
+}
+
+.platform-shell button:focus-visible,
+.platform-shell a:focus-visible,
+.platform-shell [role='button']:focus-visible {
+  outline: 2px solid var(--workspace-focus-ring);
+  outline-offset: var(--workspace-focus-offset);
+}
+
+.platform-shell button:active,
+.platform-shell a:active,
+.platform-shell [role='button']:active {
+  transform: translateY(1px);
+}
+
+.platform-shell button:disabled,
+.platform-shell [aria-disabled='true'] {
+  cursor: not-allowed;
+  opacity: var(--workspace-disabled-opacity);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .platform-shell button:active,
+  .platform-shell a:active,
+  .platform-shell [role='button']:active {
+    transform: none;
+  }
+}

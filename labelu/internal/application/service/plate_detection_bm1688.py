@@ -18,6 +18,7 @@ from labelu.internal.application.service.plate_recognition_train import (
     PLATE_DETECTION_JOB_TYPE,
     plate_detection_artifact_contract,
 )
+from labelu.internal.common.plate_recognition_profile import PLATE_DETECTION_PROFILE
 from labelu.internal.common import bm1688_compiler_config as cfg_io
 from labelu.internal.common.config import settings
 from labelu.internal.common.db import begin_transaction, session_scope
@@ -59,7 +60,7 @@ def _resolve_pose_source(job: Any) -> dict[str, Any]:
 def _runtime_contract(job: Any, pose: dict[str, Any]) -> dict[str, Any]:
     return {
         "format": "labelu_plate_detection_bm1688_v1",
-        "training_profile": "plate_recognition_v1",
+        "training_profile": PLATE_DETECTION_PROFILE,
         "job_type": PLATE_DETECTION_JOB_TYPE,
         "bmodel": BMODEL_NAME,
         "precision": "fp16",

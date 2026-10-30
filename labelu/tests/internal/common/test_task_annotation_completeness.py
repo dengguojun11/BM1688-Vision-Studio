@@ -176,6 +176,45 @@ def test_audit_one_polygon_sample_uses_configured_polygon_tool():
     assert row["sample_quality_state"] == SampleState.DONE.value
 
 
+def test_plate_detection_polygon_accepts_legacy_duplicate_closing_point():
+    cfg = {
+        "defaultRectPresetId": "plateDetection",
+        "tools": [
+            {
+                "tool": "polygonTool",
+                "config": {
+                    "lowerLimitPointNum": 4,
+                    "upperLimitPointNum": 4,
+                    "attributes": [{"key": "关键点", "value": "platePoint"}],
+                },
+            }
+        ],
+    }
+    result = {
+        "width": 100,
+        "height": 80,
+        "polygonTool": {
+            "result": [
+                {
+                    "label": "platePoint",
+                    "points": [
+                        {"x": 10, "y": 10},
+                        {"x": 90, "y": 10},
+                        {"x": 90, "y": 40},
+                        {"x": 10, "y": 40},
+                        {"x": 10, "y": 10},
+                    ],
+                }
+            ]
+        },
+    }
+
+    row = audit_one_sample(_sample(result), cfg)
+
+    assert row["ok"] is True
+    assert row["geometry_annotation_ok"] is True
+
+
 def test_audit_one_polygon_sample_missing_geometry_is_incomplete():
     cfg = _task_config_with_tags_and_polygon()
     result = {

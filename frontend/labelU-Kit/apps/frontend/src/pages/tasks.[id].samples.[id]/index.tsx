@@ -50,7 +50,6 @@ import AnnotationContext from './annotation.context';
 import { LoadingWrapper, Wrapper } from './style';
 import { getVisiblePreAnnotations, preAnnotationsHasGeometry } from './preAnnotationVisibility';
 import {
-  sampleHasGeometryAnnotations,
   shouldAutoLoadCanvasPreAnnotationsForSample,
 } from './preAnnotationLoading';
 import {
@@ -113,6 +112,11 @@ const AnnotationPage = () => {
   const { t } = useTranslationCompat();
   const sampleFilename = sample?.data?.file?.filename;
   const [manualPreAnnotationLoaded, setManualPreAnnotationLoaded] = useState(false);
+  // Geometry previews are session-scoped: only an explicit current-image run
+  // (or a manual upload) may replace the saved canvas for this page session.
+  // A refresh must fall back to the sample's formal data so deleted boxes do
+  // not reappear from a stale pre-annotation row.
+  const [forcePreAnnotationPreview, setForcePreAnnotationPreview] = useState(false);
   const canUseCanvasPreAnnotation = shouldAutoLoadCanvasPreAnnotationsForSample(sample?.data, {
     manual: manualPreAnnotationLoaded,
   });
@@ -149,6 +153,7 @@ const AnnotationPage = () => {
       }
 
       setManualPreAnnotationLoaded(true);
+      setForcePreAnnotationPreview(true);
       void refetchPreAnnotation();
     };
 
@@ -280,7 +285,6 @@ const AnnotationPage = () => {
   const navigation = useNavigation();
   const taskConfig = _.get(task, 'config');
   const me = useMe();
-  const currentSampleHasGeometry = useMemo(() => sampleHasGeometryAnnotations(sample?.data), [sample?.data]);
   const [currentSampleConns, taskConns] = useSampleWs();
   const currentEditingUser = useMemo(() => {
     if (isCompareAccessMode && me.data?.id && routeParams.taskId && routeParams.sampleId) {
@@ -298,6 +302,7 @@ const AnnotationPage = () => {
 
   useEffect(() => {
     setManualPreAnnotationLoaded(false);
+    setForcePreAnnotationPreview(false);
     setReadySampleId(undefined);
   }, [sample?.data.id]);
 
@@ -630,14 +635,16 @@ const AnnotationPage = () => {
     () =>
       getVisiblePreAnnotations(sample.data.state, preAnnotations, {
         globalOnlyForAnnotated: true,
-        overwriteExistingAnnotations: effectiveOverwriteExistingAnnotations,
-        currentAnnotationsHaveGeometry: currentSampleHasGeometry,
-        allowGeometryForAnnotated: Boolean(preAnnotationMeta.include_geometry_tools),
+        overwriteExistingAnnotations:
+          forcePreAnnotationPreview && effectiveOverwriteExistingAnnotations,
+        // Uploaded pre-annotations stay reviewable after a reload; generated
+        // batch rows only appear for unannotated samples or an explicit run.
+        allowGeometryForAnnotated: forcePreAnnotationPreview || hasUploadedPreAnnotation,
       }),
     [
-      currentSampleHasGeometry,
       effectiveOverwriteExistingAnnotations,
-      preAnnotationMeta.include_geometry_tools,
+      forcePreAnnotationPreview,
+      hasUploadedPreAnnotation,
       sample.data.state,
       preAnnotations,
     ],
@@ -803,7 +810,7 @@ const AnnotationPage = () => {
         selectedLabel={disabled ? undefined : currentLabel}
         preAnnotationLabels={preAnnotationConfig}
         preAnnotations={visiblePreAnnotations}
-        overwriteExistingAnnotations={effectiveOverwriteExistingAnnotations}
+        overwriteExistingAnnotations={forcePreAnnotationPreview && effectiveOverwriteExistingAnnotations}
         replacePreAnnotationTools={replacePreAnnotationTools}
         onReady={handleImageReady}
       />

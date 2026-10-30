@@ -295,7 +295,7 @@
   }
   function menuItems() {
     var items = [];
-    if (capabilityVisible("ai")) items.push({ action: "ai", label: isSamplePage() ? "AI 自动标注（当前图片）" : "AI 批量补全全局标签", target: isTaskPage() ? true : targetFor("ai") });
+    if (capabilityVisible("ai")) items.push({ action: "ai", label: isSamplePage() ? "AI补全全局标签（当前图片）" : "AI 批量补全全局标签", target: isTaskPage() ? true : targetFor("ai") });
     if (capabilityVisible("ai_detection")) items.push({ action: "ai_detection", label: isSamplePage() ? "AI目标检测(当前图片)" : "AI批量目标检测", target: targetFor("ai_detection") });
     if (capabilityVisible("yolo")) items.push({ action: "yolo", label: isSamplePage() ? "YOLO 检测框（当前图片）" : "YOLO 批量检测框", target: targetFor("yolo") });
     if (capabilityVisible("tagtool")) items.push({ action: "tagtool", label: isSamplePage() ? "TagTool 全局标签（当前图片）" : "TagTool 全局标签批量", target: targetFor("tagtool") });

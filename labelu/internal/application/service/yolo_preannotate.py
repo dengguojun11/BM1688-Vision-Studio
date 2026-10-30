@@ -40,6 +40,7 @@ from labelu.internal.application.service import auto_label as auto_label_mod
 from labelu.internal.application.service import task as task_service
 from labelu.internal.application.service.datasource import get_presigned_url
 from labelu.internal.application.service.task_background_jobs import (
+    GROUP_GEOMETRY,
     assert_no_active_task_background_job,
 )
 from labelu.internal.application.service.yolo_dataset import build_yolo_rect_class_names
@@ -54,6 +55,7 @@ from labelu.internal.common.error_code import ErrorCode, LabelUException
 from labelu.internal.common.label_contract import class_order_signature
 from labelu.internal.common.optional_dependencies import ensure_ultralytics_installed
 from labelu.internal.common.plate_recognition_profile import (
+    DEFAULT_PLATE_DETECTION_CONFIG,
     DEFAULT_PLATE_RECOGNITION_CONFIG,
     normalize_plate_recognition_task_config,
 )
@@ -77,6 +79,7 @@ YOLO_PRE_META = "yolo_generated"
 AI_PREANNOTATION_SOURCE = "ai_generated"
 _LOG = "[yolo-preannotate]"
 PLATE_RECOGNITION_JOB_TYPE = "plate_recognition"
+PLATE_DETECTION_JOB_TYPE = "plate_detection"
 
 # A small, explicit compatibility map for labels that are semantically
 # equivalent across common YOLO datasets.  Model labels are otherwise matched
@@ -131,6 +134,28 @@ def _resolve_plate_component_artifacts(job) -> tuple[dict[str, Path], dict[str, 
         )
         artifacts[component] = resolve_weights_path(stored)
     return artifacts, metadata
+
+
+def _resolve_plate_detection_artifact(job) -> tuple[Path, dict[str, Any]]:
+    try:
+        metadata = json.loads(job.component_artifacts_json or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise LabelUException(
+            code=ErrorCode.CODE_61000_NO_DATA,
+            status_code=status.HTTP_404_NOT_FOUND,
+            message="Plate detection component metadata is invalid",
+        ) from exc
+    if not isinstance(metadata, dict):
+        metadata = {}
+    pose = metadata.get("pose") if isinstance(metadata.get("pose"), dict) else {}
+    pose_path = resolve_weights_path(pose.get("pt") or job.weights_path)
+    if not pose_path.is_file():
+        raise LabelUException(
+            code=ErrorCode.CODE_61000_NO_DATA,
+            status_code=status.HTTP_404_NOT_FOUND,
+            message="Plate detection Pose 权重不存在",
+        )
+    return pose_path, metadata
 
 
 def _explicit_target_sample_ids(cmd: BatchYoloPreannotateCommand) -> list[int] | None:
@@ -966,6 +991,10 @@ def resolve_auto_candidate_for_task(
                 artifacts, metadata = _resolve_plate_component_artifacts(job)
                 candidate["plate_artifacts"] = artifacts
                 candidate["plate_metadata"] = metadata
+            elif job_type == PLATE_DETECTION_JOB_TYPE:
+                pose_path, metadata = _resolve_plate_detection_artifact(job)
+                candidate["plate_artifacts"] = {"pose": pose_path}
+                candidate["plate_metadata"] = metadata
         except Exception as exc:
             logger.opt(exception=exc).warning(
                 "{} auto_candidate_skip_trained task_id={} job_id={}",
@@ -1045,6 +1074,9 @@ def _resolve_weights_for_command(
     plate_metadata: dict[str, Any] = {}
     if job_type == PLATE_RECOGNITION_JOB_TYPE:
         plate_artifacts, plate_metadata = _resolve_plate_component_artifacts(job)
+    elif job_type == PLATE_DETECTION_JOB_TYPE:
+        pose_path, plate_metadata = _resolve_plate_detection_artifact(job)
+        plate_artifacts = {"pose": pose_path}
     frozen_labels, frozen_set_sig, frozen_order_sig = _frozen_job_contract(
         job, src_task
     )
@@ -1274,7 +1306,7 @@ async def create_batch_job(
     )
 
     with begin_transaction(db):
-        assert_no_active_task_background_job(db=db, task_id=task_id)
+        assert_no_active_task_background_job(db=db, task_id=task_id, group=GROUP_GEOMETRY)
         from labelu.internal.application.service import (
             annotation_contract as annotation_contract_service,
         )
@@ -1568,6 +1600,7 @@ def _plate_detections_to_annotation_results(
     *,
     rect_label: str,
     polygon_label: str,
+    detection_only: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     rect_results: list[dict[str, Any]] = []
     polygon_results: list[dict[str, Any]] = []
@@ -1576,30 +1609,35 @@ def _plate_detections_to_annotation_results(
         y1 = float(detection["y1"])
         x2 = float(detection["x2"])
         y2 = float(detection["y2"])
-        rect_results.append(
-            {
-                "id": str(uuid.uuid4()),
-                "order": order,
-                "label": rect_label,
-                "visible": True,
-                "attributes": {
-                    "plateNumber": str(detection.get("plate_number") or ""),
-                    "color": str(detection.get("color") or ""),
-                    "plateType": str(detection.get("plate_type") or ""),
-                    "score": str(round(float(detection.get("confidence") or 0.0), 4)),
-                },
-                "x": x1,
-                "y": y1,
-                "width": max(0.0, x2 - x1),
-                "height": max(0.0, y2 - y1),
+        rect = {
+            "id": str(uuid.uuid4()),
+            "order": order,
+            "label": rect_label,
+            "visible": True,
+            "x": x1,
+            "y": y1,
+            "width": max(0.0, x2 - x1),
+            "height": max(0.0, y2 - y1),
+        }
+        if not detection_only:
+            rect["attributes"] = {
+                "plateNumber": str(detection.get("plate_number") or ""),
+                "color": str(detection.get("color") or ""),
+                "plateType": str(detection.get("plate_type") or ""),
+                "score": str(round(float(detection.get("confidence") or 0.0), 4)),
             }
-        )
+        rect_results.append(rect)
 
         corners = detection.get("corners") or []
         if len(corners) != 4:
             continue
         points = [{"x": float(point["x"]), "y": float(point["y"])} for point in corners]
-        points.append(dict(points[0]))
+        # LabelU stores polygon vertices without a duplicated closing vertex;
+        # the canvas closes the rendered edge itself.  Keep the legacy
+        # composite profile's historical payload shape, but emit exactly four
+        # points for the detection-only 4/4 geometry contract.
+        if not detection_only:
+            points.append(dict(points[0]))
         polygon_results.append(
             {
                 "id": str(uuid.uuid4()),
@@ -1824,7 +1862,7 @@ def _run_yolo_preannotate_sync(
 
         model = None
         names_map: dict[int, str] = {}
-        if job_type != PLATE_RECOGNITION_JOB_TYPE:
+        if job_type not in {PLATE_RECOGNITION_JOB_TYPE, PLATE_DETECTION_JOB_TYPE}:
             model = YOLO(weights_abs)
             names_map = _yolo_names_map(model)
         label_aliases = _build_detection_label_aliases(names_map.values(), allowed)
@@ -2072,8 +2110,15 @@ def _process_one_sample(
             names_map.values(), allowed_labels
         )
 
-    if job_type == PLATE_RECOGNITION_JOB_TYPE:
-        task_cfg_merged = normalize_plate_recognition_task_config(task_cfg_merged)
+    if job_type in {PLATE_RECOGNITION_JOB_TYPE, PLATE_DETECTION_JOB_TYPE}:
+        task_cfg_merged = normalize_plate_recognition_task_config(
+            task_cfg_merged,
+            (
+                DEFAULT_PLATE_DETECTION_CONFIG
+                if job_type == PLATE_DETECTION_JOB_TYPE
+                else DEFAULT_PLATE_RECOGNITION_CONFIG
+            ),
+        )
 
     with session_scope() as db:
         sample = crud_sample.get(db=db, sample_id=sample_id)
@@ -2125,37 +2170,63 @@ def _process_one_sample(
 
     polygon_results: list[dict[str, Any]] = []
     preview_cls: list[str] = []
-    if job_type == PLATE_RECOGNITION_JOB_TYPE:
+    if job_type in {PLATE_RECOGNITION_JOB_TYPE, PLATE_DETECTION_JOB_TYPE}:
         from labelu.internal.application.service.plate_recognition_infer import (
+            infer_plate_detection,
             infer_plate_recognition,
         )
 
         if not plate_artifacts or not plate_metadata:
-            raise RuntimeError("Plate recognition model components are missing")
+            raise RuntimeError("Plate model components are missing")
         image = _load_rgb_image(src)
-        detections = infer_plate_recognition(
-            image,
-            artifacts=plate_artifacts,
-            metadata=plate_metadata,
-            confidence=conf,
-            imgsz=imgsz,
-        )
+        if job_type == PLATE_DETECTION_JOB_TYPE:
+            detections = infer_plate_detection(
+                image,
+                weights=plate_artifacts["pose"],
+                confidence=conf,
+                imgsz=imgsz,
+            )
+        else:
+            detections = infer_plate_recognition(
+                image,
+                artifacts=plate_artifacts,
+                metadata=plate_metadata,
+                confidence=conf,
+                imgsz=imgsz,
+            )
         raw_n = len(detections)
         pose_classes = (plate_metadata.get("pose") or {}).get("class_names") or []
         preferred_rect_label = str(
             pose_classes[0]
             if pose_classes
-            else DEFAULT_PLATE_RECOGNITION_CONFIG["rect_label"]
+            else (
+                DEFAULT_PLATE_DETECTION_CONFIG["rect_label"]
+                if job_type == PLATE_DETECTION_JOB_TYPE
+                else DEFAULT_PLATE_RECOGNITION_CONFIG["rect_label"]
+            )
         ).strip()
         rect_label = (
             preferred_rect_label
             if preferred_rect_label in allowed_labels
-            else str(DEFAULT_PLATE_RECOGNITION_CONFIG["rect_label"])
+            else str(
+                (
+                    DEFAULT_PLATE_DETECTION_CONFIG
+                    if job_type == PLATE_DETECTION_JOB_TYPE
+                    else DEFAULT_PLATE_RECOGNITION_CONFIG
+                )["rect_label"]
+            )
         )
         rect_results, polygon_results = _plate_detections_to_annotation_results(
             detections,
             rect_label=rect_label,
-            polygon_label=str(DEFAULT_PLATE_RECOGNITION_CONFIG["polygon_label"]),
+            polygon_label=str(
+                (
+                    DEFAULT_PLATE_DETECTION_CONFIG
+                    if job_type == PLATE_DETECTION_JOB_TYPE
+                    else DEFAULT_PLATE_RECOGNITION_CONFIG
+                )["polygon_label"]
+            ),
+            detection_only=job_type == PLATE_DETECTION_JOB_TYPE,
         )
         preview_cls = [f"plate:{rect_label}"] * min(raw_n, 25)
     else:

@@ -163,6 +163,25 @@ def _positive_int(config: dict[str, Any], key: str) -> int | None:
     return parsed if parsed > 0 else None
 
 
+def _plate_detection_polygon_points(
+    points: list[Any], task_config: dict[str, Any]
+) -> list[Any]:
+    """Treat a legacy duplicated closing vertex as the rendered edge only."""
+    if (
+        str(task_config.get("defaultRectPresetId") or "").strip()
+        != "plateDetection"
+        or len(points) != 5
+    ):
+        return points
+    first = _point_xy(points[0])
+    last = _point_xy(points[-1])
+    if first is None or last is None:
+        return points
+    if abs(first[0] - last[0]) <= BOUNDS_EPSILON and abs(first[1] - last[1]) <= BOUNDS_EPSILON:
+        return points[:-1]
+    return points
+
+
 def _geometry_item_has_valid_shape(
     item: Any,
     tool_name: str,
@@ -184,6 +203,8 @@ def _geometry_item_has_valid_shape(
         points = item.get("points") or item.get("pointList") or []
         if not isinstance(points, list):
             return False
+        if tool_name == "polygonTool":
+            points = _plate_detection_polygon_points(points, task_config)
         min_points = _positive_int(
             _geometry_tool_config(task_config, tool_name), "lowerLimitPointNum"
         )

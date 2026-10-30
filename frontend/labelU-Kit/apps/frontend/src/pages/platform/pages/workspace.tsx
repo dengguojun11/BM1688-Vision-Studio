@@ -1,18 +1,27 @@
-import { ClusterOutlined, ReloadOutlined } from '@ant-design/icons';
+import {
+  ArrowRightOutlined,
+  BranchesOutlined,
+  ClusterOutlined,
+  ExperimentOutlined,
+  ReloadOutlined,
+  TagsOutlined,
+} from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Alert, Button, Empty, Spin, Tag, Typography } from 'antd';
 import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 
 import request from '@/api/request';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
-import { workspaceSummaryState } from '../routing';
+import { isEvolutionScreenPath, isWorkspaceDataScreenPath, workspaceSummaryState } from '../routing';
 import { ModuleHeader, responseStatus, StatusItem, StatusStrip, WorkPanel } from '../shared';
 import { usePageVisible } from '../polling';
 import { useWallboard, WorkbenchActivity } from '../wallboard';
 import { WorkspaceSummaryPanel } from '../WorkspaceSummaryPanel';
 import EvolutionCockpit from '../evolution/EvolutionCockpit';
+
+export { isEvolutionScreenPath, isWorkspaceDataScreenPath } from '../routing';
 
 const EDGE_QUEUE_SUMMARY_PATH = '/v1/yolo-edge-validation/queue/summary';
 const EDGE_QUEUE_SUMMARY_COMPAT_PATH = '/v1/yolo-edge-validation/jobs/queue-summary';
@@ -46,6 +55,68 @@ const SummaryHeader = styled.div`
     margin: 0;
     color: #64748b;
     font-size: 12px;
+  }
+`;
+
+const NextStepsPanel = styled(WorkPanel)`
+  margin-top: 20px;
+
+  .next-steps-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+  }
+
+  .next-steps-header h2 {
+    margin: 0 0 4px;
+    color: #172033;
+    font-size: 16px;
+    line-height: 1.35;
+    font-weight: 650;
+  }
+
+  .next-steps-header p {
+    margin: 0;
+    color: #64748b;
+    font-size: 12px;
+  }
+
+  .next-steps-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .next-steps-actions .ant-btn {
+    min-height: 36px;
+  }
+
+  .next-steps-actions .ant-btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .next-steps-actions .ant-btn:active {
+    transform: translateY(1px);
+  }
+
+  .next-steps-actions .ant-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  @media (max-width: 680px) {
+    .next-steps-actions {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .next-steps-actions .ant-btn {
+      justify-content: flex-start;
+      width: 100%;
+    }
   }
 `;
 
@@ -257,7 +328,7 @@ export function EdgeQueueWorkspaceSummary() {
   );
 }
 
-export default function WorkspacePage() {
+function WorkspaceDashboard() {
   const navigate = useNavigate();
   const wallboard = useWallboard();
   const summary = wallboard.summaryQuery.data;
@@ -294,15 +365,40 @@ export default function WorkspacePage() {
         }
         error={wallboard.alertsQuery.error || wallboard.jobsQuery.error}
         onRefresh={wallboard.refresh}
+        onAlertAction={(path) => navigate(path)}
       />
-      <EvolutionCockpit />
-      <WorkPanel>
-        <h2>开始使用 7GAI</h2>
-        <p>从任务与标注开始：上传数据、完成标注，系统会在训练提交时自动生成不可变训练快照。</p>
-        <Button type="primary" style={{ marginTop: 16 }} onClick={() => navigate('/tasks')}>
-          进入任务与标注
-        </Button>
-      </WorkPanel>
+      <NextStepsPanel aria-label="下一步操作">
+        <div className="next-steps-header">
+          <div>
+            <h2>下一步操作</h2>
+            <p>从当前状态进入对应处理页面，工作台只保留决策所需的信息。</p>
+          </div>
+        </div>
+        <div className="next-steps-actions">
+          <Button type="primary" icon={<TagsOutlined />} onClick={() => navigate('/tasks')}>
+            进入任务与标注
+          </Button>
+          <Button icon={<ExperimentOutlined />} onClick={() => navigate('/training')}>
+            查看训练中心
+          </Button>
+          <Button icon={<BranchesOutlined />} onClick={() => navigate('/models')}>
+            查看模型中心
+          </Button>
+          <Button icon={<ArrowRightOutlined />} onClick={() => navigate('/workspace')}>
+            打开数据大屏
+          </Button>
+        </div>
+      </NextStepsPanel>
     </>
   );
+}
+
+export default function WorkspacePage() {
+  const location = useLocation();
+
+  if (isWorkspaceDataScreenPath(location.pathname)) {
+    return <EvolutionCockpit />;
+  }
+
+  return <WorkspaceDashboard />;
 }

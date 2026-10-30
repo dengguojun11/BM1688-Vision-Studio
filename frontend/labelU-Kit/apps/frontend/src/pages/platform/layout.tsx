@@ -9,10 +9,14 @@ import useTaskSuperuser from '@/hooks/useTaskSuperuser';
 import { isInAppIframe } from '@/utils/inAppIframe';
 import { PRODUCT_LOGO_SRC } from '@/utils/product';
 import { getActiveModule, MODULE_COPY, PLATFORM_MODULES, PRODUCT_NAME } from './modules';
+import { isEvolutionScreenPath, isWorkspaceRootPath, isWorkspaceWorkbenchPath } from './routing';
 import { UserAvatar } from '@/components/UserAvatar';
 
 const Shell = styled(Layout)`
+  width: 100%;
+  min-width: 0;
   min-height: 100vh;
+  overflow-x: clip;
   background: #f5f7fb;
 `;
 
@@ -31,6 +35,31 @@ const Side = styled(Layout.Sider)`
   .ant-layout-sider-children {
     display: flex;
     flex-direction: column;
+  }
+
+  @media (max-width: 900px) {
+    &:not(.ant-layout-sider-collapsed) {
+      position: fixed !important;
+      z-index: 40;
+      left: 0;
+      top: 0;
+      box-shadow: 10px 0 24px rgba(15, 23, 42, 0.18);
+    }
+  }
+`;
+
+const MobileNavBackdrop = styled.button.attrs({ type: 'button' })`
+  display: none;
+
+  @media (max-width: 900px) {
+    display: block;
+    position: fixed;
+    z-index: 30;
+    inset: 0 0 0 224px;
+    padding: 0;
+    border: 0;
+    background: var(--workspace-scrim);
+    cursor: default;
   }
 `;
 
@@ -150,10 +179,23 @@ const PageContext = styled.div`
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  @media (max-width: 600px) {
+    .page-description {
+      display: none;
+    }
+
+    .page-title {
+      font-size: 14px;
+    }
+  }
 `;
 
 const Main = styled(Layout.Content)`
+  width: 100%;
+  max-width: 100%;
   min-width: 0;
+  overflow-x: clip;
   padding: 28px;
 
   @media (max-width: 900px) {
@@ -180,7 +222,9 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const params = new URLSearchParams(location.search);
   // `embedded=1` is also used by direct compatibility links. Only suppress the
   // platform shell when the legacy content is actually hosted in an iframe.
-  const hideChrome = params.has('noSave') || params.get('fullscreen') === '1' || isInAppIframe();
+  const isDefaultDataScreen = isWorkspaceRootPath(location.pathname);
+  const isLegacyFullscreen = isEvolutionScreenPath(location.pathname) && params.get('fullscreen') === '1';
+  const hideChrome = params.has('noSave') || isDefaultDataScreen || isLegacyFullscreen || isInAppIframe();
   const active = getActiveModule(location.pathname);
   // Algorithms, rules and providers are advanced surfaces under the
   // training center. Keep their direct URLs working while
@@ -194,10 +238,17 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const visibleModules = userQuery.isTaskSuperuser
     ? PLATFORM_MODULES
     : PLATFORM_MODULES.filter(({ key }) => key !== 'admin');
-  const pageCopy = MODULE_COPY[active];
+  const isEvolutionScreen = isEvolutionScreenPath(location.pathname);
+  const pageCopy = isDefaultDataScreen
+    ? { title: '数据大屏', description: '查看模型谱系、训练进度、质量门禁与自动化决策证据。' }
+    : isWorkspaceWorkbenchPath(location.pathname)
+    ? { title: '运行工作台', description: '集中查看待办、作业状态与平台告警，并进入具体处理页面。' }
+    : isEvolutionScreen
+    ? { title: '模型进化大屏', description: '查看模型谱系、质量门禁与自动化决策证据。' }
+    : MODULE_COPY[active];
 
   useEffect(() => {
-    const visualPreview = params.get('preview') === '1' && location.pathname === '/workspace/evolution-screen';
+    const visualPreview = params.get('preview') === '1' && isEvolutionScreen;
     if (!visualPreview && !window.IS_ONLINE && !localStorage.getItem('token')) {
       navigate(`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`, { replace: true });
     }
@@ -216,7 +267,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   };
 
   return (
-    <Shell>
+    <Shell className="platform-shell">
       <Side
         width={224}
         collapsedWidth={64}
@@ -246,6 +297,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
         </Nav>
         {!collapsed && <Footer>{PRODUCT_NAME}</Footer>}
       </Side>
+      {!collapsed && <MobileNavBackdrop aria-label="关闭导航" onClick={() => setCollapsed(true)} />}
       <Layout>
         <Header>
           <PageContext>
@@ -286,7 +338,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
                   user={currentUser}
                   shortName={false}
                   showTooltip={false}
-                  style={{ backgroundColor: '#e8f0ff', color: '#2457c5' }}
+                  style={{ backgroundColor: 'var(--color-primary-bg)', color: 'var(--color-primary)' }}
                 />
                 <Tag color={userQuery.isTaskSuperuser ? 'blue' : 'default'} style={{ marginLeft: 8, marginRight: 0 }}>
                   {roleLabel}

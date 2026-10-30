@@ -547,9 +547,11 @@ def test_normalize_records_overwrite_existing_annotations_meta():
         "demo.jpg",
         task_config,
         overwrite_existing_annotations=True,
+        apply_to_canvas_overwrite=True,
     )
 
     assert out["meta"]["overwrite_existing_annotations"] is True
+    assert out["meta"]["apply_to_canvas_overwrite"] is True
     assert out["meta"]["include_geometry_tools"] is False
 
 
@@ -580,10 +582,37 @@ def test_merge_ai_global_tags_into_sample_data_preserves_geometry():
     assert changed is True
     result = json.loads(merged["result"])
     assert result["rectTool"]["result"] == [{"id": "box-1", "label": "car"}]
-    assert [item["value"] for item in result["tagTool"]["result"]] == [
-        {"weather": ["sunny"]},
-        {"scene": ["urban"]},
-    ]
+    values = [item["value"] for item in result["tagTool"]["result"]]
+    # Already annotated dimensions win; only missing dimensions are filled.
+    assert {"weather": ["rainy"]} in values
+    assert {"scene": ["urban"]} in values
+    assert {"weather": ["sunny"]} not in values
+
+
+def test_merge_ai_global_tags_keeps_complete_existing_dimensions():
+    sample_data = {
+        "result": json.dumps(
+            {
+                "tagTool": {
+                    "toolName": "tagTool",
+                    "result": [{"type": "tag", "value": {"weather": ["rainy"]}}],
+                }
+            }
+        )
+    }
+    ai_payload = {
+        "annotations": {
+            "tagTool": {
+                "toolName": "tagTool",
+                "result": [{"type": "tag", "value": {"weather": ["sunny"]}}],
+            }
+        }
+    }
+
+    merged, changed = _merge_ai_global_tags_into_sample_data(sample_data, ai_payload)
+
+    assert changed is False
+    assert merged == sample_data
 
 
 def test_merge_ai_global_tags_returns_unchanged_without_tagtool():

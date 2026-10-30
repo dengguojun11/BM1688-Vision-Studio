@@ -46,7 +46,7 @@ describe('getVisiblePreAnnotations', () => {
     });
   });
 
-  it('keeps geometry pre-annotations for annotated samples when current result has no geometry', () => {
+  it('hides geometry pre-annotations for annotated samples even when the saved result has no geometry', () => {
     const preAnnotations = {
       rect: [{ id: 'box-1' }],
       tag: [{ id: 'tag-1' }],
@@ -55,9 +55,8 @@ describe('getVisiblePreAnnotations', () => {
     expect(
       getVisiblePreAnnotations(SampleState.DONE, preAnnotations, {
         globalOnlyForAnnotated: true,
-        currentAnnotationsHaveGeometry: false,
       }),
-    ).toBe(preAnnotations);
+    ).toEqual({ tag: [{ id: 'tag-1' }] });
   });
 
   it('keeps an explicit detection preview beside existing formal geometry', () => {

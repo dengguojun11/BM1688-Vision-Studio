@@ -16,7 +16,10 @@ from labelu.internal.adapter.persistence import crud_locateanything_preannotate_
 from labelu.internal.application.command.locateanything_preannotate import BatchLocateAnythingPreannotateCommand
 from labelu.internal.application.response.locateanything_preannotate import LocateAnythingPreannotateJobResponse
 from labelu.internal.application.service import auto_label as auto_label_mod
-from labelu.internal.application.service.task_background_jobs import assert_no_active_task_background_job
+from labelu.internal.application.service.task_background_jobs import (
+    GROUP_GEOMETRY,
+    assert_no_active_task_background_job,
+)
 from labelu.internal.common.config import settings
 from labelu.internal.common.db import begin_transaction
 from labelu.internal.common.error_code import ErrorCode, LabelUException
@@ -400,7 +403,7 @@ async def create_batch_job(
         endpoint,
     )
     with begin_transaction(db):
-        assert_no_active_task_background_job(db=db, task_id=task_id)
+        assert_no_active_task_background_job(db=db, task_id=task_id, group=GROUP_GEOMETRY)
         job = crud_locateanything_preannotate_job.create(
             db=db,
             task_id=task_id,

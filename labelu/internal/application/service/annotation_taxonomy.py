@@ -31,6 +31,8 @@ from labelu.internal.common.db import begin_transaction
 from labelu.internal.common.error_code import ErrorCode, LabelUException
 from labelu.internal.common.label_attributes import decode_label_attributes
 from labelu.internal.common.plate_recognition_profile import (
+    PLATE_DETECTION_PROFILE,
+    PLATE_DETECTION_PRESET_SLUG,
     PLATE_RECOGNITION_PROFILE,
     dump_profile_config,
     normalize_plate_recognition_task_config,
@@ -647,7 +649,12 @@ async def label_preset_create(
                 items=payload_items,
                 training_profile=cmd.training_profile,
                 training_profile_config=(
-                    dump_profile_config(cmd.training_profile_config)
+                    dump_profile_config(
+                        parse_profile_config(
+                            cmd.training_profile_config,
+                            profile=cmd.training_profile,
+                        )
+                    )
                     if cmd.training_profile
                     else None
                 ),
@@ -708,7 +715,12 @@ async def label_preset_update(
     if not effective_training_profile:
         effective_profile_config = None
     elif "training_profile_config" in cmd.__fields_set__:
-        effective_profile_config = dump_profile_config(cmd.training_profile_config)
+        effective_profile_config = dump_profile_config(
+            parse_profile_config(
+                cmd.training_profile_config,
+                profile=effective_training_profile,
+            )
+        )
     else:
         effective_profile_config = row.training_profile_config
     with begin_transaction(db):
@@ -879,12 +891,15 @@ async def apply_label_preset_to_task(
         ]
     )
 
-    if preset.training_profile == PLATE_RECOGNITION_PROFILE:
+    if preset.training_profile in {PLATE_RECOGNITION_PROFILE, PLATE_DETECTION_PROFILE}:
         # 一期新任务只允许使用普通目标检测的矩形框。复合车牌预设
         # 依赖 polygonTool/四角点，历史任务仍可读取，但不能再应用到
         # 没有旧复合配置的新任务。
         existing_config = _parse_config(task.config)
-        if not task.config or not task_config_matches_profile(existing_config):
+        if (
+            preset.training_profile == PLATE_RECOGNITION_PROFILE
+            and (not task.config or not task_config_matches_profile(existing_config))
+        ):
             raise LabelUException(
                 code=ErrorCode.CODE_30002_VALIDATION_ERROR,
                 status_code=status.HTTP_409_CONFLICT,
@@ -893,7 +908,10 @@ async def apply_label_preset_to_task(
                     "创建“车牌”或“数字位置”标签；历史复合车牌任务仅允许查看和续用。"
                 ),
             )
-        profile = parse_profile_config(preset.training_profile_config)
+        profile = parse_profile_config(
+            preset.training_profile_config,
+            profile=preset.training_profile,
+        )
         rect_item = next(
             (
                 item
@@ -909,7 +927,20 @@ async def apply_label_preset_to_task(
             color=rect_item.color,
         )
         _apply_canonical_label_details(cfg, [label for _, label in normalized_rows])
-        cfg.pop("defaultRectPresetId", None)
+        if preset.training_profile == PLATE_DETECTION_PROFILE:
+            for tool in cfg.get("tools") or []:
+                if not isinstance(tool, dict) or tool.get("tool") != "rectTool":
+                    continue
+                tool_config = tool.get("config")
+                if not isinstance(tool_config, dict):
+                    continue
+                for item in tool_config.get("attributes") or []:
+                    if isinstance(item, dict) and item.get("value") == profile["rect_label"]:
+                        item["attributes"] = []
+        if preset.training_profile == PLATE_DETECTION_PROFILE:
+            cfg["defaultRectPresetId"] = PLATE_DETECTION_PRESET_SLUG
+        else:
+            cfg.pop("defaultRectPresetId", None)
     else:
         tools: list = cfg.setdefault("tools", [])
         rect_idx = next(

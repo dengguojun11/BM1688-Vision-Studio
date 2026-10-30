@@ -19825,16 +19825,29 @@
   function selectedCreateTrainingProfile() {
     if (currentCreateMode === CREATE_MODE_TASK) {
       var taskRecipe = selectedTrainingRecipe();
-      return taskRecipe && String(taskRecipe.recipe_key || "").trim() === "plate_recognition_v1"
-        ? "plate_recognition_v1"
-        : "";
+      if (taskRecipe && String(taskRecipe.recipe_key || "").trim() === "plate_recognition_v1") {
+        return "plate_recognition_v1";
+      }
+      if (taskRecipe && String(taskRecipe.recipe_key || "").trim() === "plate_detection_v1") {
+        return "plate_detection_v1";
+      }
+      return "";
     }
     if (currentCreateMode === CREATE_MODE_LABEL) {
-      var labelPreset = selectedPlateRecognitionPreset();
+      var labelPreset = selectedPlateTrainingPreset();
       return labelPreset ? String(labelPreset.training_profile || "").trim() : "";
     }
     var preset = getSelectedRectPreset();
     return preset ? String(preset.training_profile || "").trim() : "";
+  }
+
+  function isPlateCreateMode() {
+    var profile = selectedCreateTrainingProfile();
+    return profile === "plate_detection_v1" || profile === "plate_recognition_v1";
+  }
+
+  function isPlateDetectionCreateMode() {
+    return selectedCreateTrainingProfile() === "plate_detection_v1";
   }
 
   function isPlateRecognitionCreateMode() {
@@ -19842,6 +19855,7 @@
   }
 
   function selectedPlateTrainingTarget() {
+    if (isPlateDetectionCreateMode()) return "plate_detection";
     var selected = document.querySelector('input[name="plateTrainingTarget"]:checked');
     return selected ? String(selected.value || "plate_recognition") : "plate_recognition";
   }
@@ -19875,11 +19889,12 @@
     var hint = document.getElementById("modalWeightsHint");
     if (!hint) return;
     if (composite) {
-      if (!lastIterationDraftSnapshot || !lastIterationDraftSnapshot.plateIterationSourceJobId) {
+      if (isPlateRecognitionCreateMode()
+        && (!lastIterationDraftSnapshot || !lastIterationDraftSnapshot.plateIterationSourceJobId)) {
         hint.innerHTML = "历史复合车牌训练仅用于兼容查看，不能创建一期新训练。请返回任务与标注，使用普通目标检测和矩形框标签。";
         return;
       }
-      var detectionOnly = selectedPlateTrainingTarget() === "plate_detection";
+      var detectionOnly = isPlateDetectionCreateMode() || selectedPlateTrainingTarget() === "plate_detection";
       var iterationSourceJobId = Number(
         lastIterationDraftSnapshot && lastIterationDraftSnapshot.plateIterationSourceJobId
       );
@@ -20008,10 +20023,10 @@
     sel.innerHTML = "";
 
     syncPlateTrainingTargetControl();
-    var composite = isPlateRecognitionCreateMode();
+    var composite = isPlateCreateMode();
     syncModalWeightsHint(composite);
     if (composite) {
-      var detectionOnly = selectedPlateTrainingTarget() === "plate_detection";
+      var detectionOnly = isPlateDetectionCreateMode() || selectedPlateTrainingTarget() === "plate_detection";
       // Plate profiles only support the Pose bootstrap; fall back to it when
       // the fresh modal still carries the generic yolo11n default.
       var plateDefaultWeight = "preset:" + PLATE_POSE_PRESET_WEIGHT;
@@ -21044,10 +21059,12 @@
       chip.appendChild(dot); chip.appendChild(text); chip.appendChild(code); list.appendChild(chip);
     });
     host.appendChild(list);
-    if (isPlateRecognitionCreateMode()) {
+    if (isPlateCreateMode()) {
       var structure = document.createElement("div");
       structure.className = "task-mode-contract-summary";
-      structure.textContent = "历史复合车牌结构：车牌框 + 四角点（仅兼容查看，不能创建一期新训练）";
+      structure.textContent = isPlateDetectionCreateMode()
+        ? "车牌检测结构：车牌框 + 四角点（仅定位，不识别号码、颜色或类型）"
+        : "历史复合车牌结构：车牌框 + 四角点（仅兼容查看，不能创建一期新训练）";
       host.appendChild(structure);
     }
   }
@@ -21183,7 +21200,9 @@
       title.appendChild(name); title.appendChild(id);
       var meta = document.createElement("div"); meta.className = "task-mode-task-meta";
       meta.textContent = "可训练样本 " + (task.done_count || 0) + " 张 · 训练类别 " + ((task.contract_labels || []).length || 0) + " 个"
-        + (isPlateRecognitionCreateMode() ? " · 历史复合车牌结构（仅兼容查看）" : "")
+        + (isPlateDetectionCreateMode()
+          ? " · 车牌框 + 四角点（仅定位）"
+          : (isPlateRecognitionCreateMode() ? " · 历史复合车牌结构（仅兼容查看）" : ""))
         + (!compatible && !selected ? " · 标签集合与基准任务不一致" : "");
       copy.appendChild(title); copy.appendChild(meta);
       row.appendChild(checkbox); row.appendChild(copy); host.appendChild(row);
@@ -21295,12 +21314,23 @@
     return null;
   }
 
-  function selectedPlateRecognitionPreset() {
+  function selectedPlateTrainingPreset() {
     for (var i = 0; i < labelModeSelectedPresetSlugs.length; i++) {
       var preset = labelModePresetBySlug(labelModeSelectedPresetSlugs[i]);
-      if (preset && String(preset.training_profile || "").trim() === "plate_recognition_v1") return preset;
+      var profile = preset && String(preset.training_profile || "").trim();
+      if (profile === "plate_detection_v1" || profile === "plate_recognition_v1") return preset;
     }
     return null;
+  }
+
+  function selectedLabelModePlateProfile() {
+    var preset = selectedPlateTrainingPreset();
+    return preset ? String(preset.training_profile || "").trim() : "";
+  }
+
+  // Kept for the legacy commented task loader and embedded callers.
+  function selectedPlateRecognitionPreset() {
+    return selectedPlateTrainingPreset();
   }
 
   function collectSelectedLabelModeTaskIds() {
@@ -21539,6 +21569,12 @@
     var taskMode = isTaskDimensionCreateMode();
     if (taskMode && !selectedModalDatasetCategoryIds().length) {
       return createWizardReject("请先选择数据集分类", showFeedback);
+    }
+    if (!taskMode && selectedLabelModePlateProfile()) {
+      return createWizardReject(
+        "车牌训练必须按标注任务创建，请切换到“按标注任务”",
+        showFeedback
+      );
     }
     var taskName = ((document.getElementById("modalTrainingTaskName") || {}).value || "").trim();
     if (!taskName) return createWizardReject("请填写训练任务名称", showFeedback);
@@ -21809,7 +21845,7 @@
         footerHint.textContent = "历史复合车牌预设不能创建一期新训练，请使用普通目标检测矩形框标签";
         return;
       }
-      if (isPlateRecognitionCreateMode() && !plateWeightSelected && !plateIterationWeightSelected) {
+      if (isPlateCreateMode() && !plateWeightSelected && !plateIterationWeightSelected) {
         btn.disabled = true;
         footerHint.textContent = "请选择 yolov8n-pose.pt，确认车牌 Pose 初始权重";
       } else {
@@ -21821,6 +21857,11 @@
     if (taskMode && !selectedModalDatasetCategoryIds().length) {
       btn.disabled = true;
       footerHint.textContent = "\u8bf7\u5148\u9009\u62e9\u6570\u636e\u96c6\u5206\u7c7b";
+      return;
+    }
+    if (!taskMode && selectedLabelModePlateProfile()) {
+      btn.disabled = true;
+      footerHint.textContent = "车牌训练必须按标注任务创建，请切换到“按标注任务”";
       return;
     }
     var selectedItems = taskMode ? taskModeSelectedTaskIds : buildLabelModePreviewPayload().label_ids;
@@ -21915,7 +21956,12 @@
       conditionEmpty.textContent = "当前条件组合没有匹配到可训练图片，请查看各条件右侧图片数后重新选择。";
       host.appendChild(conditionEmpty);
     }
-    if (data.training_profile === "plate_recognition_v1") {
+    if (data.training_profile === "plate_detection_v1") {
+      var detectionComposition = document.createElement("p");
+      detectionComposition.className = "form-hint";
+      detectionComposition.textContent = "车牌检测数据：仅使用车牌框和四个定位点，不识别号码、颜色或车牌类型。";
+      host.appendChild(detectionComposition);
+    } else if (data.training_profile === "plate_recognition_v1") {
       var composition = document.createElement("p");
       composition.className = "form-hint";
       composition.textContent =
@@ -22069,10 +22115,20 @@
       cb.type = "checkbox";
       cb.value = preset.slug;
       cb.setAttribute("data-label-mode-preset", "1");
-      var legacyPlate = String(preset.training_profile || "").trim() === "plate_recognition_v1";
+      var profile = String(preset.training_profile || "").trim();
+      var legacyPlate = profile === "plate_recognition_v1";
+      var detectionPlate = profile === "plate_detection_v1";
       cb.disabled = legacyPlate;
-      cb.checked = !!selectedMap[String(preset.slug || "").trim()];
-      if (legacyPlate) label.title = "历史复合车牌预设仅用于历史任务查看，不能创建一期新任务";
+      // Both plate profiles require the saved rectangle-plus-points task
+      // snapshot.  A label-dimension request would include label_ids and is
+      // rejected by the API before the worker can validate its geometry.
+      if (detectionPlate) cb.disabled = true;
+      cb.checked = !!selectedMap[String(preset.slug || "").trim()] && !detectionPlate;
+      if (detectionPlate) {
+        label.title = "车牌检测配方必须按标注任务创建：车牌框 + 四个定位点（仅定位）";
+      } else if (legacyPlate) {
+        label.title = "历史复合车牌预设仅用于历史任务查看，不能创建一期新任务";
+      }
       cb.onchange = async function () {
         enforceLabelModeProfileExclusivity(preset, cb.checked);
         syncLabelModeSelectedPresetsFromDom();
@@ -22175,6 +22231,14 @@
 
   async function loadLabelModePreview() {
     if (currentCreateMode !== CREATE_MODE_LABEL) return;
+    if (selectedLabelModePlateProfile()) {
+      renderLabelModePreview(
+        null,
+        "车牌训练必须按标注任务创建，请切换到“按标注任务”，仅使用车牌框和四个定位点。",
+        "err"
+      );
+      return;
+    }
     var payload = buildLabelModePreviewPayload();
     var selectedItems = payload.label_ids || [];
     if (!selectedItems.length) {
@@ -22367,7 +22431,7 @@
     var sel = document.getElementById("modalWeightsUnified");
     var v = (sel && sel.value) ? String(sel.value).trim() : "";
     if (!v || v === "") throw new Error("请选择初始权重");
-    if (isPlateRecognitionCreateMode()) {
+    if (isPlateCreateMode()) {
       var iterationSourceJobId = Number(
         lastIterationDraftSnapshot && lastIterationDraftSnapshot.plateIterationSourceJobId
       );
@@ -22546,16 +22610,22 @@
 
   function resolveIterationCreateMode(row, taskDetail) {
     var rowTrainingMode = String(row && row.training_task_mode || "");
-    if (rowTrainingMode === CREATE_MODE_TASK || rowTrainingMode === CREATE_MODE_LABEL) {
+    if (rowTrainingMode === CREATE_MODE_TASK) {
       return rowTrainingMode;
     }
     if (isPlateJob(row)) {
-      if (taskDetail && Array.isArray(taskDetail.selected_label_ids) && taskDetail.selected_label_ids.length) {
-        return CREATE_MODE_LABEL;
-      }
+      // Plate workers need the complete task snapshot (rectangle plus four
+      // points).  Prefer task mode even when an older record also carries
+      // selected_label_ids from the former label-dimension UI.
       if (taskDetail && Array.isArray(taskDetail.source_tasks) && taskDetail.source_tasks.length) {
         return CREATE_MODE_TASK;
       }
+      if (taskDetail && Array.isArray(taskDetail.selected_label_ids) && taskDetail.selected_label_ids.length) {
+        return CREATE_MODE_LABEL;
+      }
+    }
+    if (rowTrainingMode === CREATE_MODE_LABEL) {
+      return rowTrainingMode;
     }
     return CREATE_MODE_LABEL;
   }
@@ -23092,7 +23162,7 @@
       imgsz: imgszVal,
       hyperparams: collectHyperparams()
     };
-    if (isPlateRecognitionCreateMode()) {
+    if (isPlateCreateMode()) {
       body.plate_training_target = selectedPlateTrainingTarget();
     }
     if (body.dataset_category_id == null) delete body.dataset_category_id;
@@ -23112,6 +23182,10 @@
   async function submitLabelDimensionTrainingTask() {
     var taskName = ((document.getElementById("modalTrainingTaskName") || {}).value || "").trim();
     if (!taskName) { toast("请填写训练任务名称", "err"); return; }
+    if (selectedLabelModePlateProfile()) {
+      toast("车牌训练必须按标注任务创建，请切换到“按标注任务”", "err");
+      return;
+    }
     var previewPayload = buildLabelModePreviewPayload();
     var selectedLabelIds = previewPayload.label_ids || [];
     if (!selectedLabelIds.length) { toast("请至少选择一个系统标签", "err"); return; }
@@ -23163,7 +23237,7 @@
       imgsz: imgszVal,
       hyperparams: hyper
     };
-    if (isPlateRecognitionCreateMode()) {
+    if (isPlateCreateMode()) {
       body.plate_training_target = selectedPlateTrainingTarget();
     }
     if (previewPayload.selected_task_ids && previewPayload.selected_task_ids.length) body.selected_task_ids = previewPayload.selected_task_ids;
@@ -23244,7 +23318,7 @@
     };
     if (mergeIds.length) body.merge_task_ids = mergeIds;
     body.rect_preset_slug = preset.slug;
-    if (isPlateRecognitionCreateMode()) {
+    if (isPlateCreateMode()) {
       body.plate_training_target = selectedPlateTrainingTarget();
     }
     if (body.weights_ref_id == null) delete body.weights_ref_id;

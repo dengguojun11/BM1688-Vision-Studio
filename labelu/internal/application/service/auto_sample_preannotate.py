@@ -182,6 +182,15 @@ def _apply_existing_pre_annotations_to_sample(
     if task_config is not None:
         allowed_tool_names = set(configured_geometry_tools(task_config)) | {"tagTool"}
     for row in rows:
+        # Generated rows (AI/YOLO/TagTool/VLX/LA) are canvas previews owned by
+        # their own action.  An automatic job must not persist them as formal
+        # sample data: geometry stays reviewable on the canvas and global tags
+        # are written by the tag pipeline itself.
+        source_type = (
+            crud_pre_annotation._parse_pre_annotation_data(row.data).get("meta") or {}
+        ).get("source_type")
+        if source_type in crud_pre_annotation.GENERATED_PRE_ANNOTATION_SOURCE_TYPES:
+            continue
         normalized_result = _normalize_existing_pre_annotation_result(
             row.data,
             allowed_tool_names=allowed_tool_names,
@@ -777,6 +786,54 @@ def _run_auto_preannotate_sync(
                     source_hint,
                 )
 
+            # Requirement: YOLO models win whenever any of their labels match
+            # the task contract; the managed LLM detector is the fallback only
+            # when no compatible .pt model exists.
+            has_rect_labels = False
+            try:
+                rect_contract = yolo_preannotate._task_contract_descriptor(db, task)
+                has_rect_labels = bool(rect_contract.get("labels"))
+            except Exception as exc:
+                logger.opt(exception=exc).warning(
+                    "{} rect_contract_unavailable task_id={} source_hint={}",
+                    _LOG,
+                    task_id,
+                    source_hint,
+                )
+            ai_bbox_available = False
+            ai_bbox_ready = False
+            if has_rect_labels:
+                try:
+                    ai_bbox_ready = bool(
+                        auto_label_mod._configured_bbox_vision_available()
+                    )
+                except Exception as exc:
+                    logger.opt(exception=exc).warning(
+                        "{} ai_bbox_availability_unknown task_id={} source_hint={}",
+                        _LOG,
+                        task_id,
+                        source_hint,
+                    )
+            ai_detection_limit = int(
+                getattr(settings, "AUTO_PREANNOTATE_AI_DETECTION_MAX_SAMPLES", 0) or 0
+            )
+            ai_bbox_available = bool(
+                ai_bbox_ready
+                and bool(getattr(settings, "AUTO_PREANNOTATE_AI_DETECTION_ENABLED", True))
+                and (ai_detection_limit <= 0 or len(sample_ids) <= ai_detection_limit)
+            )
+            if ai_bbox_ready and not ai_bbox_available:
+                logger.info(
+                    "{} ai_detection_skipped task_id={} source_hint={} samples={} "
+                    "enabled={} max_samples={}",
+                    _LOG,
+                    task_id,
+                    source_hint,
+                    len(sample_ids),
+                    bool(getattr(settings, "AUTO_PREANNOTATE_AI_DETECTION_ENABLED", True)),
+                    ai_detection_limit,
+                )
+
         yolo_runtime = None
         if yolo_candidate is not None:
             try:
@@ -784,7 +841,10 @@ def _run_auto_preannotate_sync(
                 job_type = str(yolo_candidate.get("job_type") or "yolo_detection")
                 model = None
                 names_map = {}
-                if job_type != yolo_preannotate.PLATE_RECOGNITION_JOB_TYPE:
+                if job_type not in {
+                    yolo_preannotate.PLATE_RECOGNITION_JOB_TYPE,
+                    yolo_preannotate.PLATE_DETECTION_JOB_TYPE,
+                }:
                     from ultralytics import YOLO
 
                     model = YOLO(str(weights_path))
@@ -893,7 +953,9 @@ def _run_auto_preannotate_sync(
                         task_config,
                     )
                 )
-                needs_rect = bool(yolo_runtime) and not _sample_has_any_geometry(
+                needs_rect = (
+                    bool(yolo_runtime) or ai_bbox_available
+                ) and not _sample_has_any_geometry(
                     db,
                     task_id=task_id,
                     sample_id=sample_id,
@@ -994,6 +1056,32 @@ def _run_auto_preannotate_sync(
                     sample_error = str(exc)
                     logger.opt(exception=exc).error(
                         "{} yolo_fail task_id={} sample_id={} source_hint={}",
+                        _LOG,
+                        task_id,
+                        sample_id,
+                        source_hint,
+                    )
+
+            elif needs_rect and ai_bbox_available:
+                # No compatible YOLO model: fall back to the managed vision
+                # detector exactly like the manual "AI目标检测" action.  Only
+                # geometry is requested; global tags remain owned by the tag
+                # pipeline.
+                try:
+                    auto_label_mod._process_single_sample(
+                        task_id=task_id,
+                        task_config=task_config,
+                        sample_id=sample_id,
+                        filter_by_labels=True,
+                        include_geometry_tools=True,
+                        overwrite_existing_annotations=False,
+                        created_by=user_id,
+                    )
+                except Exception as exc:
+                    sample_success = False
+                    sample_error = str(exc)
+                    logger.opt(exception=exc).error(
+                        "{} ai_detection_fallback_fail task_id={} sample_id={} source_hint={}",
                         _LOG,
                         task_id,
                         sample_id,

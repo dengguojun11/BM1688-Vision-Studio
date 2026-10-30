@@ -25,9 +25,8 @@ export const DataStream = styled.div<{ $active: boolean }>`
     86%, 100% { left: 88%; opacity: 0; transform: translateY(-2px) scale(.96); }
   }
   @keyframes evolutionSampleArrive {
-    0%, 12% { opacity: 0; transform: translate(-14px, 8px) scale(.82); filter: blur(3px); }
-    18%, 68% { opacity: 1; transform: translate(0, 0) scale(1); filter: blur(0); }
-    78%, 100% { opacity: 0; transform: translate(22px, -4px) scale(.94); filter: blur(1px); }
+    0%, 100% { opacity: 1; transform: translateX(0); }
+    50% { opacity: 1; transform: translateX(4px); }
   }
   @keyframes evolutionSampleScan {
     0% { transform: translateY(0); opacity: 0; }
@@ -57,6 +56,10 @@ export const DataStream = styled.div<{ $active: boolean }>`
   }
   i:nth-child(2) { animation-delay: -1.3s; opacity: .4; }
   i:nth-child(3) { animation-delay: -2.6s; opacity: .25; }
+
+  @media (prefers-reduced-motion: reduce) {
+    i { animation: none; }
+  }
 `;
 
 export const FlowParticleLayer = styled.div<{ $active: boolean }>`
@@ -81,6 +84,10 @@ export const FlowParticleLayer = styled.div<{ $active: boolean }>`
     animation-play-state: ${({ $active }) => $active ? 'running' : 'paused'};
   }
   i:nth-child(3n) { width: 4px; height: 4px; top: 28px; background: #a495ff; box-shadow: 0 0 8px #9b8cff, -10px 0 9px rgba(155,140,255,.35); }
+
+  @media (prefers-reduced-motion: reduce) {
+    i { animation: none; opacity: ${({ $active }) => $active ? '.65' : '.15'}; }
+  }
 `;
 
 export const PacketLayer = styled.div<{ $active: boolean }>`
@@ -89,6 +96,10 @@ export const PacketLayer = styled.div<{ $active: boolean }>`
   inset: 0;
   pointer-events: none;
   opacity: ${({ $active }) => $active ? '1' : '.25'};
+
+  @media (prefers-reduced-motion: reduce) {
+    opacity: ${({ $active }) => $active ? '.65' : '.25'};
+  }
 `;
 
 export const Packet = styled.span<{ $index: number }>`
@@ -121,7 +132,7 @@ export const SampleFlash = styled.div`
   overflow: hidden;
   border: 1px solid rgba(57,217,255,.35);
   border-radius: 5px;
-  opacity: 0;
+  opacity: 1;
   background: rgba(7,22,39,.97);
   box-shadow: 0 8px 28px rgba(0,0,0,.35), 0 0 18px rgba(57,217,255,.1);
   animation: ${sampleArrive} 11s ease-in-out infinite;

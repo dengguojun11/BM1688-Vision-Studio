@@ -251,6 +251,7 @@ export const StatusItem = styled.div`
 `;
 
 export const WorkPanel = styled.section`
+  min-width: 0;
   padding: 20px;
   border: 1px solid #e3e8f0;
   border-radius: 6px;
@@ -268,6 +269,15 @@ export const WorkPanel = styled.section`
     color: #64748b;
     font-size: 13px;
     line-height: 1.6;
+  }
+
+  .ant-table-wrapper {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .ant-table-content {
+    overflow-x: auto !important;
   }
 `;
 
@@ -361,7 +371,12 @@ export function ModuleStatus({
       <StatusItem>
         <span className="status-label">平台状态</span>
         <span className="status-value">
-          <CheckCircleOutlined style={{ color: dataState === 'error' || dataState === 'offline' ? '#d97706' : '#16a34a', marginRight: 6 }} />
+          <CheckCircleOutlined
+            style={{
+              color: dataState === 'error' || dataState === 'offline' ? 'var(--color-warning)' : 'var(--color-success)',
+              marginRight: 6,
+            }}
+          />
           {dataState === 'error' ? '接口异常' : dataState === 'offline' ? '网络离线' : '基础服务可用'}
         </span>
       </StatusItem>

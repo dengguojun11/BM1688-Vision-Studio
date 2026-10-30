@@ -67,6 +67,12 @@ from labelu.internal.common.training_contract import (
     selection_contract_json,
     selection_contract_sha256,
 )
+from labelu.internal.common.plate_recognition_profile import (
+    PLATE_DETECTION_PRESET_SLUG,
+    PLATE_DETECTION_PROFILE,
+    PLATE_RECOGNITION_PRESET_SLUG,
+    PLATE_RECOGNITION_PROFILE,
+)
 from labelu.internal.common.yolo_training_metrics import (
     actual_epochs_for_train_job,
     parse_results_csv_history,
@@ -743,6 +749,58 @@ def _training_recipe(
     return query.order_by(TrainingRecipe.version.desc()).first()
 
 
+def _normalize_plate_training_contract(
+    cmd: CreateTrainingJobCommand,
+    recipe: TrainingRecipe | None,
+) -> CreateTrainingJobCommand:
+    """Bind unified requests to the dedicated legacy plate training path."""
+
+    recipe_job_type = str(getattr(recipe, "job_type", "") or "").strip().lower()
+    if recipe_job_type not in {"plate_detection", "plate_recognition"}:
+        if cmd.rect_preset_slug or cmd.plate_training_target:
+            raise _error("车牌训练字段只能用于车牌训练配方", 400)
+        return cmd
+
+    # Plate workers consume the saved preset/profile snapshot (rectangle plus
+    # polygon geometry).  A label-dimension request has no such snapshot and
+    # would only fail later in the worker, so reject the ambiguous contract at
+    # the API boundary.
+    if cmd.label_ids:
+        raise _error("车牌训练必须按任务维度选择车牌标注，不能按标签维度训练", 400)
+
+    expected_profile = (
+        PLATE_DETECTION_PROFILE
+        if recipe_job_type == "plate_detection"
+        else PLATE_RECOGNITION_PROFILE
+    )
+    expected_preset = (
+        PLATE_DETECTION_PRESET_SLUG
+        if recipe_job_type == "plate_detection"
+        else PLATE_RECOGNITION_PRESET_SLUG
+    )
+    requested_preset = str(cmd.rect_preset_slug or "").strip()
+    if requested_preset and requested_preset != expected_preset:
+        raise _error("车牌训练配方与标注预设不匹配", 400)
+    requested_target = str(cmd.plate_training_target or "").strip()
+    if requested_target and requested_target != recipe_job_type:
+        raise _error("车牌训练目标与训练配方不匹配", 400)
+    return cmd.copy(
+        update={
+            "rect_preset_slug": expected_preset,
+            "plate_training_target": recipe_job_type,
+            "model_weights": cmd.model_weights or "yolov8n-pose.pt",
+            "params": {
+                **(cmd.params or {}),
+                "training_profile": expected_profile,
+                "runtime_profile": expected_profile,
+                "runtime_interface_version": 1,
+                "rect_preset_slug": expected_preset,
+                "plate_training_target": recipe_job_type,
+            },
+        }
+    )
+
+
 def _recipe_json(raw: str | None) -> dict[str, Any]:
     try:
         value = json.loads(raw or "{}")
@@ -1095,6 +1153,11 @@ async def training_eligible_tasks(
         None,
         description="任务当前标注契约必须覆盖的标签 ID，可重复传参实现多选",
     ),
+    training_recipe_key: str | None = Query(
+        None,
+        max_length=128,
+        description="任务维度训练所选配方；车牌配方用于筛选对应标注契约",
+    ),
     search: str | None = Query(
         None,
         max_length=128,
@@ -1159,6 +1222,9 @@ async def training_eligible_tasks(
         candidate_kwargs["dataset_category_ids"] = [int(dataset_category_id)]
     if label_ids:
         candidate_kwargs["label_ids"] = [int(value) for value in label_ids]
+    normalized_recipe_key = str(training_recipe_key or "").strip()
+    if normalized_recipe_key:
+        candidate_kwargs["training_recipe_key"] = normalized_recipe_key
     normalized_dimension = str(training_dimension or "task").strip().lower()
     if normalized_dimension not in {"task", "label"}:
         raise _error("训练维度必须是 task 或 label", 400)
@@ -1640,11 +1706,19 @@ async def create_training_job(
     recipe = _training_recipe(db, cmd.training_recipe_key, cmd.training_recipe_version)
     if cmd.training_recipe_key and recipe is None:
         raise _error("训练配方不存在或已停用", 400)
-    if recipe is not None and str(recipe.job_type or "").strip().lower() not in {
+    recipe_job_type = str(getattr(recipe, "job_type", "") or "").strip().lower()
+    allowed_recipe_job_types = {
         algorithm_key,
         str(algorithm.training_adapter or "").strip().lower(),
-    }:
+    }
+    # The dedicated plate workers are reached through the existing YOLO
+    # adapter.  Keep this exception narrow so unrelated algorithms cannot
+    # claim a plate recipe merely by naming it in the request.
+    if adapter_key == "yolo_detection":
+        allowed_recipe_job_types.update({"plate_detection", "plate_recognition"})
+    if recipe is not None and recipe_job_type not in allowed_recipe_job_types:
         raise _error("训练配方与算法能力不匹配", 400)
+    cmd = _normalize_plate_training_contract(cmd, recipe)
 
     # The immutable dataset snapshot is the backend authority for global-tag
     # filters.  Normalize/validate once here and use the same values for the
@@ -1819,6 +1893,8 @@ async def create_training_job(
             model_weights=cmd.model_weights or "yolo11n.pt",
             weights_source=cmd.weights_source,
             weights_ref_id=cmd.weights_ref_id,
+            plate_training_target=cmd.plate_training_target,
+            rect_preset_slug=cmd.rect_preset_slug,
             epochs=cmd.epochs,
             imgsz=cmd.imgsz,
             category=algorithm.algorithm_key,

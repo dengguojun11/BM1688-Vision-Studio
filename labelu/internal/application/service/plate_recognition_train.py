@@ -27,7 +27,9 @@ from labelu.internal.adapter.persistence import (
 from labelu.internal.common.config import settings
 from labelu.internal.common.db import begin_transaction, session_scope
 from labelu.internal.common.plate_recognition_profile import (
+    PLATE_DETECTION_PROFILE,
     PLATE_RECOGNITION_PROFILE,
+    PLATE_PROFILE_NAMES,
     PlateSampleAudit,
     audit_plate_sample,
     parse_profile_config,
@@ -272,7 +274,7 @@ def plate_detection_artifact_contract() -> dict[str, str]:
 
 
 def assert_supported_profile(profile: str | None) -> None:
-    if profile != PLATE_RECOGNITION_PROFILE:
+    if profile not in PLATE_PROFILE_NAMES:
         raise ValueError(f"unsupported training profile: {profile or '<empty>'}")
 
 
@@ -303,14 +305,26 @@ def _load_training_context(
         (
             row
             for row in preset_snapshots
-            if row.get("training_profile") == PLATE_RECOGNITION_PROFILE
+            if str(row.get("training_profile") or "").strip() in PLATE_PROFILE_NAMES
         ),
         None,
     )
     if not profile_snapshot:
         raise RuntimeError("training task has no plate recognition profile snapshot")
+    profile_name = str(profile_snapshot.get("training_profile") or "").strip()
+    expected_profile = (
+        PLATE_DETECTION_PROFILE
+        if expected_job_type == PLATE_DETECTION_JOB_TYPE
+        else PLATE_RECOGNITION_PROFILE
+    )
+    if profile_name != expected_profile:
+        raise RuntimeError(
+            f"{expected_job_type} job has incompatible training profile: "
+            f"{profile_name or '<empty>'}"
+        )
     profile_config = parse_profile_config(
-        profile_snapshot.get("training_profile_config")
+        profile_snapshot.get("training_profile_config"),
+        profile=profile_name,
     )
     source_snapshots = crud_training_task.parse_snapshot(
         training_task.source_tasks_snapshot_json
@@ -372,8 +386,12 @@ def _load_training_context(
     return job, training_task, profile_config, source_task_ids, samples
 
 
-def _sample_group_key(item: PlateDatasetSample) -> str:
-    if item.audit.kind == "positive":
+def _sample_group_key(
+    item: PlateDatasetSample,
+    *,
+    group_by_plate_identity: bool = True,
+) -> str:
+    if item.audit.kind == "positive" and group_by_plate_identity:
         identities = sorted(
             {
                 _normalize_plate_number(instance.plate_number)
@@ -401,11 +419,14 @@ def _grouped_splits(
     samples: list[PlateDatasetSample],
     *,
     seed: int,
+    group_by_plate_identity: bool = True,
 ) -> dict[str, list[PlateDatasetSample]]:
     frozen = [str(getattr(item.sample, "frozen_split", "")) for item in samples]
     if frozen and all(split in {"train", "val", "test"} for split in frozen):
         identity_splits: dict[str, str] = {}
         for item, split in zip(samples, frozen):
+            if not group_by_plate_identity:
+                continue
             if item.audit.kind != "positive":
                 continue
             for instance in item.audit.instances:
@@ -443,7 +464,7 @@ def _grouped_splits(
     first_by_identity: dict[str, int] = {}
     identities_by_sample: list[list[str]] = []
     for index, item in enumerate(samples):
-        if item.audit.kind == "positive":
+        if item.audit.kind == "positive" and group_by_plate_identity:
             identities = sorted(
                 {
                     "plate:" + _normalize_plate_number(instance.plate_number)
@@ -451,7 +472,12 @@ def _grouped_splits(
                 }
             )
         else:
-            identities = [_sample_group_key(item)]
+            identities = [
+                _sample_group_key(
+                    item,
+                    group_by_plate_identity=group_by_plate_identity,
+                )
+            ]
         identities_by_sample.append(identities)
         for identity in identities:
             previous = first_by_identity.setdefault(identity, index)
@@ -677,12 +703,24 @@ def prepare_plate_recognition_dataset(
     source_task_ids: list[int],
     samples: list[PlateDatasetSample],
     seed: int,
+    training_profile: str = PLATE_RECOGNITION_PROFILE,
 ) -> tuple[Path, dict[str, Any]]:
     dataset_root = _job_work_root(job_id) / "plate_dataset"
     if dataset_root.exists():
         shutil.rmtree(dataset_root)
     dataset_root.mkdir(parents=True, exist_ok=True)
-    splits = _grouped_splits(samples, seed=seed)
+    manifest_profile = str(training_profile or PLATE_RECOGNITION_PROFILE).strip()
+    if manifest_profile not in PLATE_PROFILE_NAMES:
+        raise ValueError(f"unsupported training profile: {manifest_profile or '<empty>'}")
+    detection_only = manifest_profile == PLATE_DETECTION_PROFILE
+    # Detection-only jobs have no stable plate-number identity.  Grouping them
+    # by the empty OCR value would put every positive image in one split and
+    # can leave the required train/val partitions empty.
+    splits = _grouped_splits(
+        samples,
+        seed=seed,
+        group_by_plate_identity=not detection_only,
+    )
     crop_rows: list[dict[str, Any]] = []
     manifest_samples: list[dict[str, Any]] = []
     composition = {
@@ -719,37 +757,40 @@ def prepare_plate_recognition_dataset(
             )
             if item.audit.kind == "positive":
                 split_positive += 1
-                for index, instance in enumerate(item.audit.instances):
-                    plate = _perspective_plate_crop(image, instance.corners)
-                    ocr_image = _double_row_ocr_image(plate)
-                    classifier_image = _rect_crop(image, instance.rect)
-                    crop_stem = f"{stem}_i{index}"
-                    ocr_path = dataset_root / "ocr" / split / f"{crop_stem}.png"
-                    classifier_path = (
-                        dataset_root / "classification" / split / f"{crop_stem}.png"
-                    )
-                    _write_image(ocr_path, ocr_image)
-                    _write_image(classifier_path, classifier_image)
-                    crop_rows.append(
-                        {
-                            "split": split,
-                            "sample_id": sample.id,
-                            "task_id": sample.task_id,
-                            "ocr_path": str(ocr_path.relative_to(dataset_root)).replace(
-                                "\\", "/"
-                            ),
-                            "ocr_layout": "lower_row",
-                            "classification_path": str(
-                                classifier_path.relative_to(dataset_root)
-                            ).replace("\\", "/"),
-                            "plateNumber": _normalize_plate_number(
-                                instance.plate_number
-                            ),
-                            "color": instance.color,
-                            "plateType": instance.plate_type,
-                        }
-                    )
-                    split_instances += 1
+                if detection_only:
+                    split_instances += len(item.audit.instances)
+                else:
+                    for index, instance in enumerate(item.audit.instances):
+                        plate = _perspective_plate_crop(image, instance.corners)
+                        ocr_image = _double_row_ocr_image(plate)
+                        classifier_image = _rect_crop(image, instance.rect)
+                        crop_stem = f"{stem}_i{index}"
+                        ocr_path = dataset_root / "ocr" / split / f"{crop_stem}.png"
+                        classifier_path = (
+                            dataset_root / "classification" / split / f"{crop_stem}.png"
+                        )
+                        _write_image(ocr_path, ocr_image)
+                        _write_image(classifier_path, classifier_image)
+                        crop_rows.append(
+                            {
+                                "split": split,
+                                "sample_id": sample.id,
+                                "task_id": sample.task_id,
+                                "ocr_path": str(ocr_path.relative_to(dataset_root)).replace(
+                                    "\\", "/"
+                                ),
+                                "ocr_layout": "lower_row",
+                                "classification_path": str(
+                                    classifier_path.relative_to(dataset_root)
+                                ).replace("\\", "/"),
+                                "plateNumber": _normalize_plate_number(
+                                    instance.plate_number
+                                ),
+                                "color": instance.color,
+                                "plateType": instance.plate_type,
+                            }
+                        )
+                        split_instances += 1
             else:
                 split_negative += 1
             manifest_samples.append(
@@ -767,7 +808,10 @@ def prepare_plate_recognition_dataset(
                     "pose_label": str(pose_label.relative_to(dataset_root)).replace(
                         "\\", "/"
                     ),
-                    "group_key": _sample_group_key(item),
+                    "group_key": _sample_group_key(
+                        item,
+                        group_by_plate_identity=not detection_only,
+                    ),
                 }
             )
         composition["positive_images"] += split_positive
@@ -803,13 +847,21 @@ def prepare_plate_recognition_dataset(
         encoding="utf-8",
     )
     manifest = {
-        "format": "labelu_plate_recognition_dataset_v1",
-        "training_profile": PLATE_RECOGNITION_PROFILE,
+        "format": (
+            "labelu_plate_detection_dataset_v1"
+            if detection_only
+            else "labelu_plate_recognition_dataset_v1"
+        ),
+        "training_profile": manifest_profile,
         "profile_config": profile_config,
         "source_task_ids": source_task_ids,
         "split_policy": {
             "kind": "global_grouped",
-            "positive_group": "normalized_plate_number",
+            "positive_group": (
+                "normalized_source_path"
+                if detection_only
+                else "normalized_plate_number"
+            ),
             "negative_group": "normalized_source_path",
             "seed": seed,
         },
@@ -3420,6 +3472,7 @@ def run_plate_detection_train_job(
                 source_task_ids=source_task_ids,
                 samples=samples,
                 seed=int(settings.YOLO_TRAIN_SPLIT_SEED),
+                training_profile=PLATE_DETECTION_PROFILE,
             )
             warnings: list[str] = []
             if int(manifest["composition"].get("negative_images") or 0) == 0:
@@ -3500,7 +3553,7 @@ def run_plate_detection_train_job(
             training_task = crud_training_task.get(db, int(job.training_task_id or 0))
             evaluation_metrics = artifact.get("evaluation_metrics") or {}
             summary = {
-                "training_profile": PLATE_RECOGNITION_PROFILE,
+                "training_profile": PLATE_DETECTION_PROFILE,
                 "training_target": PLATE_DETECTION_JOB_TYPE,
                 "final_metrics": {
                     "map50_95": evaluation_metrics.get("metrics/mAP50-95(B)"),

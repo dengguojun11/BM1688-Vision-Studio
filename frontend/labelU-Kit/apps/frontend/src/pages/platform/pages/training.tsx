@@ -37,6 +37,126 @@ export const DEFAULT_TRAINING_ALGORITHM_KEY = 'yolo_detection';
 export const DEFAULT_TRAINING_RECIPE_KEY = 'yolo_detection_v1';
 export const DEFAULT_TRAINING_RECIPE_REF = `${DEFAULT_TRAINING_RECIPE_KEY}::1`;
 
+export const PLATE_DETECTION_RECIPE_KEY = 'plate_detection_v1';
+export const PLATE_RECOGNITION_RECIPE_KEY = 'plate_recognition_v1';
+export const PLATE_DETECTION_PRESET_SLUG = 'plateDetection';
+export const PLATE_RECOGNITION_PRESET_SLUG = 'plateRecognition';
+export const PLATE_POSE_PRESET_WEIGHT = 'yolov8n-pose.pt';
+
+export type TrainingTarget = 'generic_detection' | 'plate_detection' | 'plate_recognition';
+
+type TrainingRecipeCatalogItem = Record<string, any>;
+
+export function isPlateTrainingTarget(
+  target: TrainingTarget,
+): target is Exclude<TrainingTarget, 'generic_detection'> {
+  return target === 'plate_detection' || target === 'plate_recognition';
+}
+
+function activeTrainingRecipe(item: TrainingRecipeCatalogItem) {
+  return String(item?.status || 'active').trim().toLowerCase() === 'active';
+}
+
+/** Identify the plate contract from either the recipe key or its preset metadata. */
+export function trainingTargetFromRecipe(item?: TrainingRecipeCatalogItem | null): TrainingTarget | null {
+  if (!item || !activeTrainingRecipe(item)) return null;
+  const tokens = [
+    item.recipe_key,
+    item.training_profile,
+    item.profile,
+    item.preset_slug,
+    item.rect_preset_slug,
+    item.slug,
+  ].map((value) => String(value || '').trim().toLowerCase());
+  if (tokens.some((value) => value === PLATE_DETECTION_RECIPE_KEY || value === PLATE_DETECTION_PRESET_SLUG.toLowerCase() || value === 'plate_detection')) {
+    return 'plate_detection';
+  }
+  if (tokens.some((value) => value === PLATE_RECOGNITION_RECIPE_KEY || value === PLATE_RECOGNITION_PRESET_SLUG.toLowerCase() || value === 'plate_recognition')) {
+    return 'plate_recognition';
+  }
+  return null;
+}
+
+export function trainingTargetLabel(target: TrainingTarget): string {
+  if (target === 'plate_detection') return '车牌框 + 四角点（仅定位）';
+  if (target === 'plate_recognition') return '历史复合车牌识别（兼容）';
+  return '普通目标检测';
+}
+
+/** Return the recipe/preset fields that must travel with a selected target. */
+export function resolveTrainingTargetContract(
+  target: TrainingTarget,
+  recipes: TrainingRecipeCatalogItem[] = [],
+  fallback?: { recipeRef?: string; algorithmKey?: string },
+) {
+  if (target === 'generic_detection') {
+    const fallbackRef = fallback?.recipeRef || DEFAULT_TRAINING_RECIPE_REF;
+    const parsed = parseTrainingRecipeRef(fallbackRef);
+    return {
+      target,
+      recipeRef: fallbackRef,
+      ...parsed,
+      trainingRecipeKey: parsed.training_recipe_key,
+      trainingRecipeVersion: parsed.training_recipe_version,
+      runtimeProfile: parsed.training_recipe_key,
+      rectPresetSlug: undefined,
+      plateTrainingTarget: undefined,
+      modelWeights: 'yolo11n.pt',
+    };
+  }
+  const wantedKey = target === 'plate_detection'
+    ? PLATE_DETECTION_RECIPE_KEY
+    : PLATE_RECOGNITION_RECIPE_KEY;
+  const wantedPreset = target === 'plate_detection'
+    ? PLATE_DETECTION_PRESET_SLUG
+    : PLATE_RECOGNITION_PRESET_SLUG;
+  const recipe = recipes
+    .filter((item) => trainingTargetFromRecipe(item) === target)
+    .sort((left, right) => Number(right?.version || 0) - Number(left?.version || 0))[0];
+  const recipeKey = String(recipe?.recipe_key || wantedKey).trim() || wantedKey;
+  const version = Number(recipe?.version || 1);
+  const recipeVersion = Number.isInteger(version) && version > 0 ? version : 1;
+  const rectPresetSlug = String(
+    recipe?.rect_preset_slug || recipe?.preset_slug || recipe?.slug || wantedPreset,
+  ).trim() || wantedPreset;
+  return {
+    target,
+    recipeRef: `${recipeKey}::${recipeVersion}`,
+    training_recipe_key: recipeKey,
+    training_recipe_version: recipeVersion,
+    trainingRecipeKey: recipeKey,
+    trainingRecipeVersion: recipeVersion,
+    runtimeProfile: recipeKey,
+    rectPresetSlug,
+    plateTrainingTarget: target,
+    modelWeights: PLATE_POSE_PRESET_WEIGHT,
+  };
+}
+
+export function trainingTargetOptions(recipes: TrainingRecipeCatalogItem[] = []) {
+  const options: Array<{ value: TrainingTarget; label: string; description: string; disabled?: boolean }> = [
+    { value: 'generic_detection', label: trainingTargetLabel('generic_detection'), description: '按普通矩形框类别训练，保持现有 YOLO 检测流程。' },
+  ];
+  const availableTargets = new Set(
+    recipes.map((item) => trainingTargetFromRecipe(item)).filter((value): value is TrainingTarget => Boolean(value)),
+  );
+  if (availableTargets.has('plate_detection')) {
+    options.push({
+      value: 'plate_detection',
+      label: trainingTargetLabel('plate_detection'),
+      description: '使用车牌框和四个定位点训练 Pose 模型，不识别号码、颜色或车牌类型。',
+    });
+  }
+  if (availableTargets.has('plate_recognition')) {
+    options.push({
+      value: 'plate_recognition',
+      label: trainingTargetLabel('plate_recognition'),
+      description: '仅保留历史复合车牌作业的读取和迭代兼容，不改变普通训练入口。',
+    });
+  }
+  return options;
+}
+
 export function resolveDefaultTrainingContract(
   algorithms: Array<Record<string, any>> = [],
   recipes: Array<Record<string, any>> = [],
@@ -728,6 +848,9 @@ function LegacyTrainingPanel({ view }: { view: Exclude<TrainingView, 'jobs'> }) 
 type TrainingCandidate = {
   task_id: number;
   task_name?: string | null;
+  training_profile?: string | null;
+  resolved_rect_preset_slug?: string | null;
+  match_source?: string | null;
   training_ready?: boolean | null;
   task_status?: string | null;
   training_state?: string | null;
@@ -994,6 +1117,12 @@ function TrainingCandidateSummary({
     <div style={{ width: '100%', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Tag color="blue" style={{ marginInlineEnd: 0 }}>标注任务</Tag>
+        {candidate.training_profile === PLATE_DETECTION_RECIPE_KEY && (
+          <Tag color="cyan" style={{ marginInlineEnd: 0 }}>车牌框 + 四角点</Tag>
+        )}
+        {candidate.training_profile === PLATE_RECOGNITION_RECIPE_KEY && (
+          <Tag color="gold" style={{ marginInlineEnd: 0 }}>历史复合车牌</Tag>
+        )}
         <strong style={{ color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {candidate.task_name || `任务 #${candidate.task_id}`}
         </strong>
@@ -1999,8 +2128,9 @@ export function trainingCandidateQueryParamsForDimension(
   size = 100,
   search?: string,
   datasetIds: number[] = [],
+  trainingRecipeKey?: string,
 ) {
-  return trainingCandidateQueryParams(
+  const params = trainingCandidateQueryParams(
     dimension === 'label' ? labelIds : [],
     datasetId,
     page,
@@ -2008,6 +2138,8 @@ export function trainingCandidateQueryParamsForDimension(
     search,
     datasetIds,
   );
+  const normalizedRecipe = String(trainingRecipeKey || '').trim();
+  return normalizedRecipe ? { ...params, training_recipe_key: normalizedRecipe } : params;
 }
 
 /**
@@ -2066,6 +2198,7 @@ function CreateTrainingAction() {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const [trainingDimension, setTrainingDimension] = useState<TrainingDimension>('task');
+  const [trainingTarget, setTrainingTarget] = useState<TrainingTarget>('generic_detection');
   const initialTaskId = useMemo(() => {
     if (typeof window === 'undefined') return undefined;
     const value = Number(new URLSearchParams(window.location.search).get('task_id'));
@@ -2165,8 +2298,13 @@ function CreateTrainingAction() {
   // in the query/context key so a reordered class list cannot reuse a model
   // catalog or iteration preview computed for a different class order.
   const labelIdsKey = candidateLabelIds.join(',');
+  const candidateTrainingRecipeKey = trainingTarget === 'plate_detection'
+    ? PLATE_DETECTION_RECIPE_KEY
+    : trainingTarget === 'plate_recognition'
+      ? PLATE_RECOGNITION_RECIPE_KEY
+      : undefined;
   const candidatesQuery = useQuery({
-    queryKey: ['training-eligible-tasks', trainingDimension, datasetId ?? null, selectedDatasetIds.join(','), labelIdsKey, candidatePage, candidateSearch],
+    queryKey: ['training-eligible-tasks', trainingDimension, trainingTarget, candidateTrainingRecipeKey || '', datasetId ?? null, selectedDatasetIds.join(','), labelIdsKey, candidatePage, candidateSearch],
     queryFn: async () => {
       const raw = await request.get('/v1/training/eligible-tasks', {
       params: {
@@ -2178,6 +2316,7 @@ function CreateTrainingAction() {
           TRAINING_CANDIDATE_PAGE_SIZE,
           candidateSearch,
           selectedDatasetIds,
+          candidateTrainingRecipeKey,
         ),
         training_dimension: trainingDimension,
       },
@@ -2248,6 +2387,14 @@ function CreateTrainingAction() {
     () => resolveDefaultTrainingContract(algorithms, trainingRecipes),
     [algorithms, trainingRecipes],
   );
+  const availableTrainingTargetOptions = useMemo(
+    () => trainingTargetOptions(trainingRecipes),
+    [trainingRecipes],
+  );
+  const selectedTrainingTargetContract = useMemo(
+    () => resolveTrainingTargetContract(trainingTarget, trainingRecipes, defaultTrainingContract),
+    [defaultTrainingContract, trainingRecipes, trainingTarget],
+  );
   // A label-dimension job trains on the selected label subset and may reuse a
   // compatible parent from any selected source task. The iteration preview is
   // authoritative for that subset contract, so do not narrow the repository
@@ -2270,7 +2417,7 @@ function CreateTrainingAction() {
   const modelFamiliesQuery = useQuery<TrainingModelFamilyBrowserResult>({
     queryKey: [
       'training-model-families', modelFamilyPage, modelFamilySearch,
-      defaultTrainingContract.recipeRef, modelSelectorLabelSignature,
+      selectedTrainingTargetContract.recipeRef, modelSelectorLabelSignature,
       modelSelectorOrderSignature, modelSelectorLabelIdsKey,
     ],
     queryFn: async () => trainingModelFamilyBrowserResult(await request.get('/v1/models/families', {
@@ -2278,7 +2425,7 @@ function CreateTrainingAction() {
         page: modelFamilyPage,
         size: TRAINING_MODEL_FAMILY_PAGE_SIZE,
         artifact_type: 'pt',
-        ...parseTrainingRecipeRef(defaultTrainingContract.recipeRef),
+        ...parseTrainingRecipeRef(selectedTrainingTargetContract.recipeRef),
         ...(modelFamilySearch.trim() ? { q: modelFamilySearch.trim() } : {}),
         ...(modelSelectorLabelIds.length ? { label_ids: modelSelectorLabelIds } : {}),
         ...(modelSelectorLabelSignature ? { label_set_signature: modelSelectorLabelSignature } : {}),
@@ -2468,7 +2615,10 @@ function CreateTrainingAction() {
     if (weightsSource === 'trained') {
       form.setFieldsValue({ weights_ref_id: undefined, model_weights: undefined });
     } else if (weightsSource === 'auto') {
-      form.setFieldsValue({ weights_ref_id: undefined, model_weights: 'yolo11n.pt' });
+      form.setFieldsValue({
+        weights_ref_id: undefined,
+        model_weights: isPlateTrainingTarget(trainingTarget) ? PLATE_POSE_PRESET_WEIGHT : 'yolo11n.pt',
+      });
     }
   };
   const updateSampleConditions = (fieldKey: string, values: string[]) => {
@@ -2824,13 +2974,14 @@ function CreateTrainingAction() {
   );
   const distributionTaskKey = distributionTaskIds.join(',');
   const primaryTrainingTaskId = trainingDimension === 'task' ? selectedTaskIds[0] : selectedSourceTaskIds[0];
-  // The task-dimension merge endpoint has its own YOLO contract. Keep the
-  // catalog-backed recipe for single-task jobs, but use the endpoint's
-  // registered recipe for label-dimension and multi-task jobs.
-  const iterationRecipeRef = trainingDimension === 'label'
-    || (trainingDimension === 'task' && selectedTaskIds.length > 1)
-    ? 'yolov11_detection::1'
-    : defaultTrainingContract.recipeRef;
+  // Plate jobs use their profile recipe for both single-task and merged
+  // previews. Generic jobs retain the existing dimension-specific recipe.
+  const iterationRecipeRef = trainingTarget !== 'generic_detection'
+    ? selectedTrainingTargetContract.recipeRef
+    : trainingDimension === 'label'
+      || (trainingDimension === 'task' && selectedTaskIds.length > 1)
+      ? 'yolov11_detection::1'
+      : defaultTrainingContract.recipeRef;
   const iterationRecipe = parseTrainingRecipeRef(iterationRecipeRef);
   const iterationPreviewQuery = useQuery<TrainingIterationPreview>({
     queryKey: [
@@ -2846,6 +2997,8 @@ function CreateTrainingAction() {
           ...(trainingDimension === 'label' ? { label_ids: selectedLabelIds } : {}),
           ...(weightsSource === 'trained' ? { parent_job_id: weightsRefId } : {}),
           ...(sampleConditionsKey ? { sample_conditions: trainingSampleConditionsJson(sampleConditions) } : {}),
+          ...(selectedTrainingTargetContract.rectPresetSlug ? { rect_preset_slug: selectedTrainingTargetContract.rectPresetSlug } : {}),
+          ...(selectedTrainingTargetContract.plateTrainingTarget ? { plate_training_target: selectedTrainingTargetContract.plateTrainingTarget } : {}),
           ...iterationRecipe,
         },
         paramsSerializer: { indexes: null },
@@ -2853,6 +3006,7 @@ function CreateTrainingAction() {
       return response.data?.data ?? response.data;
     },
     enabled: open && isLoggedIn && step >= 1 && Boolean(primaryTrainingTaskId)
+      && !isPlateTrainingTarget(trainingTarget)
       && (weightsSource === 'auto' || (weightsSource === 'trained' && Number(weightsRefId) > 0)),
     staleTime: 15_000,
     retry: false,
@@ -2941,6 +3095,7 @@ function CreateTrainingAction() {
     if (!open) {
       setStep(0);
       setTrainingDimension('task');
+      setTrainingTarget('generic_detection');
       setSelectedTaskIds(initialTaskId ? [initialTaskId] : []);
       setSelectedSourceTaskIds([]);
       setDatasetId(undefined);
@@ -2982,9 +3137,13 @@ function CreateTrainingAction() {
     // 保留这两个值，提交时继续生成完整训练血缘。
     form.setFieldsValue({
       algorithm_key: defaultTrainingContract.algorithmKey,
-      training_recipe_ref: defaultTrainingContract.recipeRef,
+      training_recipe_ref: selectedTrainingTargetContract.recipeRef,
+      model_weights: selectedTrainingTargetContract.modelWeights,
+      ...(isPlateTrainingTarget(trainingTarget)
+        ? { weights_source: 'preset', weights_ref_id: undefined, execution_mode: 'local' }
+        : {}),
     });
-  }, [algorithmsQuery.isError, defaultTrainingContract, form, open]);
+  }, [algorithmsQuery.isError, defaultTrainingContract, form, open, selectedTrainingTargetContract.recipeRef, selectedTrainingTargetContract.modelWeights, trainingTarget]);
   useEffect(() => {
     setSelectedTaskIds([]);
     setSelectedSourceTaskIds([]);
@@ -2993,7 +3152,7 @@ function CreateTrainingAction() {
     setCandidateSearch('');
     setCandidateSearchInput('');
     resetModelFamilyBrowser();
-  }, [datasetId, selectedDatasetIds.join(','), labelIdsKey, resetModelFamilyBrowser, trainingDimension]);
+  }, [datasetId, selectedDatasetIds.join(','), labelIdsKey, resetModelFamilyBrowser, trainingDimension, trainingTarget]);
 
   useEffect(() => {
     // Candidate metadata and label selections define the compatibility scope
@@ -3110,6 +3269,11 @@ function CreateTrainingAction() {
         setSubmitError('任务范围合并训练目前仅支持本机 GPU 队列，请切换执行资源后再开始训练');
         return;
       }
+      const plateTraining = isPlateTrainingTarget(trainingTarget);
+      if (plateTraining && values.execution_mode !== 'local') {
+        setSubmitError('车牌框与四角点训练目前仅支持本机 GPU 队列');
+        return;
+      }
       setSubmitting(true); setSubmitError(null); setSubmitConflict(false);
       if (!createTrainingIdempotencyKeyRef.current) {
         createTrainingIdempotencyKeyRef.current = createIdempotencyKey('training');
@@ -3127,7 +3291,34 @@ function CreateTrainingAction() {
         weights_ref_id: pinnedWeights.weights_ref_id,
         ...recipe,
       };
-      if (trainingDimension === 'label') {
+      if (plateTraining) {
+        const generatedName = selectedTaskIds.length > 1
+          ? `车牌定位训练 · ${selectedTaskCandidates.map((candidate) => candidate.task_name || `任务 #${candidate.task_id}`).join('、')}`
+          : `车牌定位训练 · ${selectedTaskCandidates[0]?.task_name || `任务 #${selectedTaskIds[0]}`}`;
+        await createLabelTrainingJob({
+          name: (values.training_name?.trim() || generatedName).slice(0, 128),
+          selected_task_ids: selectedTaskIds,
+          ...(datasetId ? { dataset_id: datasetId } : {}),
+          dataset_ids: selectedDatasetIds,
+          training_recipe_key: selectedTrainingTargetContract.trainingRecipeKey,
+          training_recipe_version: selectedTrainingTargetContract.trainingRecipeVersion,
+          rect_preset_slug: selectedTrainingTargetContract.rectPresetSlug,
+          plate_training_target: selectedTrainingTargetContract.plateTrainingTarget,
+          runtime_profile: selectedTrainingTargetContract.runtimeProfile,
+          runtime_interface_version: 1,
+          sample_conditions: sampleConditions,
+          model_weights: selectedTrainingTargetContract.modelWeights,
+          weights_source: 'preset',
+          epochs: Number(values.epochs),
+          imgsz: Number(values.imgsz),
+          hyperparams: {
+            execution_mode: 'local',
+            dataset_id: datasetId,
+            dataset_ids: selectedDatasetIds,
+            source_task_ids: selectedTaskIds,
+          },
+        }, createTrainingIdempotencyKeyRef.current || undefined);
+      } else if (trainingDimension === 'label') {
         const labelNames = selectedTrainingLabels.map((label) => label.label_value || label.label_key).filter(Boolean);
         const generatedName = `标签训练 · ${labelNames.join('、') || selectedLabelIds.join('、')}`;
         await createLabelTrainingJob({
@@ -3235,6 +3426,7 @@ function CreateTrainingAction() {
     createTrainingIdempotencyKeyRef.current = null;
     setStep(0);
     setTrainingDimension('task');
+    setTrainingTarget('generic_detection');
     setDatasetId(undefined);
     setSelectedDatasetIds([]);
     setSelectedDatasetOverride(null);
@@ -3296,12 +3488,69 @@ function CreateTrainingAction() {
           form.setFieldsValue({
             weights_ref_id: undefined,
             model_weights: ['preset', 'auto'].includes(changed.weights_source)
-              ? 'yolo11n.pt'
+              ? (isPlateTrainingTarget(trainingTarget) ? PLATE_POSE_PRESET_WEIGHT : 'yolo11n.pt')
               : undefined,
           });
         }
       }} initialValues={{ model_weights: 'yolo11n.pt', weights_source: 'auto', epochs: 50, imgsz: 640, execution_mode: 'local', algorithm_key: DEFAULT_TRAINING_ALGORITHM_KEY, training_recipe_ref: DEFAULT_TRAINING_RECIPE_REF }}>
         {step === 0 && <div>
+          {availableTrainingTargetOptions.length > 1 && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ color: '#0f172a', fontWeight: 700, marginBottom: 4 }}>训练目标</div>
+              <div style={{ color: '#64748b', fontSize: 12, marginBottom: 10 }}>
+                训练目标由已登记的训练配方决定；车牌检测只使用车牌框和四个定位点，不读取车牌号码。
+              </div>
+              <Radio.Group
+                value={trainingTarget}
+                onChange={(event) => {
+                  const nextTarget = event.target.value as TrainingTarget;
+                  const nextContract = resolveTrainingTargetContract(nextTarget, trainingRecipes, defaultTrainingContract);
+                  setTrainingTarget(nextTarget);
+                  if (nextTarget !== 'generic_detection' && trainingDimension === 'label') {
+                    setTrainingDimension('task');
+                    setSelectedLabelIds([]);
+                  }
+                  createTrainingIdempotencyKeyRef.current = null;
+                  setSubmitError(null);
+                  setSubmitConflict(false);
+                  setSelectedTaskIds([]);
+                  setSelectedSourceTaskIds([]);
+                  setCandidateCache({});
+                  setCandidatePage(0);
+                  setCandidateSearch('');
+                  setCandidateSearchInput('');
+                  clearExplicitTrainedModel();
+                  resetModelFamilyBrowser();
+                  form.setFieldsValue({
+                    algorithm_key: defaultTrainingContract.algorithmKey,
+                    training_recipe_ref: nextContract.recipeRef,
+                    model_weights: nextContract.modelWeights,
+                    weights_source: isPlateTrainingTarget(nextTarget) ? 'preset' : 'auto',
+                    ...(isPlateTrainingTarget(nextTarget) ? { execution_mode: 'local', train_node_id: undefined } : {}),
+                  });
+                }}
+                style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10, width: '100%' }}
+              >
+                {availableTrainingTargetOptions.map((option) => (
+                  <Radio.Button key={option.value} value={option.value} style={{ height: 'auto', padding: 0, borderRadius: 8 }}>
+                    <div style={{ padding: '10px 12px' }}>
+                      <div style={{ color: '#0f172a', fontWeight: 700 }}>{option.label}</div>
+                      <div style={{ color: '#64748b', fontSize: 12, lineHeight: 1.55, marginTop: 4 }}>{option.description}</div>
+                    </div>
+                  </Radio.Button>
+                ))}
+              </Radio.Group>
+              {trainingTarget === 'plate_detection' && (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginTop: 10 }}
+                  message="车牌框 + 四角点训练"
+                  description="请在任务标注中同时保留车牌矩形框和四角定位点；本次只训练一个 Pose 模型，不进行数字、颜色或类型识别。"
+                />
+              )}
+            </div>
+          )}
           <div style={{ marginBottom: 16 }}>
             <div style={{ color: '#0f172a', fontWeight: 700, marginBottom: 4 }}>选择训练维度</div>
             <div style={{ color: '#64748b', fontSize: 12, marginBottom: 10 }}>
@@ -3311,6 +3560,7 @@ function CreateTrainingAction() {
               value={trainingDimension}
               onChange={(event) => {
                 const nextDimension = event.target.value as TrainingDimension;
+                if (trainingTarget !== 'generic_detection' && nextDimension === 'label') return;
                 setTrainingDimension(nextDimension);
                 createTrainingIdempotencyKeyRef.current = null;
                 setSubmitError(null);
@@ -3340,7 +3590,7 @@ function CreateTrainingAction() {
                   </div>
                 </div>
               </Radio.Button>
-              <Radio.Button value="label" style={{ height: 'auto', padding: 0, borderRadius: 8 }}>
+              <Radio.Button value="label" disabled={trainingTarget !== 'generic_detection'} style={{ height: 'auto', padding: 0, borderRadius: 8 }}>
                 <div style={{ padding: '12px 14px' }}>
                   <div style={{ color: '#0f172a', fontWeight: 700 }}>按标签训练</div>
                   <div style={{ color: '#64748b', fontSize: 12, lineHeight: 1.55, marginTop: 4 }}>
@@ -3786,13 +4036,15 @@ function CreateTrainingAction() {
                     marginBottom: 14,
                   }}
                 >
-                  <Tag color="blue" style={{ marginInlineEnd: 0, flex: 'none' }}>训练方案</Tag>
+                  <Tag color={isPlateTrainingTarget(trainingTarget) ? 'cyan' : 'blue'} style={{ marginInlineEnd: 0, flex: 'none' }}>训练方案</Tag>
                   <div>
                     <div style={{ color: '#1e3a8a', fontWeight: 600 }}>
-                      YOLOv11 目标检测（系统默认）
+                      {isPlateTrainingTarget(trainingTarget) ? '车牌框 + 四角点（Pose 定位）' : 'YOLOv11 目标检测（系统默认）'}
                     </div>
                     <div style={{ color: '#475569', fontSize: 12, lineHeight: 1.6, marginTop: 2 }}>
-                      系统将使用“{defaultTrainingContract.algorithmName}”适配器，并按“{defaultTrainingContract.recipeName}”配方执行训练。算法和配方已自动绑定，无需重复选择。
+                      {isPlateTrainingTarget(trainingTarget)
+                        ? '仅训练车牌矩形框和四个定位点，不读取车牌号码、颜色或类型；系统将使用车牌 Pose 训练配方。'
+                        : `系统将使用“${defaultTrainingContract.algorithmName}”适配器，并按“${defaultTrainingContract.recipeName}”配方执行训练。算法和配方已自动绑定，无需重复选择。`}
                     </div>
                   </div>
                 </div>
@@ -3800,7 +4052,9 @@ function CreateTrainingAction() {
             )}
             <Alert type="success" showIcon message="训练数据将由系统自动固化" description="提交后系统会根据当前任务的已完成样本自动生成不可变训练快照，保留清单、标签契约和数据血缘。" style={{ marginBottom: 14 }} />
             <Form.Item name="weights_source" label="初始权重来源" rules={[{ required: true, message: '请选择权重来源' }]}>
-              <Select options={[{ value: 'auto', label: '同系列迭代（推荐）' }, { value: 'preset', label: '平台预训练权重' }, { value: 'imported', label: '外部导入模型' }, { value: 'trained', label: '指定本系统已训练模型' }]} />
+              <Select options={isPlateTrainingTarget(trainingTarget)
+                ? [{ value: 'preset', label: '车牌 Pose 预训练权重' }]
+                : [{ value: 'auto', label: '同系列迭代（推荐）' }, { value: 'preset', label: '平台预训练权重' }, { value: 'imported', label: '外部导入模型' }, { value: 'trained', label: '指定本系统已训练模型' }]} />
             </Form.Item>
             {weightsSource === 'trained' && (
               <>
@@ -3996,7 +4250,9 @@ function CreateTrainingAction() {
               <Form.Item name="imgsz" label="输入尺寸（imgsz）" rules={[{ required: true, message: '请输入输入尺寸' }, { type: 'number', min: 320, max: 1280, message: '输入尺寸范围为 320-1280' }]} style={{ flex: 1 }}><InputNumber min={320} max={1280} step={32} precision={0} style={{ width: '100%' }} /></Form.Item>
             </Space>
             <Form.Item name="execution_mode" label="执行资源" rules={[{ required: true }]}>
-              <Select options={[{ value: 'local', label: '本机 GPU 队列' }, { value: 'remote', label: '远程训练节点' }, { value: 'container', label: '标准容器 Worker' }]} />
+              <Select options={isPlateTrainingTarget(trainingTarget)
+                ? [{ value: 'local', label: '本机 GPU 队列' }]
+                : [{ value: 'local', label: '本机 GPU 队列' }, { value: 'remote', label: '远程训练节点' }, { value: 'container', label: '标准容器 Worker' }]} />
             </Form.Item>
             <Form.Item noStyle shouldUpdate={(previous, current) => previous.execution_mode !== current.execution_mode}>
               {({ getFieldValue }) => getFieldValue('execution_mode') === 'remote' ? <Form.Item name="train_node_id" label="远程节点 ID" rules={[{ required: true, message: '远程训练必须填写节点 ID' }, { max: 64 }]}><Input placeholder="例如：gpu-node-01" /></Form.Item> : null}
@@ -4019,7 +4275,9 @@ function CreateTrainingAction() {
             />
             <Descriptions bordered size="small" column={1}>
               <Descriptions.Item label="训练维度">{trainingDimensionLabel(trainingDimension)}</Descriptions.Item>
-              <Descriptions.Item label="训练方案">YOLOv11 目标检测（系统默认）</Descriptions.Item>
+              <Descriptions.Item label="训练方案">
+                {isPlateTrainingTarget(trainingTarget) ? '车牌框 + 四角点（Pose 定位，仅定位）' : 'YOLOv11 目标检测（系统默认）'}
+              </Descriptions.Item>
               <Descriptions.Item label="逻辑数据集" span={2}>
                 {selectedDatasets.length
                   ? <Space wrap size={[4, 4]}>{selectedDatasets.map((item) => <Tag key={item.id}>{trainingDatasetDisplayLabel(item)}</Tag>)}</Space>
@@ -4059,7 +4317,9 @@ function CreateTrainingAction() {
               )}
               <Descriptions.Item label="训练数据">系统只冻结本次实际纳入的合格图片；后续新增标注不会自动混入</Descriptions.Item>
               <Descriptions.Item label="初始权重">
-                {weightsSource === 'auto' || weightsSource === 'trained'
+                {isPlateTrainingTarget(trainingTarget)
+                  ? `${PLATE_POSE_PRESET_WEIGHT}（车牌 Pose 预训练）`
+                  : weightsSource === 'auto' || weightsSource === 'trained'
                   ? trainingIterationParentLabel(iterationPreviewQuery.data?.parent)
                   : weightsSource === 'imported'
                     ? (importedModelOptions.find((option) => option.value === Number(weightsRefId))?.label || '请选择外部导入模型')

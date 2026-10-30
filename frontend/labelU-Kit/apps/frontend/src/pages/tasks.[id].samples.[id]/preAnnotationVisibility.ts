@@ -23,8 +23,7 @@ export function getVisiblePreAnnotations(
   options: {
     globalOnlyForAnnotated?: boolean;
     overwriteExistingAnnotations?: boolean;
-    currentAnnotationsHaveGeometry?: boolean;
-    /** Show an explicit geometry-detection preview alongside saved geometry. */
+    /** Session-scoped geometry preview after an explicit detection run. */
     allowGeometryForAnnotated?: boolean;
   } = {},
 ): PreAnnotations | undefined {
@@ -41,14 +40,10 @@ export function getVisiblePreAnnotations(
     return undefined;
   }
 
-  // An explicit AI detection run is a preview action. Keep its boxes visible
-  // even when the sample already has formal geometry; ImageAnnotator merges
-  // them without replacing saved annotations when overwrite is false.
+  // An explicit AI/YOLO current-image run is a transient preview action.
+  // Keep its boxes visible for this page session even when the sample already
+  // has formal geometry; a refresh or sample navigation ends the preview.
   if (options.allowGeometryForAnnotated && preAnnotationsHasGeometry(preAnnotations)) {
-    return preAnnotations;
-  }
-
-  if (options.currentAnnotationsHaveGeometry === false && preAnnotationsHasGeometry(preAnnotations)) {
     return preAnnotations;
   }
 

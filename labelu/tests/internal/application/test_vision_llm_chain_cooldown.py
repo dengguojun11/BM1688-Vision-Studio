@@ -1,5 +1,6 @@
 """Offline regression coverage for repeated provider configuration failures."""
 
+import json
 from email.utils import formatdate
 
 import httpx
@@ -189,6 +190,7 @@ def test_responses_protocol_posts_coding_endpoint_and_parses_output_text(monkeyp
         assert body["model"] == "doubao-seed-2-1-pro-260915"
         assert body["max_output_tokens"] == 128
         assert body["thinking"] == {"type": "disabled"}
+        assert body["text"] == {"format": {"type": "json_object"}}
         assert body["input"][0]["content"][0]["type"] == "input_text"
         assert body["input"][0]["content"][1]["type"] == "input_image"
         assert body["input"][0]["content"][1]["image_url"].startswith(
@@ -224,6 +226,319 @@ def test_responses_protocol_posts_coding_endpoint_and_parses_output_text(monkeyp
         "https://ark.cn-beijing.volces.com/api/coding/v3/responses"
     )
     assert result["results"] == [{"toolName": "rectTool"}]
+
+
+def test_responses_output_ignores_reasoning_items_when_message_is_present():
+    response = {
+        "output": [
+            {
+                "type": "reasoning",
+                "content": [{"type": "output_text", "text": "internal notes"}],
+            },
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": '{"results": []}'}],
+            },
+        ]
+    }
+
+    assert vision_service._responses_output_text(response) == '{"results": []}'
+
+
+def test_responses_output_text_item_is_supported():
+    response = {
+        "output": [{"type": "output_text", "text": '{"results": []}'}]
+    }
+
+    assert vision_service._responses_output_text(response) == '{"results": []}'
+
+
+def test_responses_output_text_ignores_reasoning_items():
+    response = {
+        "output": [
+            {
+                "type": "reasoning",
+                "content": [{"type": "output_text", "text": "internal notes"}],
+            },
+            {"type": "output_text", "text": '{"results": []}'},
+        ]
+    }
+
+    assert vision_service._responses_output_text(response) == '{"results": []}'
+
+
+def test_responses_message_top_level_text_is_supported():
+    response = {
+        "output": [
+            {"type": "message", "role": "assistant", "text": '{"results": []}'}
+        ]
+    }
+
+    assert vision_service._responses_output_text(response) == '{"results": []}'
+
+
+def test_responses_malformed_json_retries_with_larger_output_budget(monkeypatch):
+    requests = []
+    malformed = '{"results":[{"toolName":"rectTool","label":"person" "result":{}}]}'
+
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        if len(requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "status": "completed",
+                    "output": [
+                        {
+                            "type": "message",
+                            "content": [{"type": "output_text", "text": malformed}],
+                        }
+                    ],
+                },
+            )
+        assert body["max_output_tokens"] == 4096
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [{"type": "output_text", "text": '{"results": []}'}],
+                    }
+                ],
+            },
+        )
+
+    _install_transport(monkeypatch, handler)
+    result = _infer(
+        base_url="https://ark.cn-beijing.volces.com/api/coding/v3",
+        model="doubao-seed-2-1-pro-260915",
+        request_protocol="responses",
+        max_new_tokens=1024,
+    )
+
+    assert len(requests) == 2
+    assert result["results"] == []
+
+
+def test_responses_malformed_json_at_maximum_does_not_retry_forever(monkeypatch):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": '{"results":[{"label":"person" "result":{}}]}',
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    _install_transport(monkeypatch, handler)
+    with pytest.raises(json.JSONDecodeError):
+        _infer(
+            base_url="https://ark.cn-beijing.volces.com/api/coding/v3",
+            model="doubao-seed-2-1-pro-260915",
+            request_protocol="responses",
+            max_new_tokens=32768,
+        )
+
+    assert len(requests) == 1
+
+
+def test_openai_compatible_malformed_json_retries_with_larger_output_budget(
+    monkeypatch,
+):
+    requests = []
+    malformed = '{"results":[{"toolName":"rectTool","label":"person" "result":{}}]}'
+
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        assert body["messages"][0]["content"][1]["type"] == "text"
+        if len(requests) == 1:
+            assert body["max_tokens"] == 1024
+            assert body["response_format"] == {"type": "json_object"}
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": malformed}}]},
+            )
+        assert body["max_tokens"] == 4096
+        assert body["response_format"] == {"type": "json_object"}
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"results": []}'}}]},
+        )
+
+    _install_transport(monkeypatch, handler)
+    result = _infer(
+        base_url="https://ark.cn-beijing.volces.com/api/coding/v3",
+        model="doubao-seed-2-1-pro-260915",
+        request_protocol="openai_compatible",
+        max_new_tokens=1024,
+    )
+
+    assert len(requests) == 2
+    assert result["results"] == []
+
+
+def test_openai_compatible_retries_without_unsupported_json_constraint(monkeypatch):
+    requests = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        if len(requests) == 1:
+            assert body["response_format"] == {"type": "json_object"}
+            return httpx.Response(
+                400,
+                json={
+                    "error": {
+                        "code": "invalid_parameter",
+                        "param": "response_format",
+                        "message": "response_format is not supported",
+                    }
+                },
+            )
+        assert "response_format" not in body
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": '{"results": []}'}}]},
+        )
+
+    _install_transport(monkeypatch, handler)
+    result = _infer(
+        base_url="https://model.test/v1",
+        request_protocol="openai_compatible",
+        max_new_tokens=1024,
+    )
+
+    assert len(requests) == 2
+    assert result["results"] == []
+
+
+def test_openai_compatible_malformed_json_at_maximum_does_not_retry_forever(
+    monkeypatch,
+):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "message": {
+                            "content": '{"results":[{"label":"person" "result":{}}]}'
+                        }
+                    }
+                ]
+            },
+        )
+
+    _install_transport(monkeypatch, handler)
+    with pytest.raises(json.JSONDecodeError):
+        _infer(
+            base_url="https://model.test/v1",
+            request_protocol="openai_compatible",
+            max_new_tokens=32768,
+        )
+
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize("reason", ["length", "max_output_tokens"])
+def test_responses_length_incomplete_retries_with_larger_output_budget(
+    monkeypatch, reason
+):
+    requests = []
+
+    def handler(request):
+        import json
+
+        requests.append(request)
+        body = json.loads(request.content)
+        if len(requests) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "status": "incomplete",
+                    "incomplete_details": {"reason": reason},
+                    "output": [],
+                },
+            )
+        assert body["max_output_tokens"] == 4096
+        return httpx.Response(
+            200,
+            json={
+                "status": "completed",
+                "output": [
+                    {
+                        "type": "message",
+                        "content": [
+                            {
+                                "type": "output_text",
+                                "text": '{"results": []}',
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    _install_transport(monkeypatch, handler)
+    result = _infer(
+        base_url="https://ark.cn-beijing.volces.com/api/coding/v3",
+        model="doubao-seed-2-1-pro-260915",
+        request_protocol="responses",
+        max_new_tokens=1024,
+    )
+
+    assert len(requests) == 2
+    assert result["results"] == []
+
+
+@pytest.mark.parametrize("reason", ["length", "max_output_tokens"])
+def test_responses_length_incomplete_at_maximum_returns_actionable_error(
+    monkeypatch, reason
+):
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "status": "incomplete",
+                "incomplete_details": {"reason": reason},
+                "output": [],
+            },
+        )
+
+    _install_transport(monkeypatch, handler)
+    with pytest.raises(ValueError, match="提高最大输出长度"):
+        _infer(
+            base_url="https://ark.cn-beijing.volces.com/api/coding/v3",
+            model="doubao-seed-2-1-pro-260915",
+            request_protocol="responses",
+            max_new_tokens=32768,
+        )
+
+    assert len(requests) == 1
 
 
 def test_responses_transport_error_is_not_replayed(monkeypatch):

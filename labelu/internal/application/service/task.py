@@ -47,9 +47,17 @@ from labelu.internal.common.yolo_rect_class_slug import (
 )
 from labelu.internal.common.config import settings
 from labelu.internal.common.plate_recognition_profile import (
+    DEFAULT_PLATE_DETECTION_CONFIG,
+    DEFAULT_PLATE_RECOGNITION_CONFIG,
+    PLATE_DETECTION_PRESET_SLUG,
+    PLATE_DETECTION_PROFILE,
     PLATE_RECOGNITION_PRESET_SLUG,
     PLATE_RECOGNITION_PROFILE,
+    PLATE_PROFILE_NAMES,
     normalize_plate_recognition_task_config,
+    parse_profile_config,
+    profile_for_task_config,
+    profile_preset_slug,
     task_config_has_plate_recognition_marker,
     task_config_matches_profile,
 )
@@ -1517,21 +1525,27 @@ async def list_task_dimension_training_candidates(
                 message="任务标签不存在或已停用，请刷新标签列表后重试",
             )
 
+    plate_profile = str(training_recipe_key or "").strip()
     plate_profile_config = None
-    if str(training_recipe_key or "").strip() == PLATE_RECOGNITION_PROFILE:
+    plate_profile_preset_slug = None
+    if plate_profile in PLATE_PROFILE_NAMES:
+        plate_profile_preset_slug = profile_preset_slug(plate_profile)
         preset = crud_annotation_taxonomy.label_preset_get_by_slug(
-            db, PLATE_RECOGNITION_PRESET_SLUG
+            db, plate_profile_preset_slug
         )
         if (
             not preset
-            or str(preset.training_profile or "").strip() != PLATE_RECOGNITION_PROFILE
+            or str(preset.training_profile or "").strip() != plate_profile
         ):
             raise LabelUException(
                 code=ErrorCode.CODE_30002_VALIDATION_ERROR,
                 status_code=status.HTTP_400_BAD_REQUEST,
-                message="车牌复合识别预设不存在或未启用",
+                message="车牌训练预设不存在或未启用",
             )
-        plate_profile_config = preset.training_profile_config
+        plate_profile_config = parse_profile_config(
+            preset.training_profile_config,
+            profile=plate_profile,
+        )
 
     task_query = crud_task.visible_query(
         db=db,
@@ -1671,10 +1685,10 @@ async def list_task_dimension_training_candidates(
                 **sample_stats,
                 created_at=task.created_at,
                 resolved_rect_preset_slug=(
-                    PLATE_RECOGNITION_PRESET_SLUG if plate_audit else ""
+                    plate_profile_preset_slug if plate_audit else ""
                 ),
                 match_source="plate_profile" if plate_audit else "task_contract",
-                training_profile=(PLATE_RECOGNITION_PROFILE if plate_audit else None),
+                training_profile=(plate_profile if plate_audit else None),
                 positive_image_count=(
                     int(plate_audit.positive_image_count) if plate_audit else 0
                 ),
@@ -1848,7 +1862,11 @@ async def list_training_candidates(
         )
 
     preset = next((row for row in presets if row.slug == slug), None)
-    if preset and preset.training_profile == PLATE_RECOGNITION_PROFILE:
+    if preset and preset.training_profile in PLATE_PROFILE_NAMES:
+        profile_config = parse_profile_config(
+            preset.training_profile_config,
+            profile=preset.training_profile,
+        )
         query = crud_task.visible_query(
             db=db,
             owner_id=current_user.id,
@@ -1859,13 +1877,13 @@ async def list_training_candidates(
         for task in query.order_by(Task.id.desc()).all():
             if not plate_recognition_train.task_matches_plate_profile(
                 task,
-                preset.training_profile_config,
+                profile_config,
             ):
                 continue
             task_audit, _samples = plate_recognition_train.audit_task_done_samples(
                 db,
                 task_id=task.id,
-                profile_config=preset.training_profile_config,
+                profile_config=profile_config,
             )
             if str(task.source_type or "internal") == "third_party":
                 done_samples = (
@@ -1882,9 +1900,7 @@ async def list_training_candidates(
                     filter_trainable_samples(db, task=task, samples=done_samples),
                     task_id=int(task.id),
                     profile_config=(
-                        plate_profile_config
-                        if plate_profile_config is not None
-                        else preset.training_profile_config
+                        profile_config
                     ),
                 )
             if task_audit.included_image_count:
@@ -1901,7 +1917,7 @@ async def list_training_candidates(
                     created_at=task.created_at,
                     resolved_rect_preset_slug=slug,
                     match_source="training_profile",
-                    training_profile=PLATE_RECOGNITION_PROFILE,
+                    training_profile=str(preset.training_profile),
                     positive_image_count=task_audit.positive_image_count,
                     negative_image_count=task_audit.negative_image_count,
                     instance_count=task_audit.instance_count,
@@ -2606,16 +2622,23 @@ async def update(
                     status_code=status.HTTP_400_BAD_REQUEST,
                 )
             existing_config = _parse_task_config(task.config)
-            existing_is_plate = str(
+            existing_profile = profile_for_task_config(existing_config)
+            existing_slug = str(
                 existing_config.get("defaultRectPresetId") or ""
-            ).strip() == PLATE_RECOGNITION_PRESET_SLUG or task_config_matches_profile(
-                existing_config
-            )
+            ).strip()
+            if existing_slug == PLATE_RECOGNITION_PRESET_SLUG:
+                existing_profile = PLATE_RECOGNITION_PROFILE
+            elif existing_slug == PLATE_DETECTION_PRESET_SLUG:
+                existing_profile = PLATE_DETECTION_PROFILE
+            incoming_profile = profile_for_task_config(incoming_config)
             incoming_is_plate = task_config_has_plate_recognition_marker(
                 incoming_config
-            ) and (existing_is_plate or task_config_matches_profile(incoming_config))
+            ) and incoming_profile in PLATE_PROFILE_NAMES
             if incoming_is_plate:
-                if not existing_is_plate:
+                if (
+                    incoming_profile == PLATE_RECOGNITION_PROFILE
+                    and existing_profile != PLATE_RECOGNITION_PROFILE
+                ):
                     raise LabelUException(
                         code=ErrorCode.CODE_30002_VALIDATION_ERROR,
                         status_code=status.HTTP_409_CONFLICT,
@@ -2624,8 +2647,14 @@ async def update(
                             "创建“车牌”或“数字位置”标签；历史复合车牌任务仅允许查看和续用。"
                         ),
                     )
+                profile_config = (
+                    DEFAULT_PLATE_DETECTION_CONFIG
+                    if incoming_profile == PLATE_DETECTION_PROFILE
+                    else DEFAULT_PLATE_RECOGNITION_CONFIG
+                )
                 incoming_config = normalize_plate_recognition_task_config(
-                    incoming_config
+                    incoming_config,
+                    profile_config,
                 )
             effective_media_type = cmd.media_type or task.media_type
             if effective_media_type:

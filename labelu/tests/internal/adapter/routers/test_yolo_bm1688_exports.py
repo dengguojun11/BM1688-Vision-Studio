@@ -318,7 +318,12 @@ def test_plate_detection_compatibility_summary_separates_component_scope():
     assert summary["generic_validation_status"] == "not_applicable"
     assert summary["specialized_runtime_status"] == "pass"
     assert summary["precision_variants"] == ["fp16"]
-    assert summary["missing_components"] == ["ocr", "color", "plate_type"]
+    assert summary["compiled_components"] == ["pose"]
+    assert summary["expected_components"] == ["pose"]
+    assert summary["missing_components"] == []
+    assert summary["release_scope_label"] == (
+        "车牌框与四角点定位运行链路（不包含号码、颜色或类型识别）"
+    )
     assert summary["total_detections"] == 64
     assert summary["precision_evaluation"] == {
         "status": "computed",
@@ -639,6 +644,9 @@ def test_system_environment_check_bootstrap_starts_once(
 ):
     from labelu.internal.application.service import edge_device_registry as service
 
+    # The test exercises the startup scan itself; the suite-wide fixture
+    # disables background watchdogs for ordinary tests.
+    monkeypatch.delenv("LABELU_DISABLE_BACKGROUND_WATCHDOGS", raising=False)
     scans = []
     started_threads = []
     monkeypatch.setattr(service, "_SYSTEM_ENVIRONMENT_BOOTSTRAP_STARTED", False)

@@ -276,6 +276,32 @@ SYSTEM_CONFIG_REGISTRY: dict[str, dict[str, Any]] = {
             }
         ],
     },
+    "image_cleaning_policy": {
+        "group_name_zh": "图片清洗配置",
+        "group_comment": "任务编辑页直接上传图片时使用的视觉相似度清洗规则",
+        "scope_type": "global",
+        "sort_order": 80,
+        "items": [
+            {
+                "item_key": "policy",
+                "item_name_zh": "图片清洗策略",
+                "item_comment": "简单、标准、严格三档相似度阈值及当前生效规则",
+                "value_type": "json",
+                "default_value": {
+                    "active_preset": "standard",
+                    "presets": {
+                        "simple": {"threshold": 0.98},
+                        "standard": {"threshold": 0.95},
+                        "strict": {"threshold": 0.90},
+                    },
+                    "revision": 1,
+                    "algorithm_version": "visual-v1",
+                },
+                "source_mode": "db_primary",
+                "sort_order": 10,
+            }
+        ],
+    },
 }
 
 

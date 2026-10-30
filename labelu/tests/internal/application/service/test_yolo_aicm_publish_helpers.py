@@ -1831,6 +1831,32 @@ def test_publish_bmodel_options_for_plate_keeps_only_combined_fp16_model():
     ]
 
 
+def test_publish_bmodel_options_for_plate_detection_keeps_only_pose_fp16_model():
+    job = type("Job", (), {"job_type": "plate_detection"})()
+    names = [
+        "BM1688/plate_detection_fp16_1b.bmodel",
+        "BM1688/plate_recognition_fp16_1b.bmodel",
+        "BM1688/yolov11n_int8_1b.bmodel",
+    ]
+
+    options = svc._publish_bmodel_options_for_job(job, names)
+
+    assert [option.filename for option in options] == [
+        "plate_detection_fp16_1b.bmodel"
+    ]
+    assert svc._normalize_bmodel_selection(
+        names,
+        precision="fp16",
+        required_filename="plate_detection_fp16_1b.bmodel",
+    ) == "BM1688/plate_detection_fp16_1b.bmodel"
+    with pytest.raises(Exception, match="只能选择 plate_detection_fp16_1b.bmodel"):
+        svc._normalize_bmodel_selection(
+            names,
+            rel_path="BM1688/plate_recognition_fp16_1b.bmodel",
+            required_filename="plate_detection_fp16_1b.bmodel",
+        )
+
+
 def test_normalize_bmodel_selection_by_precision():
     names = [
         "BM1688/yolov11n_fp32_1b.bmodel",
@@ -1986,6 +2012,55 @@ def test_plate_runtime_template_requires_profile_and_four_networks(tmp_path):
         svc._plate_runtime_contract_path(pkg_root, out_rknn)
 
 
+def test_plate_detection_runtime_contract_requires_single_pose_and_four_points(
+    tmp_path,
+):
+    pkg_root = tmp_path / "package"
+    out_rknn = pkg_root / "output_rknn"
+    out_rknn.mkdir(parents=True)
+    contract = out_rknn / "plate_detection_contract.json"
+    contract.write_text(
+        json.dumps(
+            {
+                "format": "labelu_plate_detection_bm1688_v1",
+                "job_type": "plate_detection",
+                "network": {
+                    "name": "plate_detection",
+                    "keypoint_order": [
+                        "top_left",
+                        "top_right",
+                        "bottom_right",
+                        "bottom_left",
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        svc._plate_runtime_contract_path(
+            pkg_root, out_rknn, "plate_detection"
+        )
+        == contract
+    )
+    assert svc._validate_plate_runtime_contract(contract, "plate_detection")
+    contract.write_text(
+        json.dumps(
+            {
+                "format": "labelu_plate_detection_bm1688_v1",
+                "job_type": "plate_detection",
+                "network": {
+                    "name": "plate_detection",
+                    "keypoint_order": ["top_left", "top_right"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert not svc._validate_plate_runtime_contract(contract, "plate_detection")
+
+
 def test_patch_plate_publish_contracts(tmp_path):
     video = tmp_path / "video.json"
     video.write_text(
@@ -2012,11 +2087,194 @@ def test_patch_plate_publish_contracts(tmp_path):
     assert "  - plate_ocr" in text
 
 
+def test_patch_plate_detection_publish_contracts_are_pose_only(tmp_path):
+    video = tmp_path / "video.json"
+    video.write_text(
+        json.dumps(
+            {
+                "rknn": {
+                    "ModelPath": "./model.bmodel",
+                    "NumClass": 9,
+                    "Networks": [{"name": "plate_ocr"}],
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    running_info = tmp_path / "running_info.yml"
+    running_info.write_text(
+        "accuracy_list:\n  - doubleEP\n  - 0.0\n"
+        "# labelu_plate_recognition_begin\n"
+        "runtime_networks:\n  - plate_ocr\n"
+        "# labelu_plate_recognition_end\n",
+        encoding="utf-8",
+    )
+
+    svc._patch_plate_detection_video_json(video, model_rel_path="./plate.bmodel")
+    svc._patch_plate_detection_running_info(running_info)
+
+    payload = json.loads(video.read_text(encoding="utf-8"))
+    assert payload["rknn"]["ModelFunction"] == "plateDetectionV1"
+    assert payload["rknn"]["ModelAlgType"] == "plateDetectionV1"
+    assert payload["rknn"]["ModelPath"] == "./plate.bmodel"
+    assert [item["name"] for item in payload["rknn"]["Networks"]] == [
+        "plate_detection"
+    ]
+    assert payload["rknn"]["Pipeline"] == ["plate_detection"]
+    text = running_info.read_text(encoding="utf-8")
+    assert "training_profile: plate_detection_v1" in text
+    assert "  - plate_detection" in text
+    assert "plate_ocr" not in text
+    assert "labelu_plate_recognition_begin" not in text
+
+
+def test_build_plate_detection_publish_package_replaces_composite_contract(
+    tmp_path, monkeypatch
+):
+    media_root = tmp_path / "media"
+    export_root = media_root / svc.settings.YOLO_BM1688_EXPORT_SUBDIR / "77"
+    model_dir = export_root / "models" / "BM1688"
+    model_dir.mkdir(parents=True)
+    (model_dir / "plate_detection_fp16_1b.bmodel").write_bytes(b"plate-model")
+    (export_root / "plate_detection_contract.json").write_text(
+        json.dumps(
+            {
+                "format": "labelu_plate_detection_bm1688_v1",
+                "job_type": "plate_detection",
+                "network": {
+                    "name": "plate_detection",
+                    "keypoint_order": [
+                        "top_left",
+                        "top_right",
+                        "bottom_right",
+                        "bottom_left",
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    template_dir = tmp_path / "template" / "plate-runtime"
+    out_rknn = template_dir / "output_rknn"
+    out_rknn.mkdir(parents=True)
+    (template_dir / "running_info.yml").write_text(
+        "accuracy_list:\n  - doubleEP\n  - 0.1\n",
+        encoding="utf-8",
+    )
+    (out_rknn / "labels.txt").write_text("?????\ndoubleEP\n", encoding="utf-8")
+    (out_rknn / "video.json").write_text(
+        json.dumps(
+            {
+                "rknn": {
+                    "InputSize": 640,
+                    "NumClass": 1,
+                    "ModelPath": "./template.bmodel",
+                    "ModelChipType": "SOPHGO,BM1688,NPU",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (out_rknn / "template.bmodel").write_bytes(b"template")
+    (out_rknn / "plate_recognition_contract.json").write_text(
+        json.dumps(
+            {
+                "format": "labelu_plate_recognition_v1",
+                "networks": {
+                    "plate_pose": {},
+                    "plate_ocr": {},
+                    "plate_color": {},
+                    "plate_type": {},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    template_zip = tmp_path / "template.zip"
+    with zipfile.ZipFile(template_zip, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in template_dir.rglob("*"):
+            if path.is_file():
+                archive.write(path, path.relative_to(template_dir.parent).as_posix())
+
+    monkeypatch.setattr(svc.settings, "MEDIA_ROOT", str(media_root))
+    monkeypatch.setattr(
+        svc,
+        "_create_publish_work_dir",
+        lambda _export_id: tmp_path / "publish-work",
+    )
+    monkeypatch.setattr(
+        svc.crud_yolo_bm1688_export,
+        "get",
+        lambda _db, _export_id: type("Export", (), {"imgsz": 640})(),
+    )
+    monkeypatch.setattr(
+        svc.bm_export_service,
+        "_list_bmodel_names",
+        lambda _export_id: ["BM1688/plate_detection_fp16_1b.bmodel"],
+    )
+    monkeypatch.setattr(
+        svc.bm_export_service,
+        "_export_dir_for_row",
+        lambda _export_id: export_root,
+    )
+    monkeypatch.setattr(
+        svc,
+        "_resolve_publish_class_slugs",
+        lambda _db, *, raw_classes, preset_slug, task: list(raw_classes),
+    )
+    monkeypatch.setattr(svc, "_aggregate_map_for_publish", lambda _job, _tm: 0.0)
+    monkeypatch.setattr(svc, "_sample_counts_for_job", lambda _job: {"total": 1})
+    monkeypatch.setattr(svc, "_class_metrics_for_job", lambda _job: None)
+    monkeypatch.setattr(svc, "actual_epochs_for_train_job", lambda **_kwargs: 1)
+    job = type(
+        "Job",
+        (),
+        {
+            "id": 77,
+            "job_type": "plate_detection",
+            "imgsz": 640,
+            "epochs": 1,
+            "weights_path": None,
+            "metrics_summary": None,
+        },
+    )()
+    package = svc._build_publish_package(
+        template_zip,
+        export_id=77,
+        job=job,
+        db=object(),
+        task=type("Task", (), {"name": "plate"})(),
+        preset_name="plate_detection_v1",
+        preset_slug="",
+        steps=[],
+        chip_type="SOPHGO,BM1688,NPU",
+    )
+
+    with zipfile.ZipFile(package, "r") as archive:
+        names = set(archive.namelist())
+        video = json.loads(archive.read("output_rknn/video.json"))
+        assert "output_rknn/plate_detection_contract.json" in names
+        assert "output_rknn/plate_recognition_contract.json" not in names
+        assert video["rknn"]["ModelAlgType"] == "plateDetectionV1"
+        assert [item["name"] for item in video["rknn"]["Networks"]] == [
+            "plate_detection"
+        ]
+        assert "output_rknn/plate_detection_fp16_1b.bmodel" in names
+
+
 def test_plate_publish_class_is_double_ep():
     job = type("Job", (), {"job_type": "plate_recognition"})()
     assert svc._class_names_with_source_for_publish(job) == (
         ["doubleEP"],
         "plate_recognition_v1",
+    )
+
+
+def test_plate_detection_publish_class_is_double_ep():
+    job = type("Job", (), {"job_type": "plate_detection"})()
+    assert svc._class_names_with_source_for_publish(job) == (
+        ["doubleEP"],
+        "plate_detection_v1",
     )
 
 

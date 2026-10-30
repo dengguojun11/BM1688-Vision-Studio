@@ -34,6 +34,7 @@ from labelu.internal.application.service import auto_label as auto_label_mod
 from labelu.internal.application.service import vision_llm_chain
 from labelu.internal.application.service.provider_job import bridge_legacy_preannotation
 from labelu.internal.application.service.task_background_jobs import (
+    GROUP_TAGS,
     assert_no_active_task_background_job,
 )
 from labelu.internal.application.service.yolo_train import _assert_task_access
@@ -975,7 +976,7 @@ async def create_batch_job(
 
     sample_ids = [s.id for s in targets]
     with begin_transaction(db):
-        assert_no_active_task_background_job(db=db, task_id=task_id)
+        assert_no_active_task_background_job(db=db, task_id=task_id, group=GROUP_TAGS)
         job = crud_tagtool_preannotate_job.create(
             db,
             task_id=task_id,

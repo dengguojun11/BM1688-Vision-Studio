@@ -10,6 +10,7 @@ export const STATUS_LABELS: Record<string, string> = {
   IDLE: '待命',
   FAILED: '失败',
   PASSED: '已通过',
+  PASS: '已通过',
   BLOCKED: '已阻断',
   WAITING: '等待中',
   NOT_STARTED: '未开始',
@@ -32,10 +33,14 @@ export function statusLabel(status?: string | null) {
 export function statusTone(status?: string | null): 'active' | 'success' | 'danger' | 'warning' | 'idle' {
   const code = String(status || '').toUpperCase();
   if (['RUNNING', 'PROCESSING', 'PENDING', 'QUEUED'].includes(code)) return 'active';
-  if (['COMPLETED', 'PASSED', 'PUBLISHED', 'CHAMPION'].includes(code)) return 'success';
+  if (['COMPLETED', 'PASS', 'PASSED', 'PUBLISHED', 'CHAMPION'].includes(code)) return 'success';
   if (['FAILED', 'BLOCKED', 'ERROR'].includes(code)) return 'danger';
   if (['ATTENTION', 'WAITING', 'WAITING_FOR_DATA', 'WAITING_FOR_REVIEW', 'POLICY_REVIEW_REQUIRED'].includes(code)) return 'warning';
   return 'idle';
+}
+
+export function isPassedStatus(status?: string | null) {
+  return ['PASS', 'PASSED', 'PUBLISHED', 'COMPLETED', 'CHAMPION'].includes(String(status || '').toUpperCase());
 }
 
 export function formatMetric(value?: number | null, percent = true) {

@@ -34,7 +34,7 @@ from labelu.internal.common.training_sample import (
 )
 from labelu.internal.common.plate_recognition_profile import (
     normalize_plate_recognition_sample_data,
-    task_config_matches_profile,
+    profile_for_task_config,
 )
 from labelu.internal.adapter.persistence import crud_attachment, crud_pre_annotation, crud_task, crud_user
 from labelu.internal.adapter.persistence import crud_sample
@@ -69,7 +69,10 @@ from labelu.internal.application.service.task_training_ready import (
     refresh_task_training_ready,
     refresh_task_training_ready_after_sample_change,
 )
-from labelu.internal.application.service.task_background_jobs import assert_no_active_task_background_job
+from labelu.internal.application.service.task_background_jobs import (
+    GROUP_BOUNDS,
+    assert_no_active_task_background_job,
+)
 from labelu.internal.application.service.auto_sample_preannotate import (
     schedule_auto_preannotate_for_new_samples,
 )
@@ -1132,7 +1135,7 @@ async def patch(
             )
     task_config = _parse_task_config(task.config)
     if isinstance(cmd.data, dict):
-        if task_config_matches_profile(task_config):
+        if profile_for_task_config(task_config):
             normalized_data, _plate_stats = normalize_plate_recognition_sample_data(
                 normalized_data
             )
@@ -1357,16 +1360,46 @@ async def delete(
 
         # delete media
         samples = crud_sample.get_by_ids(db=db, sample_ids=sample_ids, task_id=task_id)
-        attachment_ids = [sample.file_id for sample in samples if sample.file_id]
+        deleting_sample_ids = [int(sample.id) for sample in samples]
+        attachment_ids = sorted(
+            {int(sample.file_id) for sample in samples if sample.file_id}
+        )
         attachments = crud_attachment.get_by_ids(db=db, attachment_ids=attachment_ids)
 
         for attachment in attachments:
-            storage.delete(attachment.path)
-            thumbnail_key = build_thumbnail_key(attachment.path)
-            if storage.exists(thumbnail_key):
-                storage.delete(thumbnail_key)
+            # An attachment can be reused by an exact-content upload. Only
+            # remove its object after the selected samples are the last active
+            # references; otherwise deleting one sample breaks the others.
+            active_sample_ref = (
+                db.query(TaskSample.id)
+                .filter(
+                    TaskSample.file_id == int(attachment.id),
+                    TaskSample.deleted_at.is_(None),
+                    ~TaskSample.id.in_(tuple(deleting_sample_ids)),
+                )
+                .first()
+            )
+            active_pre_annotation_ref = (
+                db.query(TaskPreAnnotation.id)
+                .filter(
+                    TaskPreAnnotation.file_id == int(attachment.id),
+                    TaskPreAnnotation.deleted_at.is_(None),
+                )
+                .first()
+            )
+            if active_sample_ref or active_pre_annotation_ref:
+                continue
 
-        crud_sample.delete(db=db, sample_ids=[sample.id for sample in samples])
+            # External data-source objects are owned by the source, so only
+            # retire the task mapping and never delete the remote object.
+            if not getattr(attachment, "data_source_id", None):
+                storage.delete(attachment.path)
+                thumbnail_key = build_thumbnail_key(attachment.path)
+                if storage.exists(thumbnail_key):
+                    storage.delete(thumbnail_key)
+            attachment.deleted_at = datetime.now()
+
+        crud_sample.delete(db=db, sample_ids=deleting_sample_ids)
     # response
     return CommonDataResp(ok=True)
 
@@ -1554,7 +1587,7 @@ async def create_bounds_check_job(
         if sample.state != SampleState.NEW.value
     )
     with begin_transaction(db):
-        assert_no_active_task_background_job(db=db, task_id=task_id)
+        assert_no_active_task_background_job(db=db, task_id=task_id, group=GROUP_BOUNDS)
         job = crud_sample_bounds_check_job.create(
             db=db,
             task_id=task_id,

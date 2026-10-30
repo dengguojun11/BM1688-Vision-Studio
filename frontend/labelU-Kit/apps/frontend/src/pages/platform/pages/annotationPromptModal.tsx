@@ -277,6 +277,12 @@ const TrialImageStage = styled.div`
   border: 1px solid #dbe3ee;
   border-radius: 4px;
   background: #0f172a;
+  cursor: zoom-in;
+
+  &:focus-visible {
+    outline: 3px solid #1677ff;
+    outline-offset: 2px;
+  }
 `;
 
 const TrialImageCanvas = styled.div`
@@ -289,6 +295,34 @@ const TrialImage = styled.img`
   display: block;
   width: 100%;
   height: auto;
+`;
+
+const TrialZoomViewport = styled.div`
+  display: flex;
+  width: 100%;
+  height: min(78vh, 760px);
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 12px;
+  box-sizing: border-box;
+  background: #0f172a;
+`;
+
+const TrialZoomCanvas = styled.div`
+  position: relative;
+  display: inline-block;
+  width: fit-content;
+  max-width: 100%;
+  line-height: 0;
+`;
+
+const TrialZoomImage = styled.img`
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(720px, calc(78vh - 24px));
 `;
 
 const TrialBox = styled.div<{
@@ -483,6 +517,7 @@ export function AnnotationPromptModal({ dataset, contract, open, onClose }: Anno
   const [trialNaturalSize, setTrialNaturalSize] = useState<{ width: number; height: number } | null>(null);
   const [trialResult, setTrialResult] = useState<PromptTrialResult | null>(null);
   const [trialRequestContext, setTrialRequestContext] = useState<PromptTrialRequestContext | null>(null);
+  const [trialZoomOpen, setTrialZoomOpen] = useState(false);
   const trialImageInputRef = useRef<HTMLInputElement | null>(null);
   const initializedContextRef = useRef<string | null>(null);
 
@@ -595,6 +630,7 @@ export function AnnotationPromptModal({ dataset, contract, open, onClose }: Anno
       setTrialNaturalSize(null);
       setTrialResult(null);
       setTrialRequestContext(null);
+      setTrialZoomOpen(false);
       if (trialImageInputRef.current) trialImageInputRef.current.value = '';
       return;
     }
@@ -779,6 +815,7 @@ export function AnnotationPromptModal({ dataset, contract, open, onClose }: Anno
     setTrialNaturalSize(null);
     setTrialResult(null);
     setTrialRequestContext(null);
+    setTrialZoomOpen(false);
   };
   const handleTrialRun = () => {
     if (!trialImage || !promptTextValue.trim() || busy) return;
@@ -959,7 +996,19 @@ export function AnnotationPromptModal({ dataset, contract, open, onClose }: Anno
                         <Tag>等待试运行</Tag>
                       )}
                     </TrialVisualHeader>
-                    <TrialImageStage>
+                    <TrialImageStage
+                      role="button"
+                      tabIndex={0}
+                      aria-label="放大查看试运行图片"
+                      data-testid="trial-image-zoom-trigger"
+                      onClick={() => trialImageUrl && setTrialZoomOpen(true)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          if (trialImageUrl) setTrialZoomOpen(true);
+                        }
+                      }}
+                    >
                       <TrialImageCanvas>
                         <TrialImage
                           src={trialImageUrl}
@@ -1013,6 +1062,55 @@ export function AnnotationPromptModal({ dataset, contract, open, onClose }: Anno
           </>
         )}
       </div>
+      </Modal>
+      <Modal
+        title="试运行图片标注（放大查看）"
+        open={trialZoomOpen && Boolean(trialImageUrl)}
+        centered
+        width="min(1320px, calc(100vw - 32px))"
+        footer={null}
+        destroyOnClose
+        onCancel={() => setTrialZoomOpen(false)}
+      >
+        <TrialZoomViewport data-testid="trial-image-zoom-view">
+          {trialImageUrl && (
+            <TrialZoomCanvas>
+              <TrialZoomImage
+                src={trialImageUrl}
+                alt={trialImage?.name || '试运行图片放大预览'}
+              />
+              {trialImageWidth > 0 && trialImageHeight > 0 && trialBoxes.map((box, index) => {
+                const color = '#1677ff';
+                const label = box.label || `目标 ${index + 1}`;
+                return (
+                  <TrialBox
+                    key={`zoom-${box.id || 'trial-box'}-${index}`}
+                    data-testid="trial-zoom-bounding-box"
+                    $left={percentWithin(box.x, trialImageWidth)}
+                    $top={percentWithin(box.y, trialImageHeight)}
+                    $width={percentWithin(box.width, trialImageWidth)}
+                    $height={percentWithin(box.height, trialImageHeight)}
+                    $color={color}
+                  >
+                    <TrialBoxLabel data-testid="trial-zoom-bounding-box-label" $color={color}>
+                      {box.score ? `${label} · ${box.score}` : label}
+                    </TrialBoxLabel>
+                  </TrialBox>
+                );
+              })}
+            </TrialZoomCanvas>
+          )}
+        </TrialZoomViewport>
+        <Space size={8} wrap style={{ marginTop: 10 }}>
+          <Tag color={trialBoxes.length ? 'green' : 'default'}>
+            共 {trialBoxes.length} 个拉框
+          </Tag>
+          {trialImageWidth > 0 && trialImageHeight > 0 && (
+            <Typography.Text type="secondary">
+              图片 {trialImageWidth}×{trialImageHeight}
+            </Typography.Text>
+          )}
+        </Space>
       </Modal>
       <Modal
         title={`历史提示词版本 #${historyPrompt?.id ?? ''}`}

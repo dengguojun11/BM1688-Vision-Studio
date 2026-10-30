@@ -1,18 +1,14 @@
-import { Alert, Button, Empty, Input, Modal, Pagination, Popover, Select, Spin } from 'antd';
+import { Alert, Button, Empty, Input, Modal, Pagination, Popover, Spin } from 'antd';
 import { useNavigate, useRouteLoaderData, useSearchParams } from 'react-router-dom';
 import _ from 'lodash';
 import styled from 'styled-components';
 import { FlexLayout } from '@labelu/components-react';
 import { useTranslation } from '@labelu/i18n';
-import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DownOutlined, RightOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 
 import {
   searchTaskImages,
-  getAccessibleDatasetsPage,
-  getAccessibleDataset,
-  type DatasetOption,
   type TaskImageSearchHit,
 } from '@/api/services/task';
 import { ResponsiveGrid } from '@/components/ResponsiveGrid';
@@ -364,78 +360,58 @@ const ToolbarSummary = styled.span`
 `;
 
 const SearchToolbar = styled.div`
-  flex: 1 1 22rem;
-  min-width: 16rem;
-  max-width: 36rem;
-  margin-left: auto;
+  width: 100%;
+  margin-top: 0.25rem;
 
   @media (max-width: 48rem) {
-    flex-basis: 100%;
     width: 100%;
-    min-width: 0;
-    max-width: none;
-    margin-left: 0;
   }
 `;
 
 const SearchBarRow = styled.div`
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(15rem, 1.15fr) minmax(15rem, 1fr) minmax(15rem, 0.85fr);
+  gap: 0.75rem;
+  padding: 0.875rem;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
-  overflow: hidden;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  @media (max-width: 66rem) {
+    grid-template-columns: repeat(2, minmax(15rem, 1fr));
+  }
 
-  &:focus-within {
-    border-color: #93c5fd;
-    box-shadow: 0 0 0 2px rgb(47 111 237 / 10%);
+  @media (max-width: 48rem) {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0.75rem;
   }
 `;
 
-const TrainingSelectWrap = styled.div`
-  flex: 0 0 auto;
-  width: 7rem;
-  border-right: 1px solid #e5e7eb;
-  background: #f8fafc;
+const SearchField = styled.label`
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.375rem;
+  color: #475569;
+  font-size: 0.75rem;
+  font-weight: 600;
 
-  .ant-select {
-    width: 100%;
+  small {
+    color: #94a3b8;
+    font-size: 0.6875rem;
+    font-weight: 400;
+    line-height: 1.35;
   }
-
-  .ant-select-selector {
-    border: 0 !important;
-    box-shadow: none !important;
-    background: transparent !important;
-    min-height: 2rem !important;
-    padding-inline: 0.625rem !important;
-  }
-`;
-
-const DatasetSelectWrap = styled.div`
-  flex: 0 0 12rem;
-  border-right: 1px solid #e5e7eb;
-  background: #f8fafc;
-
-  .ant-select { width: 100%; }
-  .ant-select-selector {
-    border: 0 !important;
-    box-shadow: none !important;
-    background: transparent !important;
-    min-height: 2rem !important;
-    padding-inline: 0.625rem !important;
-  }
-`;
-
-const SearchInputWrap = styled.div`
-  flex: 1 1 12rem;
-  min-width: 12rem;
 
   .ant-input-affix-wrapper {
-    border: 0 !important;
-    box-shadow: none !important;
-    min-height: 2rem;
+    min-height: 2.25rem;
+    border-radius: 6px;
+    border-color: #dbe3ef;
+    box-shadow: none;
+
+    &:focus-within {
+      border-color: #7aa7f8;
+      box-shadow: 0 0 0 2px rgb(47 111 237 / 10%);
+    }
   }
 `;
 
@@ -547,7 +523,6 @@ const TasksPage = () => {
 };
 
 const TaskListPanel = () => {
-  const DATASET_OPTION_PAGE_SIZE = 20;
   const navigate = useNavigate();
   const routerLoaderData = useRouteLoaderData('tasks') as TasksLoaderResult;
   const tasksResponse = routerLoaderData?.taskList;
@@ -558,12 +533,8 @@ const TaskListPanel = () => {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const finalPageSize = searchParams.get('size') ? +searchParams.get('size')! : 16;
-  const selectedDatasetId = searchParams.get('dataset_id') || undefined;
   const datasetSearch = searchParams.get('dataset_search') || '';
   const taskSearch = searchParams.get('q') || '';
-  const trainingReadyParam = searchParams.get('training_ready');
-  const trainingReadyFilter =
-    trainingReadyParam === 'true' ? 'ready' : trainingReadyParam === 'false' ? 'not_ready' : 'all';
 
   const [imageQuery, setImageQuery] = useState('');
   const [taskSearchInput, setTaskSearchInput] = useState(taskSearch);
@@ -575,84 +546,6 @@ const TaskListPanel = () => {
   const [searchPage, setSearchPage] = useState(1);
   const searchPageSize = 24;
   const searchSeqRef = useRef(0);
-  const [datasetOptionSearchInput, setDatasetOptionSearchInput] = useState('');
-  const [datasetOptionSearch, setDatasetOptionSearch] = useState('');
-  const [datasetOptionPage, setDatasetOptionPage] = useState(0);
-  const [selectedDatasetOption, setSelectedDatasetOption] = useState<DatasetOption | null>(null);
-  const datasetsQuery = useQuery({
-    queryKey: ['accessible-datasets', 'tasks', datasetOptionPage, datasetOptionSearch],
-    queryFn: () => getAccessibleDatasetsPage({
-      page: datasetOptionPage,
-      size: DATASET_OPTION_PAGE_SIZE,
-      q: datasetOptionSearch || undefined,
-    }),
-    staleTime: 60_000,
-    retry: false,
-  });
-  const selectedDatasetIdNumber = selectedDatasetId ? Number(selectedDatasetId) : undefined;
-  const selectedDatasetQuery = useQuery({
-    queryKey: ['accessible-dataset', 'tasks', selectedDatasetIdNumber],
-    queryFn: () => getAccessibleDataset(selectedDatasetIdNumber as number),
-    enabled: Number.isInteger(selectedDatasetIdNumber) && (selectedDatasetIdNumber as number) > 0,
-    staleTime: 60_000,
-    retry: false,
-  });
-  const previousSelectedDatasetIdRef = useRef<number | undefined>(selectedDatasetIdNumber);
-  useEffect(() => {
-    if (!selectedDatasetIdNumber) {
-      setSelectedDatasetOption(null);
-      previousSelectedDatasetIdRef.current = undefined;
-    } else if (
-      previousSelectedDatasetIdRef.current !== selectedDatasetIdNumber
-      && selectedDatasetOption?.id !== selectedDatasetIdNumber
-    ) {
-      setSelectedDatasetOption(null);
-    }
-    previousSelectedDatasetIdRef.current = selectedDatasetIdNumber;
-  }, [selectedDatasetIdNumber, selectedDatasetOption]);
-  const datasetOptionItems = useMemo(() => {
-    const byId = new Map<number, DatasetOption>();
-    [
-      ...(datasetsQuery.data?.data || []),
-      selectedDatasetQuery.data,
-      selectedDatasetOption,
-    ].forEach((item) => {
-      if (item?.id) byId.set(Number(item.id), item);
-    });
-    return Array.from(byId.values());
-  }, [datasetsQuery.data?.data, selectedDatasetQuery.data, selectedDatasetOption]);
-  const datasetOptionTotal = Number(datasetsQuery.data?.meta_data?.total ?? 0);
-  const datasetOptionLabel = (item: DatasetOption) => item.dataset_label_contract_id
-    ? `${item.name} · 契约 v${item.dataset_label_contract_revision || 0}`
-    : `${item.name} · 未配置契约`;
-  const datasetDropdownFooter = (
-    <div
-      onMouseDown={(event) => event.preventDefault()}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: 8,
-        padding: '8px 10px 2px',
-        borderTop: '1px solid #f0f0f0',
-      }}
-    >
-      <span style={{ color: '#64748b', fontSize: 12, whiteSpace: 'nowrap' }}>
-        {datasetOptionTotal ? `共 ${datasetOptionTotal} 个数据集` : '暂无数据集'}
-      </span>
-      {datasetOptionTotal > DATASET_OPTION_PAGE_SIZE && (
-        <Pagination
-          size="small"
-          current={datasetOptionPage + 1}
-          pageSize={DATASET_OPTION_PAGE_SIZE}
-          total={datasetOptionTotal}
-          showSizeChanger={false}
-          showLessItems
-          onChange={(nextPage) => setDatasetOptionPage(nextPage - 1)}
-        />
-      )}
-    </div>
-  );
   useEffect(() => {
     setDatasetSearchInput(datasetSearch);
   }, [datasetSearch]);
@@ -674,18 +567,6 @@ const TaskListPanel = () => {
     }, 300);
     return () => window.clearTimeout(timer);
   }, [taskSearchInput, taskSearch, datasetSearchInput, datasetSearch, searchParams, setSearchParams]);
-  const scopeLabel = useMemo(() => {
-    const parts: string[] = [];
-    if (trainingReadyFilter === 'ready') {
-      parts.push('可训练');
-    } else if (trainingReadyFilter === 'not_ready') {
-      parts.push('待完善');
-    }
-    return parts.join(' · ');
-  }, [
-    trainingReadyFilter,
-  ]);
-
   const runImageSearch = useCallback(
     async (keyword: string, page: number) => {
       const q = keyword.trim();
@@ -765,20 +646,6 @@ const TaskListPanel = () => {
     navigate(`/tasks/0/edit?${next.toString()}`);
   };
 
-  const setTrainingReadyFilter = (value: 'all' | 'ready' | 'not_ready') => {
-    const next = new URLSearchParams(searchParams);
-    next.set('page', '1');
-    if (value === 'ready') {
-      next.set('training_ready', 'true');
-    } else if (value === 'not_ready') {
-      next.set('training_ready', 'false');
-    } else {
-      next.delete('training_ready');
-    }
-    setSearchParams(next);
-  };
-
-
   const versionInfo = (
     <div>
       frontend: {_.get(window.__frontend, 'version', 'unknown')}
@@ -832,32 +699,17 @@ const TaskListPanel = () => {
                 <Button type="primary" icon={<PlusOutlined />} onClick={createTask}>
                   {t('Create Task')}
                 </Button>
-                <ToolbarSummary>
-                  当前视图：<strong>{scopeLabel}</strong>
-                </ToolbarSummary>
+                <ToolbarSummary>按任务、数据集或标签契约定位内容</ToolbarSummary>
               </HeaderActions>
               <SearchToolbar>
                 <SearchBarRow>
-                  <TrainingSelectWrap>
-                    <Select
-                      value={trainingReadyFilter}
-                      bordered={false}
-                      popupMatchSelectWidth={false}
-                      options={[
-                        { value: 'all', label: '全部' },
-                        { value: 'ready', label: '可训练' },
-                        { value: 'not_ready', label: '待完善' },
-                      ]}
-                      onChange={(value) => setTrainingReadyFilter(value as 'all' | 'ready' | 'not_ready')}
-                    />
-                  </TrainingSelectWrap>
-                  <SearchInputWrap>
+                  <SearchField>
+                    任务搜索
                     <Input
                       allowClear
                       maxLength={128}
-                      bordered={false}
                       prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
-                      placeholder="搜索任务名称、编号或状态…"
+                      placeholder="输入任务名称、编号或状态"
                       aria-label="搜索任务"
                       value={taskSearchInput}
                       onChange={(e) => setTaskSearchInput(e.target.value)}
@@ -870,61 +722,27 @@ const TaskListPanel = () => {
                         setSearchParams(next);
                       }}
                     />
-                  </SearchInputWrap>
-                  <DatasetSelectWrap>
-                    <Select
-                      allowClear
-                      showSearch
-                      filterOption={false}
-                      searchValue={datasetOptionSearchInput}
-                      value={selectedDatasetIdNumber}
-                      placeholder="选择数据集/契约"
-                      aria-label="选择数据集"
-                      loading={datasetsQuery.isLoading || selectedDatasetQuery.isLoading}
-                      options={datasetOptionItems.map((item: DatasetOption) => ({
-                        value: item.id,
-                        label: datasetOptionLabel(item),
-                      }))}
-                      notFoundContent={datasetsQuery.isFetching ? <Spin size="small" /> : '暂无匹配数据集'}
-                      dropdownRender={(menu) => <>{menu}{datasetDropdownFooter}</>}
-                      onSearch={(value) => {
-                        setDatasetOptionSearchInput(value);
-                        setDatasetOptionSearch(value.trim());
-                        setDatasetOptionPage(0);
-                      }}
-                      onChange={(value) => {
-                        setDatasetOptionSearchInput('');
-                        setDatasetOptionSearch('');
-                        setDatasetOptionPage(0);
-                        const nextValue = value ? Number(value) : undefined;
-                        const selected = nextValue
-                          ? datasetOptionItems.find((item) => Number(item.id) === nextValue) || null
-                          : null;
-                        setSelectedDatasetOption(selected);
-                        const next = new URLSearchParams(searchParams);
-                        next.set('page', '1');
-                        if (nextValue) next.set('dataset_id', String(nextValue));
-                        else next.delete('dataset_id');
-                        setSearchParams(next);
-                      }}
-                    />
-                  </DatasetSelectWrap>
-                  <SearchInputWrap>
+                    <small>支持模糊匹配任务名称、编号和状态</small>
+                  </SearchField>
+                  <SearchField>
+                    数据集 / 标签契约
                     <Input
                       allowClear
-                      bordered={false}
                       prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
-                      placeholder="搜索数据集或标签契约名称…"
+                      placeholder="输入数据集名称或标签契约名称"
+                      aria-label="搜索数据集或标签契约"
                       value={datasetSearchInput}
                       onChange={(e) => setDatasetSearchInput(e.target.value)}
                     />
-                  </SearchInputWrap>
-                  <SearchInputWrap>
+                    <small>按数据集名称或标签契约名称模糊搜索</small>
+                  </SearchField>
+                  <SearchField>
+                    图片搜索
                     <Input
                       allowClear
-                      bordered={false}
                       prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
-                      placeholder="搜索图片文件名…"
+                      placeholder="输入图片文件名"
+                      aria-label="搜索图片文件名"
                       value={imageQuery}
                       onChange={(e) => onImageQueryChange(e.target.value)}
                       onPressEnter={() => {
@@ -933,7 +751,8 @@ const TaskListPanel = () => {
                         runImageSearch(imageQuery, 1);
                       }}
                     />
-                  </SearchInputWrap>
+                    <small>搜索后可直接打开对应图片进行标注</small>
+                  </SearchField>
                 </SearchBarRow>
               </SearchToolbar>
           </HeaderRow>
@@ -974,7 +793,7 @@ const TaskListPanel = () => {
         )}
       </Footer>
       <Modal
-        title={`图片搜索 · ${scopeLabel}`}
+        title="图片搜索结果"
         open={searchOpen && !!imageQuery.trim()}
         centered
         onCancel={() => setSearchOpen(false)}

@@ -46,6 +46,15 @@ class PreviewLabelDimensionTrainingTaskCommand(BaseModel):
     selected_task_label_ids: Optional[Dict[str, List[int]]] = Field(default=None)
     training_recipe_key: str = Field(default="yolov11_detection", max_length=128)
     training_recipe_version: int = Field(default=1, ge=1)
+    plate_training_target: Optional[Literal["plate_detection", "plate_recognition"]] = (
+        Field(
+            default=None,
+            description=(
+                "车牌标注任务的训练目标。plate_detection=仅训练定位与四角点；"
+                "plate_recognition=兼容原四组件识别。为空时按车牌 profile 默认值。"
+            ),
+        )
+    )
     runtime_profile: str = Field(default="yolov11_detection", max_length=128)
     runtime_interface_version: int = Field(default=1, ge=1)
     sample_conditions: Dict[str, List[str]] = Field(
@@ -171,16 +180,6 @@ class CreateLabelDimensionTrainingTaskCommand(PreviewLabelDimensionTrainingTaskC
     imgsz: int = Field(default=640, ge=320, le=1280)
     hyperparams: Dict[str, Any] = Field(default_factory=dict)
     iteration_source_job_id: Optional[int] = Field(default=None, gt=0)
-    plate_training_target: Optional[Literal["plate_detection", "plate_recognition"]] = (
-        Field(
-            default=None,
-            description=(
-                "车牌标注任务的训练目标。plate_detection=仅训练定位与四角点；"
-                "plate_recognition=兼容原四组件识别。为空时保持原四组件行为。"
-            ),
-        )
-    )
-
     @validator("name", "model_weights", "weights_source", pre=True)
     def _normalize_strings(cls, v):
         if v is None:

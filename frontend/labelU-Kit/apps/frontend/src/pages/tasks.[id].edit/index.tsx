@@ -14,6 +14,14 @@ import { createIdempotencyKey } from '@/api/idempotency';
 import type { BasicConfigCommand, TaskResponse } from '@/api/types';
 import { MediaType, TaskStatus } from '@/api/types';
 import { copySamplesByLabels, copySamplesByLabel, createSamplesInBatches, deleteSamples } from '@/api/services/samples';
+import {
+  createSamplesWithImageCleaning,
+  dedupeAttachmentSamples,
+  extractImageCleaningDeletedAttachmentIds,
+  getImageCleaningCandidateAttachmentIds,
+  previewImageCleaning,
+  type ImageCleaningPreview,
+} from '@/api/services/imageCleaning';
 import { applyTaskLabelPreset, applyTaskLabels, deleteFile, deleteTask } from '@/api/services/task';
 import { convertAudioAndVideoConfig } from '@/utils/convertAudioAndVideoConfig';
 import type { TaskLoaderResult } from '@/loaders/task.loader';
@@ -87,6 +95,29 @@ function isContainEmptyOption(config: Partial<ToolsConfigState>) {
       }
     }
   }
+}
+
+function confirmImageCleaning(preview: ImageCleaningPreview): Promise<boolean> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (value: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    modal.confirm({
+      title: '图片清洗预览',
+      content: `本批 ${preview.total_count} 张可读取图片，当前相似度阈值 ${(preview.threshold * 100).toFixed(
+        2,
+      )}%，预计删除 ${preview.duplicate_count} 张，保留 ${preview.keep_count} 张，跳过 ${
+        preview.skipped_count ?? preview.skipped_attachment_ids?.length ?? 0
+      } 张。确认后重复图片将被物理删除。`,
+      okText: '清洗并继续',
+      cancelText: '取消',
+      onOk: () => settle(true),
+      onCancel: () => settle(false),
+    });
+  });
 }
 
 interface TaskStep extends StepData {
@@ -404,8 +435,8 @@ const CreateTask = () => {
           return Promise.reject();
         }
 
-        const mediaFileList = [];
-        const preAnnotationFiles = [];
+        const mediaFileList: { file_id: number; data: { result: string } }[] = [];
+        const preAnnotationFiles: { file_id: number }[] = [];
 
         for (const file of uploadFileList) {
           if (isPreAnnotationFile(file.file.name) && file.status === UploadStatus.Success && _.isNil(file.refId)) {
@@ -422,11 +453,73 @@ const CreateTask = () => {
           }
         }
 
+        const uniqueMediaFileList = dedupeAttachmentSamples(mediaFileList);
+
         if (isExistTask) {
           if (currentStep === StepEnum.Upload) {
-            if (!_.isEmpty(mediaFileList)) {
-              const response = await createSamplesInBatches(taskId, mediaFileList);
-              updateFileQueue(mediaFileList, response?.data?.ids);
+            if (!_.isEmpty(uniqueMediaFileList)) {
+              const shouldCleanImages = (taskData?.media_type || basicFormValues.media_type) === MediaType.IMAGE;
+              if (shouldCleanImages) {
+                const attachmentIds = uniqueMediaFileList.map((item) => item.file_id);
+                const previewResponse = await previewImageCleaning(taskId, attachmentIds);
+                const preview = previewResponse?.data;
+                if (!preview) {
+                  throw new Error('图片清洗预览结果为空');
+                }
+                const confirmed = await confirmImageCleaning(preview);
+                if (!confirmed) {
+                  throw new Error('IMAGE_CLEANING_CANCELLED');
+                }
+                const submittedAttachmentSet = new Set(attachmentIds);
+                const candidateAttachmentIds = getImageCleaningCandidateAttachmentIds(preview).filter((id) =>
+                  submittedAttachmentSet.has(id),
+                );
+                const skippedAttachmentIds = (preview.skipped_attachment_ids ?? [])
+                  .map(Number)
+                  .filter((id) => submittedAttachmentSet.has(id));
+                const keepIds = new Set(preview.keep_attachment_ids);
+                const cleanedMediaFileList = uniqueMediaFileList.filter((item) => keepIds.has(item.file_id));
+                if (candidateAttachmentIds.length > 0) {
+                  let response: Awaited<ReturnType<typeof createSamplesWithImageCleaning>>;
+                  try {
+                    response = await createSamplesWithImageCleaning(taskId, cleanedMediaFileList, {
+                      attachment_ids: candidateAttachmentIds,
+                      policy_revision: preview.policy_revision,
+                      fingerprint: preview.fingerprint,
+                    });
+                  } catch (error) {
+                    // The backend includes this list only after physical deletion
+                    // succeeded. Keep failed uploads that still exist retryable.
+                    const deletedAttachmentIds = extractImageCleaningDeletedAttachmentIds(
+                      error,
+                      preview.duplicate_attachment_ids,
+                    );
+                    if (deletedAttachmentIds.length > 0) {
+                      const deletedIds = new Set(deletedAttachmentIds);
+                      setUploadFileList((previous) => previous.filter((item) => !deletedIds.has(Number(item.id))));
+                      revalidator.revalidate();
+                    }
+                    throw error;
+                  }
+                  updateFileQueue(cleanedMediaFileList, response?.data?.ids);
+                  const deletedAttachmentIds = response?.data?.deleted_attachment_ids?.length
+                    ? response.data.deleted_attachment_ids
+                    : preview.duplicate_attachment_ids;
+                  const removedIds = new Set([...skippedAttachmentIds, ...deletedAttachmentIds.map(Number)]);
+                  if (removedIds.size > 0) {
+                    setUploadFileList((previous) => previous.filter((item) => !removedIds.has(Number(item.id))));
+                  }
+                } else if (skippedAttachmentIds.length > 0) {
+                  // The backend rejects an empty cleaning attachment list.  A
+                  // preview with only unreadable files is already complete; the
+                  // stale queue entries can be removed without creating samples.
+                  const skippedIds = new Set(skippedAttachmentIds);
+                  setUploadFileList((previous) => previous.filter((item) => !skippedIds.has(Number(item.id))));
+                }
+              } else {
+                const response = await createSamplesInBatches(taskId, uniqueMediaFileList);
+                updateFileQueue(uniqueMediaFileList, response?.data?.ids);
+              }
             }
 
             if (!_.isEmpty(preAnnotationFiles)) {

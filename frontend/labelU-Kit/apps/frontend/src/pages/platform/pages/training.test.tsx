@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import request from '@/api/request';
 import { trainingQualityGateSummary, trainingRuntimeStatusLabel, trainingStatusLabel } from '../shared';
 import { trainingModelVersionLabel } from './training';
-import TrainingPage, { autoTrainingPlanStatusLabel, evaluationHubUrl, isRemoteNodeMissing, isUnsupportedGenericExecution, legacyTrainingJobUrl, mergeTrainingFormValues, parseTrainingRecipeRef, partitionAiIterationParams, pinIterationWeights, platformTrainingJobUrl, platformTrainingReportsUrl, PRECISION_OPTIONS, precisionOptionLabel, resolveDefaultTrainingContract, shouldUseLegacyYoloCreate, TARGET_CHIP_OPTIONS, TRAINING_IMPORTED_MODEL_PAGE_SIZE, TRAINING_LABEL_PAGE_SIZE, trainingCandidateBrowserResult, trainingCandidateCanTrain, trainingCandidateContractKey, trainingCandidateRatioLabel, trainingCandidatesShareLabelContract, trainingCandidateSelectionSnapshotKey, trainingCandidateSnapshotKey, trainingCandidateState, trainingCandidateStateLabel, trainingCandidateStats, trainingCandidateQueryParams, trainingCandidateQueryParamsForDimension, trainingChipOptions, trainingCreateErrorMessage, trainingDatasetBrowserResult, trainingDatasetContractLabel, trainingDatasetDisplayLabel, trainingDatasetLabelCount, trainingDatasetLabelsForSelection, trainingDatasetSearchLabel, trainingDatasetVersionLabel, trainingDimensionLabel, trainingGlobalTagDimensionBrowserResult, trainingImportedModelBrowserResult, trainingIterationParentLabel, trainingIterationPolicyLabel, trainingLabelBrowserResult, trainingLabelIdsForCandidates, trainingModelVersionCompatibility, trainingModelVersionWeightFile, trainingProgressSummary, trainingSampleConditionsJson, trainingSampleConditionsKey, trainingViewFromLocation, taskTrainingDatasetSelectionError, taskTrainingUsesMergedEndpoint } from './training';
+import TrainingPage, { autoTrainingPlanStatusLabel, evaluationHubUrl, isPlateTrainingTarget, isRemoteNodeMissing, isUnsupportedGenericExecution, legacyTrainingJobUrl, mergeTrainingFormValues, parseTrainingRecipeRef, partitionAiIterationParams, pinIterationWeights, platformTrainingJobUrl, platformTrainingReportsUrl, PRECISION_OPTIONS, precisionOptionLabel, resolveDefaultTrainingContract, resolveTrainingTargetContract, shouldUseLegacyYoloCreate, TARGET_CHIP_OPTIONS, TRAINING_IMPORTED_MODEL_PAGE_SIZE, TRAINING_LABEL_PAGE_SIZE, trainingCandidateBrowserResult, trainingCandidateCanTrain, trainingCandidateContractKey, trainingCandidateRatioLabel, trainingCandidatesShareLabelContract, trainingCandidateSelectionSnapshotKey, trainingCandidateSnapshotKey, trainingCandidateState, trainingCandidateStateLabel, trainingCandidateStats, trainingCandidateQueryParams, trainingCandidateQueryParamsForDimension, trainingChipOptions, trainingCreateErrorMessage, trainingDatasetBrowserResult, trainingDatasetContractLabel, trainingDatasetDisplayLabel, trainingDatasetLabelCount, trainingDatasetLabelsForSelection, trainingDatasetSearchLabel, trainingDatasetVersionLabel, trainingDimensionLabel, trainingGlobalTagDimensionBrowserResult, trainingImportedModelBrowserResult, trainingIterationParentLabel, trainingIterationPolicyLabel, trainingLabelBrowserResult, trainingLabelIdsForCandidates, trainingModelVersionCompatibility, trainingModelVersionWeightFile, trainingProgressSummary, trainingSampleConditionsJson, trainingSampleConditionsKey, trainingTargetFromRecipe, trainingTargetOptions, trainingViewFromLocation, taskTrainingDatasetSelectionError, taskTrainingUsesMergedEndpoint } from './training';
 
 const taskSuperuserState = vi.hoisted(() => ({ value: true, fetched: true }));
 const resourcePageState = vi.hoisted(() => ({ props: null as any }));
@@ -392,6 +392,40 @@ describe('TrainingPage', () => {
     });
   });
 
+  it('binds the plate detection target to the pose recipe and preset contract', () => {
+    const recipes = [
+      {
+        recipe_key: 'plate_detection_v1',
+        version: 1,
+        job_type: 'plate_detection',
+        model_family: 'plate_detection',
+        status: 'active',
+      },
+      {
+        recipe_key: 'plate_recognition_v1',
+        version: 1,
+        job_type: 'plate_recognition',
+        model_family: 'plate_recognition',
+        status: 'active',
+      },
+    ];
+
+    expect(isPlateTrainingTarget('plate_detection')).toBe(true);
+    expect(isPlateTrainingTarget('generic_detection')).toBe(false);
+    expect(trainingTargetFromRecipe(recipes[0])).toBe('plate_detection');
+    expect(resolveTrainingTargetContract('plate_detection', recipes)).toMatchObject({
+      recipeRef: 'plate_detection_v1::1',
+      trainingRecipeKey: 'plate_detection_v1',
+      trainingRecipeVersion: 1,
+      rectPresetSlug: 'plateDetection',
+      plateTrainingTarget: 'plate_detection',
+      modelWeights: 'yolov8n-pose.pt',
+    });
+    expect(trainingTargetOptions(recipes).map((item) => item.value)).toEqual([
+      'generic_detection', 'plate_detection', 'plate_recognition',
+    ]);
+  });
+
   it('shows real epoch progress without estimating from elapsed time', () => {
     expect(trainingProgressSummary({ epochs: 50, current_epoch: 17 })).toEqual({
       currentEpoch: 17,
@@ -435,6 +469,12 @@ describe('TrainingPage', () => {
       size: 100,
       label_ids: [15, 12],
       dataset_id: 3,
+    });
+    expect(trainingCandidateQueryParamsForDimension('task', [], 3, 0, 100, undefined, [], 'plate_detection_v1')).toEqual({
+      page: 0,
+      size: 100,
+      dataset_id: 3,
+      training_recipe_key: 'plate_detection_v1',
     });
     expect(trainingCandidateQueryParams([15], 3, 2, 20, '  道路  ')).toEqual({
       page: 2,

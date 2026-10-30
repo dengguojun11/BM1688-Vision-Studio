@@ -136,6 +136,29 @@ const ErrorText = styled.span`
 
 const isActiveJobStatus = (status?: string | null) => status === 'PENDING' || status === 'PROCESSING';
 
+type TaskJobType =
+  | 'ai'
+  | 'ai_detection'
+  | 'yolo'
+  | 'locateanything'
+  | 'vlx_seek'
+  | 'rex_omni'
+  | 'bounds';
+type TaskJobGroup = 'tags' | 'geometry' | 'bounds';
+
+// Jobs in the same group write the same annotation tools and must stay
+// serialized; global-tag and geometry groups are independent and may run at
+// the same time.
+const TASK_JOB_GROUP: Record<TaskJobType, TaskJobGroup> = {
+  ai: 'tags',
+  ai_detection: 'geometry',
+  yolo: 'geometry',
+  locateanything: 'geometry',
+  vlx_seek: 'geometry',
+  rex_omni: 'geometry',
+  bounds: 'bounds',
+};
+
 interface TaskProgressItemProps {
   title: string;
   status?: string;
@@ -409,30 +432,35 @@ const Samples = () => {
   });
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const activeTaskJobType = useMemo<'ai' | 'ai_detection' | 'yolo' | 'locateanything' | 'vlx_seek' | 'rex_omni' | 'bounds' | null>(() => {
-    if (isBatchLabeling || isActiveJobStatus(batchJob?.status)) return 'ai';
-    if (isActiveJobStatus(aiDetectionPreannotateJob?.status)) return 'ai_detection';
-    if (isActiveJobStatus(yoloPreannotateJob?.status)) return 'yolo';
-    if (isActiveJobStatus(locateAnythingPreannotateJob?.status)) return 'locateanything';
-    if (isActiveJobStatus(vlxSeekPreannotateJob?.status)) return 'vlx_seek';
-    if (isActiveJobStatus(rexOmniPreannotateJob?.status)) return 'rex_omni';
-    if (isBoundsChecking || isActiveJobStatus(boundsCheckProgress?.status)) return 'bounds';
-    return null;
-  }, [
-    batchJob?.status,
-    aiDetectionPreannotateJob?.status,
-    boundsCheckProgress?.status,
-    isBatchLabeling,
-    isBoundsChecking,
-    locateAnythingPreannotateJob?.status,
-    rexOmniPreannotateJob?.status,
-    vlxSeekPreannotateJob?.status,
-    yoloPreannotateJob?.status,
-  ]);
+  // Global-tag batches and geometry batches touch independent tools, so they
+  // may run in parallel. Only jobs in the same group stay serialized.
+  const activeTaskJobGroups = useMemo(
+    () => {
+      const groups = new Set<TaskJobGroup>();
+      if (isBatchLabeling || isActiveJobStatus(batchJob?.status)) groups.add('tags');
+      if (isActiveJobStatus(aiDetectionPreannotateJob?.status)) groups.add('geometry');
+      if (isActiveJobStatus(yoloPreannotateJob?.status)) groups.add('geometry');
+      if (isActiveJobStatus(locateAnythingPreannotateJob?.status)) groups.add('geometry');
+      if (isActiveJobStatus(vlxSeekPreannotateJob?.status)) groups.add('geometry');
+      if (isActiveJobStatus(rexOmniPreannotateJob?.status)) groups.add('geometry');
+      if (isBoundsChecking || isActiveJobStatus(boundsCheckProgress?.status)) groups.add('bounds');
+      return groups;
+    },
+    [
+      batchJob?.status,
+      aiDetectionPreannotateJob?.status,
+      boundsCheckProgress?.status,
+      isBatchLabeling,
+      isBoundsChecking,
+      locateAnythingPreannotateJob?.status,
+      rexOmniPreannotateJob?.status,
+      vlxSeekPreannotateJob?.status,
+      yoloPreannotateJob?.status,
+    ],
+  );
   const isTaskJobBlocked = useCallback(
-    (type: 'ai' | 'ai_detection' | 'yolo' | 'locateanything' | 'vlx_seek' | 'rex_omni' | 'bounds') =>
-      Boolean(activeTaskJobType && activeTaskJobType !== type),
-    [activeTaskJobType],
+    (type: TaskJobType) => activeTaskJobGroups.has(TASK_JOB_GROUP[type]),
+    [activeTaskJobGroups],
   );
 
   const stopPolling = useCallback(() => {

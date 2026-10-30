@@ -212,6 +212,7 @@ def write_group_values(
     value_source: str = "db",
     updated_by: int | None = None,
     change_reason: str | None = None,
+    expected_revisions: dict[str, int] | None = None,
 ) -> bool:
     if not ensure_registry_synced([group_key]):
         raise RuntimeError(f"配置治理存储不可用：{group_key}")
@@ -244,6 +245,20 @@ def write_group_values(
                         .first()
                     )
                     before_json = current.value_json if current is not None else None
+                    if expected_revisions and item_key in expected_revisions:
+                        expected_revision = int(expected_revisions[item_key])
+                        revision_source = before_json
+                        if revision_source is None:
+                            revision_source = item.default_value_json
+                        try:
+                            revision_payload = _json_loads(revision_source)
+                            actual_revision = int(revision_payload.get("revision"))
+                        except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+                            actual_revision = 0
+                        if actual_revision != expected_revision:
+                            raise RuntimeError(
+                                f"配置版本已变化：{group_key}.{item_key}"
+                            )
                     if current is None:
                         crud_system_config_value.create(
                             db,

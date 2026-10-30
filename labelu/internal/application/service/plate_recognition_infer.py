@@ -5,6 +5,83 @@ from pathlib import Path
 from typing import Any
 
 
+class PlateDetectionPredictor:
+    """Minimal Pose-only predictor used by the detection-only profile."""
+
+    def __init__(self, weights: Path):
+        from ultralytics import YOLO
+
+        self._lock = threading.Lock()
+        self.model = YOLO(str(weights))
+
+    @staticmethod
+    def _xyxy(value) -> list[float]:
+        data = value.tolist() if hasattr(value, "tolist") else value
+        if data and isinstance(data[0], (list, tuple)):
+            data = data[0]
+        return [float(item) for item in data[:4]]
+
+    @staticmethod
+    def _scalar(value) -> float:
+        if hasattr(value, "item"):
+            return float(value.item())
+        data = value.tolist() if hasattr(value, "tolist") else value
+        if isinstance(data, list):
+            data = data[0]
+        return float(data)
+
+    def predict(self, image, *, confidence: float, imgsz: int) -> list[dict[str, Any]]:
+        with self._lock:
+            result = self.model.predict(
+                source=image,
+                conf=float(confidence),
+                imgsz=int(imgsz),
+                verbose=False,
+            )[0]
+        boxes = getattr(result, "boxes", None)
+        if boxes is None or not len(boxes):
+            return []
+        keypoints = getattr(result, "keypoints", None)
+        keypoint_xy = getattr(keypoints, "xy", None) if keypoints is not None else None
+        keypoint_conf = (
+            getattr(keypoints, "conf", None) if keypoints is not None else None
+        )
+        detections: list[dict[str, Any]] = []
+        for index in range(len(boxes)):
+            box = self._xyxy(boxes.xyxy[index])
+            corners: list[dict[str, float]] = []
+            if keypoint_xy is not None and index < len(keypoint_xy):
+                points = keypoint_xy[index].tolist()
+                scores = (
+                    keypoint_conf[index].tolist()
+                    if keypoint_conf is not None and index < len(keypoint_conf)
+                    else [None] * len(points)
+                )
+                corners = [
+                    {
+                        "x": float(point[0]),
+                        "y": float(point[1]),
+                        "confidence": (
+                            float(scores[point_index])
+                            if scores[point_index] is not None
+                            else None
+                        ),
+                    }
+                    for point_index, point in enumerate(points[:4])
+                ]
+            detections.append(
+                {
+                    "confidence": round(self._scalar(boxes.conf[index]), 4),
+                    "x1": box[0],
+                    "y1": box[1],
+                    "x2": box[2],
+                    "y2": box[3],
+                    "corners": corners,
+                }
+            )
+        return detections
+
+
 def _checkpoint(path: Path, *, component: str) -> dict[str, Any]:
     import torch
 
@@ -399,6 +476,25 @@ class PlateRecognitionPredictor:
 
 _CACHE_LOCK = threading.Lock()
 _PREDICTOR_CACHE: dict[tuple[tuple[str, int], ...], PlateRecognitionPredictor] = {}
+_DETECTION_CACHE: dict[tuple[str, int], PlateDetectionPredictor] = {}
+
+
+def infer_plate_detection(
+    image,
+    *,
+    weights: Path,
+    confidence: float,
+    imgsz: int,
+) -> list[dict[str, Any]]:
+    path = Path(weights)
+    cache_key = (str(path), path.stat().st_mtime_ns)
+    with _CACHE_LOCK:
+        predictor = _DETECTION_CACHE.get(cache_key)
+        if predictor is None:
+            predictor = PlateDetectionPredictor(path)
+            _DETECTION_CACHE.clear()
+            _DETECTION_CACHE[cache_key] = predictor
+    return predictor.predict(image, confidence=confidence, imgsz=imgsz)
 
 
 def infer_plate_recognition(

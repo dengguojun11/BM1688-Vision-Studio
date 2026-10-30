@@ -3,7 +3,8 @@ import { Button, Checkbox, InputNumber, Modal, Progress, Select, Typography } fr
 
 import type { PreannotateJobResponse } from '@/api/types';
 import type { PreannotationCapabilityItem } from '@/api/types';
-import { getPreannotationCapabilities } from '@/api/services/samples';
+import { getAiProcess, getPreannotationCapabilities } from '@/api/services/samples';
+import AiDetectionProcessModal from '@/components/AiDetectionProcessModal';
 import {
   AI_DETECTION_DEFAULT_CONF,
   getDefaultIncludeDoneSamples,
@@ -37,6 +38,12 @@ export default function PreannotateControl({
   onCompleted,
 }: PreannotateControlProps) {
   const [open, setOpen] = useState(false);
+  // The current-image AI run keeps the dialog open so the annotator can open
+  // the detailed process view. Other actions keep the historical behavior and
+  // close once the job finishes.
+  const isAiSingleImage = type === 'ai_detection' && mode === 'sample';
+  const [completion, setCompletion] = useState<{ boxCount: number | null } | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [providerCapability, setProviderCapability] = useState<PreannotationCapabilityItem | null>(null);
   const [capabilityResolved, setCapabilityResolved] = useState(type !== 'ai_detection');
   const [capabilityVisible, setCapabilityVisible] = useState(type !== 'ai_detection');
@@ -101,6 +108,8 @@ export default function PreannotateControl({
   }, [conf, loadingModels, modelsResolved, providerCapability, requiresModelSelection, type]);
 
   const handleOpen = useCallback(() => {
+    setCompletion(null);
+    setDetailOpen(false);
     setOpen(true);
     void loadModels(taskId);
     if (requiresModelSelection) {
@@ -151,6 +160,8 @@ export default function PreannotateControl({
   }, [taskId, type]);
 
   const handleRun = useCallback(async () => {
+    setCompletion(null);
+    setDetailOpen(false);
     await start({
       taskId,
       sampleId,
@@ -158,10 +169,35 @@ export default function PreannotateControl({
       conf,
       onCompleted: async (job) => {
         await onCompleted?.(job);
+        if (isAiSingleImage) {
+          // Keep the dialog open and let the annotator inspect what the model
+          // actually received and returned. The count is read from the process
+          // snapshot after the backend has persisted it; fall back to a neutral
+          // wording when the snapshot is unavailable.
+          setCompletion({ boxCount: null });
+          if (sampleId) {
+            try {
+              const response = await getAiProcess(taskId, sampleId);
+              const boxCount = response?.data?.process?.box_count;
+              setCompletion({
+                boxCount: typeof boxCount === 'number' && Number.isFinite(boxCount) ? boxCount : null,
+              });
+            } catch {
+              // Keep the completion panel usable without an exact count.
+            }
+          }
+          return;
+        }
         setOpen(false);
       },
     });
-  }, [conf, includeDoneSamples, onCompleted, sampleId, start, taskId]);
+  }, [conf, includeDoneSamples, isAiSingleImage, onCompleted, sampleId, start, taskId]);
+
+  const handleClose = useCallback(() => {
+    setOpen(false);
+    setDetailOpen(false);
+    setCompletion(null);
+  }, []);
 
   const progressPercent = progress
     ? Math.round((progress.processed_count / Math.max(progress.sample_count, 1)) * 100)
@@ -215,7 +251,7 @@ export default function PreannotateControl({
         okText={isRunning ? '执行中...' : '开始执行'}
         cancelText="取消"
         onOk={handleRun}
-        onCancel={() => setOpen(false)}
+        onCancel={handleClose}
         okButtonProps={{
           disabled: (requiresModelSelection && !selectedModel)
             || isRunning,
@@ -289,8 +325,34 @@ export default function PreannotateControl({
               </Typography.Text>
             </div>
           )}
+
+          {isAiSingleImage && completion && (
+            <div
+              data-testid="ai-detection-completed"
+              style={{ padding: '10px 12px', border: '1px solid #b7eb8f', borderRadius: 6, background: '#f6ffed' }}
+            >
+              <Typography.Text>
+                AI目标检测完成，生成 {completion.boxCount ?? '若干'} 个框
+              </Typography.Text>
+              <Button
+                type="link"
+                style={{ padding: 0, marginLeft: 8 }}
+                onClick={() => setDetailOpen(true)}
+              >
+                点击详细查看
+              </Button>
+            </div>
+          )}
         </div>
       </Modal>
+      {isAiSingleImage && (
+        <AiDetectionProcessModal
+          open={detailOpen}
+          taskId={taskId}
+          sampleId={sampleId}
+          onClose={() => setDetailOpen(false)}
+        />
+      )}
     </>
   );
 }

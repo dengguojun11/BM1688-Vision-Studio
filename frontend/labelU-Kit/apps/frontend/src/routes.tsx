@@ -96,7 +96,7 @@ function Root() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // 如果是根路径，跳转到任务管理（以任务管理为首页）
+    // 如果是根路径，跳转到数据大屏（平台默认首页）。
     if (location.pathname === '/' || location.pathname === '') {
       navigate('/workspace');
     }
@@ -125,7 +125,12 @@ const routes: RouteObject[] = [
       {
         path: 'workspace',
         element: <WorkspacePage />,
-        handle: { crumb: () => '工作台' },
+        handle: { crumb: () => '数据大屏' },
+      },
+      {
+        path: 'workspace/workbench',
+        element: <WorkspacePage />,
+        handle: { crumb: () => '运行工作台' },
       },
       {
         path: 'workspace/evolution-screen',

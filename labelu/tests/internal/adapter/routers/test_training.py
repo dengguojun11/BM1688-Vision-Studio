@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -9,12 +10,47 @@ from labelu.internal.adapter.routers import training as training_router
 from labelu.internal.application.command.training import CreateTrainingJobCommand
 from labelu.internal.application.response.training import TrainingIterationPreviewResponse
 from labelu.internal.common.config import settings
+from labelu.internal.common.error_code import LabelUException
 from labelu.internal.common.idempotency import request_payload_hash
 from labelu.internal.domain.models.dataset import Dataset, DatasetVersion
 from labelu.internal.domain.models.auto_training import AutoTrainingPlan
 from labelu.internal.domain.models.task import Task
 from labelu.internal.domain.models.user import User
 from labelu.internal.domain.models.yolo_train_job import YoloTrainJob
+
+
+def test_unified_plate_recipe_binds_pose_profile_and_preset():
+    command = CreateTrainingJobCommand(
+        task_id=11,
+        algorithm_key="yolo_detection",
+        training_recipe_key="plate_detection_v1",
+    )
+    normalized = training_router._normalize_plate_training_contract(
+        command,
+        SimpleNamespace(job_type="plate_detection"),
+    )
+
+    assert normalized.rect_preset_slug == "plateDetection"
+    assert normalized.plate_training_target == "plate_detection"
+    assert normalized.model_weights == "yolov8n-pose.pt"
+    assert normalized.params["training_profile"] == "plate_detection_v1"
+    assert normalized.params["runtime_profile"] == "plate_detection_v1"
+    assert normalized.params["runtime_interface_version"] == 1
+
+
+def test_unified_plate_recipe_rejects_label_dimension_contract():
+    command = CreateTrainingJobCommand(
+        task_id=11,
+        algorithm_key="yolo_detection",
+        training_recipe_key="plate_detection_v1",
+        label_ids=[7],
+    )
+
+    with pytest.raises(LabelUException, match="不能按标签维度训练"):
+        training_router._normalize_plate_training_contract(
+            command,
+            SimpleNamespace(job_type="plate_detection"),
+        )
 
 
 def _dataset(db: Session, user_id: int, name: str = "训练数据") -> Dataset:
@@ -151,6 +187,39 @@ def test_training_eligible_tasks_forwards_multiple_dataset_scope(
     )
     assert response.status_code == 200, response.text
     assert calls == [{"page": 0, "size": 20, "dataset_ids": [17, 19]}]
+
+
+def test_training_eligible_tasks_forwards_plate_training_recipe(
+    client: TestClient,
+    testuser_token_headers: dict[str, str],
+    monkeypatch,
+):
+    calls = []
+
+    async def fake_candidates(db, current_user, **kwargs):
+        calls.append(kwargs)
+        return [], 0
+
+    monkeypatch.setattr(
+        training_router.task_service,
+        "list_task_dimension_training_candidates",
+        fake_candidates,
+    )
+    response = client.get(
+        "/api/v1/training/eligible-tasks",
+        params={
+            "training_dimension": "task",
+            "training_recipe_key": "  plate_detection_v1  ",
+            "page": 0,
+            "size": 20,
+        },
+        headers=testuser_token_headers,
+    )
+
+    assert response.status_code == 200, response.text
+    assert calls == [
+        {"page": 0, "size": 20, "training_recipe_key": "plate_detection_v1"}
+    ]
 
 
 def test_unified_training_contract_rejects_retired_project_parameter():

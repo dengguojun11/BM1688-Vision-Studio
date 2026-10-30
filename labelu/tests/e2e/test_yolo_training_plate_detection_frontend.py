@@ -44,6 +44,18 @@ def test_plate_training_target_is_submitted_and_locked_for_iteration():
     )
 
 
+def test_legacy_entry_recognizes_detection_profile_as_pose_only_plate_training():
+    source = TRAINING_PAGE.read_text(encoding="utf-8")
+
+    assert 'String(taskRecipe.recipe_key || "").trim() === "plate_detection_v1"' in source
+    assert "function isPlateCreateMode()" in source
+    assert "function isPlateDetectionCreateMode()" in source
+    assert "return \"plate_detection\";" in source
+    assert "if (isPlateCreateMode()) {" in source
+    assert "车牌检测数据：仅使用车牌框和四个定位点，不识别号码、颜色或车牌类型。" in source
+    assert "车牌检测结构：车牌框 + 四角点（仅定位，不识别号码、颜色或类型）" in source
+
+
 def test_plate_detection_detail_uses_single_model_artifacts():
     source = TRAINING_PAGE.read_text(encoding="utf-8")
 
@@ -51,6 +63,28 @@ def test_plate_detection_detail_uses_single_model_artifacts():
     assert 'buildOverviewActionButton("download", "下载 best.pt"' in source
     assert 'isPlateDetectionJob(row) ? "单模型 Pose 训练"' in source
     assert "if (!isPlateJob(d)) {" in source
+
+
+def test_training_observability_declares_detection_for_both_synced_assets():
+    asset_paths = (
+        REPO_ROOT / "frontend" / "extensions" / "assets" / "yolo_training_observability.js",
+        REPO_ROOT
+        / "frontend"
+        / "labelU-Kit"
+        / "apps"
+        / "frontend"
+        / "public"
+        / "assets"
+        / "yolo_training_observability.js",
+    )
+    for path in asset_paths:
+        source = path.read_text(encoding="utf-8")
+        render_start = source.index("function render(job)")
+        render_end = source.index("window.LabeluTrainingObservability", render_start)
+        render_source = source[render_start:render_end]
+        assert "var detection = isPlateDetectionJob(job);" in render_source
+        assert 'metricHtml("四角点 mAP50-95"' in render_source
+        assert "车牌框 + 四角点" in render_source
 
 
 def test_plate_profile_defaults_to_pose_bootstrap_weight():

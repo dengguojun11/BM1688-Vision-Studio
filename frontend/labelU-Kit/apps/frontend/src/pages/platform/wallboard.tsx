@@ -1,8 +1,9 @@
 import { ReloadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Empty, Space, Spin, Table, Tag } from 'antd';
+import { Alert, Button, Empty, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { Fragment, useState } from 'react';
+import styled from 'styled-components';
 
 import request from '@/api/request';
 import ServerSearchInput from '@/components/ServerSearchInput';
@@ -230,9 +231,21 @@ export function useWallboard(projectId?: number, enabled = true) {
 
 const WORK_TYPE_LABELS: Record<string, string> = {
   TRAINING: '模型训练',
+  YOLO_TRAIN: 'YOLO 模型训练',
+  YOLO_TRAINING: 'YOLO 模型训练',
+  YOLO_DETECTION: 'YOLO 目标检测训练',
+  PLATE_DETECTION: '车牌定位训练（车牌框 + 四角点）',
+  PLATE_DETECTION_V1: '车牌定位训练（车牌框 + 四角点）',
+  PLATE_RECOGNITION: '历史复合车牌训练（兼容）',
+  PLATE_RECOGNITION_V1: '历史复合车牌训练（兼容）',
   BM1688_COMPILE: 'BM1688 编译',
   EDGE_VALIDATION: '真机验证',
 };
+
+export function workTypeLabel(value: unknown): string {
+  const code = String(value || '').trim().toUpperCase();
+  return WORK_TYPE_LABELS[code] || '其他任务';
+}
 
 const WORK_STATUS_LABELS: Record<string, string> = {
   PENDING: '等待处理',
@@ -243,6 +256,89 @@ const WORK_STATUS_LABELS: Record<string, string> = {
   FAILED: '失败',
   CANCELLED: '已取消',
 };
+
+export type WorkbenchAlertPresentation = {
+  summary: string;
+  detail: string;
+  actionLabel: string;
+  actionPath: string;
+  rawMessage: string;
+};
+
+export function presentWorkbenchAlert(alert?: Row | null): WorkbenchAlertPresentation {
+  const type = String(alert?.type || alert?.job_type || '').toUpperCase();
+  const rawMessage = String(alert?.message || '').trim();
+  const normalizedMessage = rawMessage.toLowerCase();
+  const isPermissionFailure = normalizedMessage.includes('permission denied') || normalizedMessage.includes('权限');
+
+  if (type === 'EDGE_VALIDATION') {
+    return {
+      summary: '边端真机验证失败',
+      detail: isPermissionFailure ? '执行节点无法访问验证目录，请检查 Worker 的目录读写权限。' : '请在边端任务中心查看验证日志并重新处理。',
+      actionLabel: '查看边端任务',
+      actionPath: '/edge-task-center',
+      rawMessage,
+    };
+  }
+
+  if (type === 'BM1688_COMPILE') {
+    return {
+      summary: 'BM1688 编译失败',
+      detail: isPermissionFailure ? '执行节点无法访问编译目录，请检查 Worker 的目录读写权限。' : '请在模型中心查看编译产物和失败日志。',
+      actionLabel: '查看模型中心',
+      actionPath: '/models',
+      rawMessage,
+    };
+  }
+
+  if (type === 'TRAINING') {
+    return {
+      summary: '模型训练失败',
+      detail: isPermissionFailure ? '训练节点返回目录权限错误，请检查 Worker 运行目录后重试。' : '请在训练中心查看作业日志和失败原因。',
+      actionLabel: '查看训练中心',
+      actionPath: '/training',
+      rawMessage,
+    };
+  }
+
+  return {
+    summary: '运行记录失败',
+    detail: '请进入对应业务页面查看失败原因。',
+    actionLabel: '查看运行记录',
+    actionPath: '/training',
+    rawMessage,
+  };
+}
+
+const AlertDescription = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+
+  .alert-raw-error {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    color: #7f1d1d;
+    font-size: 12px;
+  }
+`;
+
+const AlertHeading = styled.div`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  .alert-action.ant-btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+
+  .alert-action.ant-btn:active {
+    transform: translateY(1px);
+  }
+`;
 
 export function WorkbenchActivity({
   jobs,
@@ -255,6 +351,7 @@ export function WorkbenchActivity({
   activitySearchDraft = '',
   onActivitySearchChange,
   onActivitySearchSubmit,
+  onAlertAction,
   loading,
   error,
   onRefresh,
@@ -269,13 +366,16 @@ export function WorkbenchActivity({
   activitySearchDraft?: string;
   onActivitySearchChange?: (value: string) => void;
   onActivitySearchSubmit?: (value: string) => void;
+  onAlertAction?: (path: string) => void;
   loading: boolean;
   error: unknown;
   onRefresh: () => void;
 }) {
   const submitActivitySearch = onActivitySearchSubmit || onActivitySearchChange;
+  const primaryAlert = alerts[0];
+  const alertPresentation = presentWorkbenchAlert(primaryAlert);
   const columns: ColumnsType<Row> = [
-    { title: '环节', dataIndex: 'job_type', key: 'job_type', render: (value) => WORK_TYPE_LABELS[String(value)] || '其他任务' },
+    { title: '环节', dataIndex: 'job_type', key: 'job_type', render: (value) => workTypeLabel(value) },
     { title: '任务编号', dataIndex: 'task_id', key: 'task_id', width: 110, render: (value) => value ? `#${value}` : '-' },
     {
       title: '状态', dataIndex: 'status', key: 'status', width: 110,
@@ -325,8 +425,37 @@ export function WorkbenchActivity({
           style={{ marginTop: 14 }}
           type="error"
           showIcon
-          message={`${Number(alertTotal || alerts.length)} 条失败记录待处理`}
-          description={alerts[0].message ? String(alerts[0].message) : '请进入对应业务详情查看失败原因。'}
+          message={
+            <AlertHeading>
+              <span>{Number(alertTotal || alerts.length)} 条失败记录待处理</span>
+              {onAlertAction ? (
+                <Button
+                  className="alert-action"
+                  type="link"
+                  size="small"
+                  onClick={() => onAlertAction(alertPresentation.actionPath)}
+                >
+                  {alertPresentation.actionLabel}
+                </Button>
+              ) : null}
+            </AlertHeading>
+          }
+          description={
+            <AlertDescription>
+              <span>{alertPresentation.summary}。{alertPresentation.detail}</span>
+              {alertPresentation.rawMessage ? (
+                <Tooltip title={alertPresentation.rawMessage}>
+                  <Typography.Text
+                    className="alert-raw-error"
+                    tabIndex={0}
+                    aria-label="查看原始错误"
+                  >
+                    查看原始错误
+                  </Typography.Text>
+                </Tooltip>
+              ) : null}
+            </AlertDescription>
+          }
         />
       )}
       {jobs.length > 0 ? (

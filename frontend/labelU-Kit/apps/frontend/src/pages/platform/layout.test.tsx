@@ -80,6 +80,33 @@ describe('PlatformLayout role navigation', () => {
     expect(screen.queryByRole('link', { name: '工作台' })).toBeNull();
   });
 
+  it('opens the root workspace directly as the chrome-free data screen', () => {
+    render(
+      <MemoryRouter initialEntries={['/workspace']}>
+        <PlatformLayout>
+          <div>默认数据大屏内容</div>
+        </PlatformLayout>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('默认数据大屏内容')).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: '主导航' })).toBeNull();
+  });
+
+  it('keeps the operational workbench inside the platform shell', () => {
+    render(
+      <MemoryRouter initialEntries={['/workspace/workbench']}>
+        <PlatformLayout>
+          <div>运行工作台内容</div>
+        </PlatformLayout>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText('运行工作台内容')).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: '主导航' })).toBeTruthy();
+    expect(screen.getByText('运行工作台')).toBeTruthy();
+  });
+
   it('allows the explicitly isolated visual preview without an auth token', () => {
     localStorage.removeItem('token');
     render(

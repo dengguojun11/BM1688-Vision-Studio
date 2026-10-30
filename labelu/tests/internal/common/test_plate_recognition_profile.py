@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from labelu.internal.common.plate_recognition_profile import (
+    DEFAULT_PLATE_DETECTION_CONFIG,
     DEFAULT_PLATE_RECOGNITION_CONFIG,
     audit_plate_sample,
     normalize_four_corners,
@@ -74,6 +75,79 @@ def test_normalize_plate_task_config_writes_complete_profile_and_keeps_other_too
     )
     assert polygon["config"]["attributes"][0]["value"] == "platePoint"
     assert task_config_matches_profile(normalized)
+
+
+def test_normalize_plate_detection_task_config_forces_exactly_four_polygon_points():
+    original = {
+        "tools": [
+            {
+                "tool": "rectTool",
+                "config": {
+                    "attributes": [
+                        {"key": "旧标签", "value": "doebleEP"},
+                    ]
+                },
+            },
+            {
+                "tool": "polygonTool",
+                "config": {
+                    "lowerLimitPointNum": 5,
+                    "upperLimitPointNum": 6,
+                },
+            },
+        ]
+    }
+
+    normalized = normalize_plate_recognition_task_config(
+        original, DEFAULT_PLATE_DETECTION_CONFIG
+    )
+
+    polygon = next(
+        item for item in normalized["tools"] if item["tool"] == "polygonTool"
+    )
+    assert polygon["config"]["lowerLimitPointNum"] == 4
+    assert polygon["config"]["upperLimitPointNum"] == 4
+    rect = next(item for item in normalized["tools"] if item["tool"] == "rectTool")
+    assert rect["config"]["attributes"] == [
+        {"key": "双层车牌", "value": "doubleEP", "color": "#ff6600", "attributes": []}
+    ]
+    assert normalized["defaultRectPresetId"] == "plateDetection"
+
+
+def test_detection_profile_audit_does_not_require_plate_attributes():
+    audit = audit_plate_sample(
+        {
+            "rectTool": {
+                "result": [
+                    {
+                        "label": "doubleEP",
+                        "x": 0,
+                        "y": 0,
+                        "width": 100,
+                        "height": 50,
+                    }
+                ]
+            },
+            "polygonTool": {
+                "result": [
+                    {
+                        "label": "platePoint",
+                        "points": [
+                            {"x": 10, "y": 10},
+                            {"x": 90, "y": 10},
+                            {"x": 90, "y": 40},
+                            {"x": 10, "y": 40},
+                        ],
+                    }
+                ]
+            },
+        },
+        DEFAULT_PLATE_DETECTION_CONFIG,
+    )
+
+    assert audit.kind == "positive"
+    assert audit.errors == ()
+    assert audit.instances[0].plate_number == ""
 
 
 def test_normalize_plate_sample_repairs_known_tokens_without_fabricating_values():

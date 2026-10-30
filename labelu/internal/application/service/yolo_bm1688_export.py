@@ -1331,12 +1331,11 @@ def _plate_compatibility_summary(
         scope_key = "plate_detection_component"
         scope_label = "车牌检测 Pose 组件"
         compiled_components = ["pose"]
-        expected_components = ["pose", "ocr", "color", "plate_type"]
-        missing_components = (
-            ["ocr", "color", "plate_type"]
-            if str(training_recipe_key or "") == "plate_recognition_v1"
-            else []
-        )
+        # A detection-only export is a complete artifact for its contract.
+        # Do not compare it with the historical four-component recognition
+        # pipeline merely because a legacy job still carries that recipe key.
+        expected_components = ["pose"]
+        missing_components = []
         if runtime_status == "pass":
             verdict = "component_compatible"
             verdict_label = "车牌检测组件可在 BM1688 运行"
@@ -1411,8 +1410,8 @@ def _plate_compatibility_summary(
         "verdict": verdict,
         "verdict_label": verdict_label,
         "release_scope_label": (
-            "仅检测组件，不代表完整车牌复合识别"
-            if is_detection and missing_components
+            "车牌框与四角点定位运行链路（不包含号码、颜色或类型识别）"
+            if is_detection
             else "完整复合识别运行链路"
         ),
     }

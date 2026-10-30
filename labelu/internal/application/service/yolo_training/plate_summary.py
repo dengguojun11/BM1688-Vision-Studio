@@ -158,7 +158,10 @@ def component_metrics(
     component_definitions: tuple[tuple[str, str], ...] = COMPONENT_DEFINITIONS,
 ) -> Optional[dict[str, Any]]:
     summary = _json_dict(metrics_summary)
-    if summary.get("training_profile") != "plate_recognition_v1":
+    if summary.get("training_profile") not in {
+        "plate_recognition_v1",
+        "plate_detection_v1",
+    }:
         return None
     components = summary.get("components") or {}
     result: dict[str, Any] = {}

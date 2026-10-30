@@ -164,6 +164,15 @@ describe('AnnotationPromptModal', () => {
       'person · 0.870',
     ]);
 
+    fireEvent.click(screen.getByTestId('trial-image-zoom-trigger'));
+    expect(await screen.findByText('试运行图片标注（放大查看）')).toBeTruthy();
+    expect(screen.getByTestId('trial-image-zoom-view')).toBeTruthy();
+    expect(screen.getAllByTestId('trial-zoom-bounding-box').length).toBe(2);
+    expect(screen.getAllByTestId('trial-zoom-bounding-box-label').map((node) => node.textContent)).toEqual([
+      'person · 0.950',
+      'person · 0.870',
+    ]);
+
     fireEvent.change(screen.getByLabelText('AI提示词编辑器'), {
       target: { value: '按 {{image_width}}x{{image_height}} 只输出 vehicle 框。' },
     });

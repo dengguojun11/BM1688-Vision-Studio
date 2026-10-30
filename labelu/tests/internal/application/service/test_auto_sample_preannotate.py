@@ -1252,3 +1252,293 @@ def test_auto_preannotate_uses_imported_tagtool_and_yolo_without_generic_ai(
     assert imported_tag_samples == [sample.id]
     assert imported_yolo_samples == [sample.id]
     assert generic_ai_samples == []
+
+
+def test_auto_preannotate_falls_back_to_ai_detection_without_yolo_model(
+    db: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "YOLO_TRAIN_ENABLED", False)
+    monkeypatch.setattr(auto_sample_service, "refresh_task_training_ready", lambda *args: None)
+    monkeypatch.setattr(
+        auto_sample_service.auto_label_mod,
+        "_configured_bbox_vision_available",
+        lambda: True,
+    )
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        auto_sample_service.auto_label_mod,
+        "_process_single_sample",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    user = db.query(User).filter(User.username == "test@example.com").first()
+    task = _create_image_task(
+        db,
+        created_by=user.id,
+        name="auto ai detection fallback",
+        config={
+            "tools": [
+                {
+                    "tool": "rectTool",
+                    "config": {"attributes": [{"key": "person", "value": "person"}]},
+                }
+            ]
+        },
+    )
+    attachment = _create_attachment(
+        db, task_id=task.id, created_by=user.id, filename="fallback.jpg"
+    )
+    with begin_transaction(db):
+        sample = crud_sample.batch(
+            db=db,
+            samples=[
+                TaskSample(
+                    task_id=task.id,
+                    file_id=attachment.id,
+                    created_by=user.id,
+                    updated_by=user.id,
+                    state="NEW",
+                    annotated_count=0,
+                    data=json.dumps({}, ensure_ascii=False),
+                )
+            ],
+        )[0]
+
+    auto_sample_service._run_auto_preannotate_sync(
+        task.id,
+        [sample.id],
+        user.id,
+        "pytest_ai_detection_fallback",
+    )
+
+    assert any(call.get("include_geometry_tools") is True for call in calls)
+    assert not any(call.get("include_geometry_tools") is False for call in calls)
+
+
+def test_auto_preannotate_does_not_persist_generated_geometry(
+    db: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "YOLO_TRAIN_ENABLED", False)
+    monkeypatch.setattr(auto_sample_service, "refresh_task_training_ready", lambda *args: None)
+    monkeypatch.setattr(
+        auto_sample_service.auto_label_mod,
+        "_configured_bbox_vision_available",
+        lambda: False,
+    )
+
+    user = db.query(User).filter(User.username == "test@example.com").first()
+    task = _create_image_task(
+        db,
+        created_by=user.id,
+        name="generated preview stays preview",
+        config={
+            "tools": [
+                {
+                    "tool": "rectTool",
+                    "config": {"attributes": [{"key": "person", "value": "person"}]},
+                }
+            ]
+        },
+    )
+    attachment = _create_attachment(
+        db, task_id=task.id, created_by=user.id, filename="preview.jpg"
+    )
+    with begin_transaction(db):
+        sample = crud_sample.batch(
+            db=db,
+            samples=[
+                TaskSample(
+                    task_id=task.id,
+                    file_id=attachment.id,
+                    created_by=user.id,
+                    updated_by=user.id,
+                    state="NEW",
+                    annotated_count=0,
+                    data=json.dumps({}, ensure_ascii=False),
+                )
+            ],
+        )[0]
+        crud_pre_annotation.batch(
+            db=db,
+            pre_annotations=[
+                TaskPreAnnotation(
+                    task_id=task.id,
+                    file_id=None,
+                    sample_name=attachment.filename,
+                    data=json.dumps(
+                        {
+                            "sample_name": attachment.filename,
+                            "annotations": {
+                                "rectTool": {
+                                    "toolName": "rectTool",
+                                    "result": [
+                                        {"label": "ai_preview", "x": 1, "y": 2, "width": 3, "height": 4}
+                                    ],
+                                }
+                            },
+                            "meta": {"source_type": "ai_generated", "preannotation_kind": "geometry"},
+                        },
+                        ensure_ascii=False,
+                    ),
+                    created_by=user.id,
+                    updated_by=user.id,
+                ),
+                TaskPreAnnotation(
+                    task_id=task.id,
+                    file_id=None,
+                    sample_name=attachment.filename,
+                    data=json.dumps(
+                        {
+                            "sample_name": attachment.filename,
+                            "annotations": {
+                                "rectTool": {
+                                    "toolName": "rectTool",
+                                    "result": [
+                                        {"label": "imported_label", "x": 5, "y": 6, "width": 7, "height": 8}
+                                    ],
+                                }
+                            },
+                            "meta": {"source_type": "experiment_dataset_metadata"},
+                        },
+                        ensure_ascii=False,
+                    ),
+                    created_by=user.id,
+                    updated_by=user.id,
+                ),
+            ],
+        )
+
+    auto_sample_service._run_auto_preannotate_sync(
+        task.id,
+        [sample.id],
+        user.id,
+        "pytest_generated_preview",
+    )
+
+    with session_scope() as verify_db:
+        persisted = crud_sample.get(db=verify_db, sample_id=sample.id)
+    sample_data = json.loads(persisted.data)
+    result_payload = sample_data.get("result")
+    if isinstance(result_payload, str):
+        result_payload = json.loads(result_payload)
+    labels = [item["label"] for item in result_payload["rectTool"]["result"]]
+    assert "imported_label" in labels
+    assert "ai_preview" not in labels
+
+
+def test_auto_preannotate_ai_detection_fallback_can_be_disabled(
+    db: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "YOLO_TRAIN_ENABLED", False)
+    monkeypatch.setattr(settings, "AUTO_PREANNOTATE_AI_DETECTION_ENABLED", False)
+    monkeypatch.setattr(auto_sample_service, "refresh_task_training_ready", lambda *args: None)
+    monkeypatch.setattr(
+        auto_sample_service.auto_label_mod,
+        "_configured_bbox_vision_available",
+        lambda: True,
+    )
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        auto_sample_service.auto_label_mod,
+        "_process_single_sample",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    user = db.query(User).filter(User.username == "test@example.com").first()
+    task = _create_image_task(
+        db,
+        created_by=user.id,
+        name="auto ai detection disabled",
+        config={
+            "tools": [
+                {
+                    "tool": "rectTool",
+                    "config": {"attributes": [{"key": "person", "value": "person"}]},
+                }
+            ]
+        },
+    )
+    attachment = _create_attachment(db, task_id=task.id, created_by=user.id, filename="disabled.jpg")
+    with begin_transaction(db):
+        sample = crud_sample.batch(
+            db=db,
+            samples=[
+                TaskSample(
+                    task_id=task.id,
+                    file_id=attachment.id,
+                    created_by=user.id,
+                    updated_by=user.id,
+                    state="NEW",
+                    annotated_count=0,
+                    data=json.dumps({}, ensure_ascii=False),
+                )
+            ],
+        )[0]
+
+    auto_sample_service._run_auto_preannotate_sync(task.id, [sample.id], user.id, "pytest_ai_disabled")
+
+    assert calls == []
+
+
+def test_auto_preannotate_ai_detection_fallback_respects_sample_cap(
+    db: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "YOLO_TRAIN_ENABLED", False)
+    monkeypatch.setattr(settings, "AUTO_PREANNOTATE_AI_DETECTION_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTO_PREANNOTATE_AI_DETECTION_MAX_SAMPLES", 1)
+    monkeypatch.setattr(auto_sample_service, "refresh_task_training_ready", lambda *args: None)
+    monkeypatch.setattr(
+        auto_sample_service.auto_label_mod,
+        "_configured_bbox_vision_available",
+        lambda: True,
+    )
+    calls: list[dict] = []
+    monkeypatch.setattr(
+        auto_sample_service.auto_label_mod,
+        "_process_single_sample",
+        lambda **kwargs: calls.append(kwargs),
+    )
+
+    user = db.query(User).filter(User.username == "test@example.com").first()
+    task = _create_image_task(
+        db,
+        created_by=user.id,
+        name="auto ai detection capped",
+        config={
+            "tools": [
+                {
+                    "tool": "rectTool",
+                    "config": {"attributes": [{"key": "person", "value": "person"}]},
+                }
+            ]
+        },
+    )
+    attachment = _create_attachment(db, task_id=task.id, created_by=user.id, filename="capped.jpg")
+    with begin_transaction(db):
+        sample = crud_sample.batch(
+            db=db,
+            samples=[
+                TaskSample(
+                    task_id=task.id,
+                    file_id=attachment.id,
+                    created_by=user.id,
+                    updated_by=user.id,
+                    state="NEW",
+                    annotated_count=0,
+                    data=json.dumps({}, ensure_ascii=False),
+                )
+            ],
+        )[0]
+
+    auto_sample_service._run_auto_preannotate_sync(
+        task.id,
+        [sample.id, sample.id + 100000],
+        user.id,
+        "pytest_ai_capped",
+    )
+
+    assert calls == []

@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import hashlib
 
 from sqlalchemy.orm import Session
 from fastapi.testclient import TestClient
@@ -134,6 +135,54 @@ class TestClassTaskAttachmentRouter:
             )
 
         assert second.status_code == 400
+
+    def test_upload_does_not_reuse_missing_hash_duplicate(
+        self, client: TestClient, testuser_token_headers: dict, db: Session
+    ) -> None:
+        task_response = client.post(
+            f"{settings.API_V1_STR}/tasks",
+            headers=testuser_token_headers,
+            json={"name": "stale-dedup-task"},
+        )
+        assert task_response.status_code == 201, task_response.text
+        task_id = task_response.json()["data"]["id"]
+        current_user = get_test_user(db)
+        source = Path("labelu/tests/data/test.png")
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+
+        with begin_transaction(db):
+            stale = crud_attachment.create(
+                db=db,
+                attachment=TaskAttachment(
+                    task_id=task_id,
+                    filename="stale.png",
+                    path=f"upload/{task_id}/stale.png",
+                    url="",
+                    created_by=current_user.id,
+                    updated_by=current_user.id,
+                    sha256=digest,
+                    size_bytes=source.stat().st_size,
+                    content_type="image/png",
+                ),
+            )
+            stale_id = int(stale.id)
+
+        with source.open(mode="rb") as file_handle:
+            response = client.post(
+                f"{settings.API_V1_STR}/tasks/{task_id}/attachments",
+                headers=testuser_token_headers,
+                files={"file": ("recovered.png", file_handle, "image/png")},
+            )
+
+        assert response.status_code == 201, response.text
+        replacement_id = int(response.json()["data"]["id"])
+        assert replacement_id != stale_id
+        db.expire_all()
+        retired = db.query(TaskAttachment).filter(TaskAttachment.id == stale_id).one()
+        replacement = db.query(TaskAttachment).filter(TaskAttachment.id == replacement_id).one()
+        assert retired.deleted_at is not None
+        assert replacement.deleted_at is None
+        assert (Path(settings.MEDIA_ROOT) / replacement.path).is_file()
 
     def test_upload_file_when_task_finished(
         self, client: TestClient, testuser_token_headers: dict, db: Session

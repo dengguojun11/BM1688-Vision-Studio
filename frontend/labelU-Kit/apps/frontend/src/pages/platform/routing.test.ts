@@ -4,7 +4,11 @@ import {
   calculateOnlineRate,
   evolutionErrorState,
   evolutionReviewErrorMessage,
+  isEvolutionScreenPath,
   isWallboardPollingAllowed,
+  isWorkspaceDataScreenPath,
+  isWorkspaceRootPath,
+  isWorkspaceWorkbenchPath,
   projectQueryKey,
   resolveProjectId,
   reviewReasonMissing,
@@ -80,5 +84,18 @@ describe('platform project routing', () => {
     expect(workspaceSummaryState({ loading: false, hasData: false, status: 204 })).toBe('empty');
     expect(workspaceSummaryState({ loading: false, hasData: false, online: false })).toBe('offline');
     expect(workspaceSummaryState({ loading: false, hasData: false, status: 500 })).toBe('error');
+  });
+});
+
+describe('workspace destinations', () => {
+  it('uses the root workspace as the data screen and keeps the workbench explicit', () => {
+    expect(isWorkspaceRootPath('/workspace')).toBe(true);
+    expect(isWorkspaceRootPath('/workspace/')).toBe(true);
+    expect(isWorkspaceDataScreenPath('/workspace')).toBe(true);
+    expect(isWorkspaceDataScreenPath('/workspace/evolution-screen/')).toBe(true);
+    expect(isEvolutionScreenPath('/workspace/evolution-screen')).toBe(true);
+    expect(isWorkspaceWorkbenchPath('/workspace/workbench')).toBe(true);
+    expect(isWorkspaceDataScreenPath('/workspace/workbench')).toBe(false);
+    expect(isEvolutionScreenPath('/workspace')).toBe(false);
   });
 });

@@ -253,6 +253,27 @@ class Settings(BaseSettings):
         le=8192,
         description="发送给目标检测视觉模型的临时图片最长边；0 表示保留原尺寸",
     )
+    AI_BBOX_COORDINATE_SPACE: str = Field(
+        "auto",
+        description=(
+            "目标检测模型返回坐标空间：auto=自动识别（模型图为大图且坐标全部落在 0-1000 时按"
+            " 0-1000 归一化处理），pixels=按模型输入图像素，normalized_0_1000=强制按 0-1000 归一化"
+        ),
+    )
+    AI_BBOX_WIDTH_CONVENTION: str = Field(
+        "auto",
+        description=(
+            "归一化坐标下模型返回的 width 语义：auto=自动识别（多数框 x+width 越界时按右边界 x2 处理），"
+            "size=宽，right_edge=右边界 x2"
+        ),
+    )
+    AI_BBOX_HEIGHT_CONVENTION: str = Field(
+        "auto",
+        description=(
+            "归一化坐标下模型返回的 height 语义：auto=自动识别（多数框 y+height 越界时按下边界 y2 处理），"
+            "size=高，bottom_edge=下边界 y2"
+        ),
+    )
 
     # Provider adapters are never registered implicitly. Set this explicit
     # switch only after the corresponding model endpoint has been verified.
@@ -305,6 +326,16 @@ class Settings(BaseSettings):
     AUTO_PREANNOTATE_WORKER_LEASE_SECONDS: int = 900
     AUTO_PREANNOTATE_WORKER_BATCH_LIMIT: int = 1
     AUTO_PREANNOTATE_MAX_CONCURRENT_JOBS: int = 1
+    # Automatic object detection runs the managed vision model per sample when
+    # no compatible YOLO model exists.  Keep it switchable and optionally cap
+    # the number of samples handled by one automatic job (0 = unlimited) so a
+    # large import cannot silently start hundreds of model calls.
+    AUTO_PREANNOTATE_AI_DETECTION_ENABLED: bool = True
+    AUTO_PREANNOTATE_AI_DETECTION_MAX_SAMPLES: int = Field(
+        0,
+        ge=0,
+        description="单个自动预标注作业最多处理多少张样本的目标检测回退；0 表示不限制",
+    )
     # Manual YOLO batch preannotation uses the same durable-worker boundary as
     # automatic sample preannotation.  Keep disabled until production has the
     # migration and a managed worker process.

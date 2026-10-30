@@ -239,6 +239,19 @@ def read_pre_annotation_file(attachment: TaskAttachment) -> List[dict]:
     
     except FileNotFoundError:
         raise LabelUException(status_code=404, code=ErrorCode.CODE_51001_TASK_ATTACHMENT_NOT_FOUND)
+    except LabelUException:
+        raise
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError, ValueError) as exc:
+        # A malformed upload is a client error, never a 500.
+        raise LabelUException(
+            code=ErrorCode.CODE_30002_VALIDATION_ERROR,
+            status_code=status.HTTP_400_BAD_REQUEST,
+            message=(
+                "预标注文件格式不正确："
+                "JSON/JSONL 需为 LabelU 导出格式（JSON 数组项包含 fileName 与 result 字符串）"
+                f"（{str(exc)[:160]}）"
+            ),
+        ) from exc
 
 async def create(
     db: Session, task_id: int, cmd: List[CreatePreAnnotationCommand], current_user: User

@@ -1,4 +1,5 @@
 import asyncio
+import json
 from contextlib import nullcontext
 from types import SimpleNamespace
 
@@ -283,7 +284,12 @@ def test_batch_formal_bbox_contract_does_not_require_legacy_rect_tool_config(mon
     monkeypatch.setattr(auto_label, "_filter_batch_targets", lambda samples, *args, **kwargs: samples)
     monkeypatch.setattr(auto_label, "begin_transaction", lambda _db: nullcontext())
     monkeypatch.setattr(auto_label, "assert_no_active_task_background_job", lambda **kwargs: None)
-    monkeypatch.setattr(auto_label.crud_auto_label_job, "create", lambda **kwargs: job)
+    created = {}
+    monkeypatch.setattr(
+        auto_label.crud_auto_label_job,
+        "create",
+        lambda **kwargs: (created.update(kwargs) or job),
+    )
     monkeypatch.setattr(auto_label, "biz_log", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         auto_label.asyncio,
@@ -303,4 +309,5 @@ def test_batch_formal_bbox_contract_does_not_require_legacy_rect_tool_config(mon
     assert result.id == 93
     assert result.task_id == 91
     assert result.sample_count == 1
+    assert json.loads(created["payload_json"]) == {"mode": "BOX_AND_TAGS"}
 
