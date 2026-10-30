@@ -22,7 +22,7 @@ import { isWorkspaceRootPath } from '../routing';
 import MetricChart from './MetricChart';
 import EvolutionDataFlow from './EvolutionDataFlow';
 import { previewLineage, previewMetrics, previewOverview } from './previewData';
-import { automationCopy, formatMetric, formatTime, GATE_LABELS, isPassedStatus, mergeMetricHistory, nodeProgress, pollingInterval, statusLabel, statusTone } from './cockpitUtils';
+import { automationCopy, formatMetric, formatTime, GATE_LABELS, isPassedStatus, mergeMetricHistory, metricHistoryAvailable, nodeProgress, pollingInterval, statusLabel, statusTone } from './cockpitUtils';
 import {
   AutomationBadge,
   BottomGrid,
@@ -35,6 +35,7 @@ import {
   EvolutionFlow,
   GateList,
   GateRow,
+  GovernanceNote,
   Hero,
   InsightBlock,
   JobItem,
@@ -150,7 +151,14 @@ export default function EvolutionCockpit() {
   });
   const lineage = lineageQuery.data;
   const selectedLineageSummary = overview.lineages.find((item) => item.id === selectedLineageId);
-  const nodes = lineage?.nodes || [];
+  const nodes = useMemo(
+    () => [...(lineage?.nodes || [])].sort((left, right) => {
+      const roundDifference = (left.round_no || 0) - (right.round_no || 0);
+      if (roundDifference !== 0) return roundDifference;
+      return String(left.created_at || left.id).localeCompare(String(right.created_at || right.id));
+    }),
+    [lineage?.nodes],
+  );
   const selectedJob = overview.active_jobs.find((item) => item.job_id === selectedJobId);
   const metricRows = metricState.jobId === (selectedJobId || null) ? metricState.rows : [];
   const latestMetricEpoch = metricRows.reduce<number | null>((latest, row) => {
@@ -177,10 +185,27 @@ export default function EvolutionCockpit() {
     }
   }, [metricsQuery.data, selectedJobId]);
 
+  useEffect(() => {
+    if (selectedNode && selectedNode.lineage_id !== selectedLineageId) {
+      setSelectedNode(null);
+    }
+  }, [selectedLineageId, selectedNode]);
+
+  useEffect(() => {
+    if (!selectedNode) return;
+    const refreshedNode = nodes.find((node) => node.id === selectedNode.id);
+    if (!refreshedNode) {
+      setSelectedNode(null);
+    } else if (refreshedNode !== selectedNode) {
+      setSelectedNode(refreshedNode);
+    }
+  }, [nodes, selectedNode]);
+
   const selectedNodeMetrics = selectedNode?.metrics;
   const snapshotRows = useMemo(() => selectedNodeMetrics && Object.keys(selectedNodeMetrics).length ? [{ ...selectedNodeMetrics, epoch: selectedNode?.round_no || 1 }] : [], [selectedNodeMetrics, selectedNode?.round_no]);
   const chartRows = metricMode === 'snapshot' ? snapshotRows : metricRows;
   const activeMetricNode = metricMode === 'snapshot' ? selectedNode : selectedJob;
+  const metricAvailable = metricHistoryAvailable(metricMode, metricRows.length, metricsQuery.data?.available);
   const automation = preview
     ? { label: '界面预览 · 演示数据', description: '仅用于查看驾驶舱视觉与交互，不代表真实训练或自动化运行状态。' }
     : automationCopy(overview.automation);
@@ -208,13 +233,14 @@ export default function EvolutionCockpit() {
   return (
     <Cockpit className={fullscreen ? 'is-fullscreen' : undefined}>
       <Hero>
-        <div>
+        <div className="hero-copy">
           <h1>模型自主进化中枢<span>Model evolution intelligence</span></h1>
           <p>让数据成为燃料，让训练持续发生。贯通难例回流、数据治理、模型训练、AI 评估与质量发布，见证每一代模型的真实进化。</p>
         </div>
         <div className="hero-actions">
           <AutomationBadge role="status" aria-label={automation.description} $tone={!preview && overview.automation.status === 'ENABLED' ? 'on' : 'off'} title={automation.description}><RobotOutlined />{automation.label}</AutomationBadge>
-          <Button aria-label="刷新进化数据" icon={<ReloadOutlined spin={overviewQuery.isFetching} />} onClick={() => { void overviewQuery.refetch(); void lineageQuery.refetch(); }} />
+          {!preview && <span className="hero-freshness" role="status">更新于 {formatTime(overview.generated_at)}</span>}
+          <Button title="刷新进化数据" aria-label="刷新进化数据" icon={<ReloadOutlined spin={overviewQuery.isFetching} />} onClick={() => { void overviewQuery.refetch(); void lineageQuery.refetch(); }} />
           <Button icon={<AppstoreOutlined />} onClick={() => navigate('/workspace/workbench')}>运行工作台</Button>
           {!defaultDataScreen && <Button icon={fullscreen ? <FullscreenExitOutlined /> : <ExpandOutlined />} onClick={toggleFullscreen}>{fullscreen ? '退出大屏' : '大屏模式'}</Button>}
         </div>
@@ -233,7 +259,7 @@ export default function EvolutionCockpit() {
         <Panel>
           <PanelTitle><div><h2>模型进化谱系</h2><p>Model lineages</p></div><span className="panel-extra">{overview.lineages.length} 条</span></PanelTitle>
           {overview.lineages.length ? <LineageList>
-            {overview.lineages.map((item) => <LineageItem key={item.id} type="button" $active={item.id === selectedLineageId} $tone={statusTone(item.status)} onClick={() => { setSelectedLineageId(item.id); setSelectedNode(null); setMetricMode('live'); }} aria-pressed={item.id === selectedLineageId}>
+            {overview.lineages.map((item) => <LineageItem key={item.id} type="button" title={item.name} $active={item.id === selectedLineageId} $tone={statusTone(item.status)} onClick={() => { setSelectedLineageId(item.id); setSelectedNode(null); setMetricMode('live'); }} aria-pressed={item.id === selectedLineageId}>
               <div className="lineage-top"><span className="lineage-name">{item.name}</span><StatusPill $tone={statusTone(item.status)}>{statusLabel(item.status)}</StatusPill></div>
               <div className="lineage-type">{item.series_type} · {item.source_type === 'PLAN' ? '自治计划' : '迭代链'}</div>
               <div className="lineage-meta"><span>{item.round_count} 轮 · {item.model_count} 模型</span><span className="lineage-score">mAP {formatMetric(item.best_metrics.map50_95 || item.latest_metrics.map50_95)}</span></div>
@@ -241,7 +267,7 @@ export default function EvolutionCockpit() {
           </LineageList> : <EmptyState>尚无模型进化谱系<br />从任务标注与首次训练开始，平台将在这里记录每一代模型。</EmptyState>}
         </Panel>
 
-        <Panel>
+        <Panel className="flow-panel">
           <PanelTitle><div><h2>自主进化闭环</h2><p>Data to train to evaluate to evolve</p></div><span className="panel-extra">{lineage?.name || selectedLineageSummary?.name || '等待谱系'}</span></PanelTitle>
           <EvolutionFlow className={preview ? 'has-preview' : undefined}>
             <EvolutionDataFlow active={preview || overview.summary.active_training_count > 0} preview={preview} />
@@ -272,10 +298,10 @@ export default function EvolutionCockpit() {
         <Panel className="intelligence-panel">
           <PanelTitle><div><h2>AI 进化决策</h2><p>Intelligence and governance</p></div><RobotOutlined style={{ color: 'var(--violet)' }} /></PanelTitle>
           {latestDecision ? <InsightBlock><div className="ai-label"><RobotOutlined /> AI evolution analyst</div><div className="ai-summary">{latestDecision.summary}</div><div className="ai-meta">{latestDecision.decision_type} · {latestDecision.provider_key || '策略引擎'}<br />{formatTime(latestDecision.created_at)}</div></InsightBlock> : <EmptyState>尚未形成 AI 决策<br />完成模型评估后，这里将呈现参数建议与进化判断。</EmptyState>}
-          <GateList aria-label="质量门禁汇总">
-            {overview.quality_gates.map((gate) => <GateRow key={gate.gate} $tone={statusTone(gate.status)}><span className="gate-icon">{isPassedStatus(gate.status) ? <CheckOutlined /> : <SafetyCertificateOutlined />}</span><span>{GATE_LABELS[gate.gate] || gate.gate}</span><span className="gate-count">{gate.pass_count} 通过 · {gate.pending_count} 待验证{gate.fail_count ? ` · ${gate.fail_count} 阻断` : ''}</span></GateRow>)}
+           <GateList aria-label="质量门禁汇总">
+             {overview.quality_gates.map((gate) => <GateRow key={gate.gate} $tone={statusTone(gate.status)}><span className="gate-icon">{isPassedStatus(gate.status) ? <CheckOutlined /> : <SafetyCertificateOutlined />}</span><span>{GATE_LABELS[gate.gate] || gate.gate}</span><span className="gate-count"><span className="gate-count-pass">{gate.pass_count} 通过</span><span className="gate-count-pending">{gate.pending_count} 待验证</span>{gate.fail_count ? <span className="gate-count-fail">{gate.fail_count} 阻断</span> : null}</span></GateRow>)}
           </GateList>
-          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid rgba(126,166,224,.1)', color: 'var(--subtle)', fontSize: 9, lineHeight: 1.7 }}>{automation.description}<br />自主决策 {overview.summary.autonomous_decision_count} 次 · 发布始终受质量门禁约束</div>
+           <GovernanceNote>{automation.description}<br />自主决策 {overview.summary.autonomous_decision_count} 次，发布始终受质量门禁约束。</GovernanceNote>
         </Panel>
       </MainGrid>
 
@@ -291,7 +317,7 @@ export default function EvolutionCockpit() {
 
         <Panel>
           <PanelTitle><div><h2>模型进化遥测</h2><p>{activeMetricNode ? `${activeMetricNode.name} · 真实逐轮指标` : 'Training telemetry'}</p></div>{selectedNode && <Button size="small" onClick={() => setMetricMode(metricMode === 'snapshot' ? 'live' : 'snapshot')}>{metricMode === 'snapshot' ? '实时曲线' : '节点快照'}</Button>}</PanelTitle>
-          <MetricChart history={chartRows} available={metricMode === 'snapshot' || metricsQuery.data?.available !== false} error={metricMode === 'live' ? metricsQuery.error : undefined} loading={metricMode === 'live' && metricsQuery.isFetching} onRetry={() => void metricsQuery.refetch()} />
+           <MetricChart history={chartRows} available={metricAvailable} error={metricMode === 'live' ? metricsQuery.error : undefined} loading={metricMode === 'live' && metricsQuery.isFetching} onRetry={() => void metricsQuery.refetch()} />
         </Panel>
 
         <Panel className="events-panel">

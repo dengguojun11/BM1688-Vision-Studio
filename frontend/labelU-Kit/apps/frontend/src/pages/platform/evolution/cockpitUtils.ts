@@ -9,6 +9,8 @@ export const STATUS_LABELS: Record<string, string> = {
   ATTENTION: '待介入',
   IDLE: '待命',
   FAILED: '失败',
+  FAIL: '已阻断',
+  ERROR: '错误',
   PASSED: '已通过',
   PASS: '已通过',
   BLOCKED: '已阻断',
@@ -34,7 +36,7 @@ export function statusTone(status?: string | null): 'active' | 'success' | 'dang
   const code = String(status || '').toUpperCase();
   if (['RUNNING', 'PROCESSING', 'PENDING', 'QUEUED'].includes(code)) return 'active';
   if (['COMPLETED', 'PASS', 'PASSED', 'PUBLISHED', 'CHAMPION'].includes(code)) return 'success';
-  if (['FAILED', 'BLOCKED', 'ERROR'].includes(code)) return 'danger';
+  if (['FAIL', 'FAILED', 'BLOCKED', 'ERROR'].includes(code)) return 'danger';
   if (['ATTENTION', 'WAITING', 'WAITING_FOR_DATA', 'WAITING_FOR_REVIEW', 'POLICY_REVIEW_REQUIRED'].includes(code)) return 'warning';
   return 'idle';
 }
@@ -80,6 +82,14 @@ export function mergeMetricHistory(current: TrainingMetrics[], incoming: Trainin
     rows.set(epoch, { ...rows.get(epoch), ...item, epoch });
   });
   return [...rows.values()].sort((a, b) => Number(a.epoch || 0) - Number(b.epoch || 0));
+}
+
+export function metricHistoryAvailable(
+  mode: 'live' | 'snapshot',
+  historyLength: number,
+  responseAvailable?: boolean,
+) {
+  return mode === 'snapshot' || historyLength > 0 || responseAvailable !== false;
 }
 
 export function pollingInterval(status?: EvolutionStatus | StageStatus, activeJobs = 0) {

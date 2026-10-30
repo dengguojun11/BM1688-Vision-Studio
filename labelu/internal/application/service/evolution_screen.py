@@ -73,6 +73,16 @@ def _status(value: Any) -> str:
     return str(getattr(value, "value", value) or "UNKNOWN").upper()
 
 
+def _canonical_gate_status(value: Any) -> str:
+    """Keep all evolution-screen gate payloads on one small status contract."""
+    code = _status(value)
+    if code in {"PASS", "PASSED", "SUCCESS", "SUCCEEDED", "COMPLETED", "PUBLISHED", "CHAMPION", "OK"}:
+        return "PASS"
+    if code in {"FAIL", "FAILED", "ERROR", "BLOCKED", "REJECTED"}:
+        return "FAIL"
+    return "PENDING"
+
+
 def _metric_number(metrics: dict[str, Any], key: str) -> float | None:
     value = metrics.get(key)
     if isinstance(value, bool):
@@ -216,7 +226,7 @@ def _quality_payload(job: YoloTrainJob, model: ModelVersion | None) -> dict[str,
             gates["conversion"] = "PASS"
         for evidence in sorted(getattr(model, "quality_evidence", []) or [], key=lambda item: (item.gate_type, item.revision)):
             if evidence.gate_type in gates:
-                gates[evidence.gate_type] = _status(evidence.status)
+                gates[evidence.gate_type] = _canonical_gate_status(evidence.status)
     return gates
 
 
@@ -541,7 +551,11 @@ def overview(db: Session, user: User) -> dict[str, Any]:
         })
     gate_summary = []
     for gate in GATE_TYPES:
-        values = [node["quality_gate"][gate] for node in nodes if node.get("quality_gate")]
+        values = [
+            _canonical_gate_status(node["quality_gate"].get(gate))
+            for node in nodes
+            if node.get("quality_gate")
+        ]
         gate_summary.append({
             "gate": gate, "pass_count": values.count("PASS"),
             "fail_count": values.count("FAIL"), "pending_count": values.count("PENDING"),

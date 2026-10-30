@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from labelu.internal.adapter.routers import evolution_screen as evolution_router
+from labelu.internal.application.service.evolution_screen import _canonical_gate_status
 from labelu.internal.domain.models.auto_training import AutoTrainingPlan
 from labelu.internal.domain.models.task import Task
 from labelu.internal.domain.models.yolo_eval_report import YoloEvalReport
@@ -185,3 +186,11 @@ def test_incremental_metrics_apply_epoch_cursor(
     assert payload["history"] == [{"epoch": 9, "map50": 0.7}]
     assert payload["next_after_epoch"] == 9
     assert payload["has_more"] is True
+
+
+def test_quality_gate_statuses_share_one_screen_contract():
+    assert _canonical_gate_status("PASS") == "PASS"
+    assert _canonical_gate_status("PASSED") == "PASS"
+    assert _canonical_gate_status("FAIL") == "FAIL"
+    assert _canonical_gate_status("BLOCKED") == "FAIL"
+    assert _canonical_gate_status("WAITING") == "PENDING"

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { EvolutionNode } from '@/api/services/evolution';
-import { automationCopy, formatMetric, isPassedStatus, mergeMetricHistory, nodeProgress, pollingInterval, statusTone } from './cockpitUtils';
+import { automationCopy, formatMetric, isPassedStatus, mergeMetricHistory, metricHistoryAvailable, nodeProgress, pollingInterval, statusTone } from './cockpitUtils';
 
 describe('evolution cockpit state helpers', () => {
   it('keeps automatic execution visibly disabled instead of implying activity', () => {
@@ -34,5 +34,11 @@ describe('evolution cockpit state helpers', () => {
   it('treats the backend PASS gate value as a passed state', () => {
     expect(statusTone('PASS')).toBe('success');
     expect(isPassedStatus('PASS')).toBe(true);
+  });
+
+  it('keeps an existing metric chart visible when an incremental poll has no new rows', () => {
+    expect(metricHistoryAvailable('live', 4, false)).toBe(true);
+    expect(metricHistoryAvailable('live', 0, false)).toBe(false);
+    expect(metricHistoryAvailable('snapshot', 0, false)).toBe(true);
   });
 });
