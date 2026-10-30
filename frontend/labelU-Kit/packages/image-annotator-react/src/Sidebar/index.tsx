@@ -4,7 +4,7 @@ import styled, { css } from 'styled-components';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/arrow.svg';
 import { useSample } from '@/context/sample.context';
 
-const Cards = styled.div`
+const Cards = styled.div.attrs({ className: 'labelu-image-sidebar-cards' })`
   display: flex;
   flex-direction: column;
   padding: 1rem;
@@ -14,7 +14,7 @@ const Cards = styled.div`
   overflow: auto;
 `;
 
-const Wrapper = styled.div<{ collapsed: boolean }>`
+const Wrapper = styled.div.attrs({ className: 'labelu-image-sidebar' })<{ collapsed: boolean }>`
   position: relative;
   flex-shrink: 0;
   background-color: #fff;

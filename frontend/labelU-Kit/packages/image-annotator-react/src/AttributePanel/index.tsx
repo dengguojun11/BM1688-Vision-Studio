@@ -29,7 +29,7 @@ import { tooltipStyle } from '@/Toolbar';
 import AsideAttributeItem, { AttributeAction, Header } from './AsideAttributeItem';
 import { isGlobalToolCompleted } from './globalCompletion';
 
-const Wrapper = styled.div<{ collapsed: boolean }>`
+const Wrapper = styled.div.attrs({ className: 'labelu-image-attribute-panel' })<{ collapsed: boolean }>`
   flex-shrink: 0;
   height: calc(100vh - var(--offset-top));
   overflow: auto;

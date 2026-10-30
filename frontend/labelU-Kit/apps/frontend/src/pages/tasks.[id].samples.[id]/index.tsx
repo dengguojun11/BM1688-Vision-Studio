@@ -299,6 +299,38 @@ const AnnotationPage = () => {
   }, [currentSampleConns, isCompareAccessMode, me.data, routeParams.sampleId, routeParams.taskId]);
   const isMeTheCurrentEditingUser = currentEditingUser?.user_id === me.data?.id;
   const [readySampleId, setReadySampleId] = useState<string | number>();
+  const annotationPageRef = useRef<HTMLDivElement | null>(null);
+  const [annotationViewportHeight, setAnnotationViewportHeight] = useState<number | null>(null);
+
+  // Fit the annotation workspace into the visible viewport so the toolbar,
+  // sample list and attribute panel stay reachable without page scrolling.
+  useEffect(() => {
+    const measure = () => {
+      const element = annotationPageRef.current;
+      if (!element) {
+        return;
+      }
+      const rect = element.getBoundingClientRect();
+      const main = element.closest('main');
+      const bottomPadding = main
+        ? Number.parseFloat(window.getComputedStyle(main).paddingBottom || '0') || 0
+        : 0;
+      const nextHeight = Math.max(320, Math.floor(window.innerHeight - rect.top - bottomPadding));
+      setAnnotationViewportHeight((previous) => (previous === nextHeight ? previous : nextHeight));
+    };
+
+    measure();
+    window.addEventListener('resize', measure);
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    if (observer && document.body) {
+      observer.observe(document.body);
+    }
+
+    return () => {
+      window.removeEventListener('resize', measure);
+      observer?.disconnect();
+    };
+  }, [task?.media_type]);
 
   useEffect(() => {
     setManualPreAnnotationLoaded(false);
@@ -798,6 +830,7 @@ const AnnotationPage = () => {
         toolbarRight={topActionContent}
         ref={imageAnnotationRef}
         onError={onError}
+        fillViewport
         // windows platform pixel issue
         offsetTop={configFromParent ? PREVIEW_OFFSET_TOP : OFFSET_TOP}
         editingSample={editingSample as ImageAnnotatorProps['editingSample']}
@@ -882,9 +915,24 @@ const AnnotationPage = () => {
           <Spin spinning />
         </LoadingWrapper>
       )}
-      <Wrapper flex="column" full loading={isLoading}>
-        {content}
-      </Wrapper>
+      <div
+        ref={annotationPageRef}
+        style={
+          task?.media_type === MediaType.IMAGE && annotationViewportHeight
+            ? {
+                height: `${annotationViewportHeight}px`,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                overflow: 'hidden',
+              }
+            : undefined
+        }
+      >
+        <Wrapper flex="column" full loading={isLoading}>
+          {content}
+        </Wrapper>
+      </div>
     </AnnotationContext.Provider>
   );
 };

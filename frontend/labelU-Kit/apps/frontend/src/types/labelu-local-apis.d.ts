@@ -14,5 +14,6 @@ declare module '@labelu/image-annotator-react' {
     overwriteExistingAnnotations?: boolean;
     replacePreAnnotationTools?: AllAnnotationType[];
     onReady?: (engine: ImageAnnotatorClass, url?: string | null) => void;
+    fillViewport?: boolean;
   }
 }

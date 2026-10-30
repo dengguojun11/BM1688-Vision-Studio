@@ -1,4 +1,4 @@
-import styled from 'styled-components';
+import styled, { css } from 'styled-components';
 import { useHotkeys } from 'react-hotkeys-hook';
 import {
   forwardRef,
@@ -207,7 +207,7 @@ const Wrapper = styled.div.attrs((props) => {
     ...props,
     className: 'labelu-image-annotator',
   };
-})`
+})<{ $fillViewport?: boolean }>`
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -217,11 +217,61 @@ const Wrapper = styled.div.attrs((props) => {
   .labelu-video-wrapper {
     flex: 1;
   }
+
+  ${({ $fillViewport }) =>
+    $fillViewport &&
+    css`
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
+
+      .labelu-image-annotator__content {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+      }
+
+      .labelu-image-sidebar,
+      .labelu-image-attribute-panel {
+        height: 100%;
+      }
+
+      .labelu-image-sidebar-cards {
+        height: 100%;
+      }
+
+      /* When the annotator fills the viewport, allow the top toolbar and its
+         right-side actions to wrap instead of overflowing horizontally. */
+      > div:first-child {
+        height: auto;
+        min-height: 56px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+        row-gap: 4px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+      }
+
+      > div:first-child > div:first-child {
+        flex-wrap: wrap;
+        min-width: 0;
+      }
+
+      > div:first-child > div:last-child {
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+    `}
 `;
 
 const Content = styled.div`
   flex: 1;
   display: flex;
+  min-height: 0;
 `;
 
 const ContentMid = styled.div`
@@ -283,6 +333,8 @@ export interface ImageAnnotatorProps {
   primaryColor?: string;
   toolbarExtra?: React.ReactNode;
   toolbarRight?: React.ReactNode;
+  /** Fill the parent container height and let the canvas/side panels scroll internally. */
+  fillViewport?: boolean;
 
   onError?: (error: { type: string; message: string; value?: any }) => void;
 
@@ -329,6 +381,7 @@ function ForwardAnnotator(
     primaryColor = '#007aff',
     toolbarExtra,
     toolbarRight,
+    fillViewport,
     preAnnotationLabels,
     preAnnotations,
     overwriteExistingAnnotations,
@@ -1253,10 +1306,13 @@ function ForwardAnnotator(
         <ToolContext.Provider value={toolContextValue}>
           <HistoryContext.Provider value={historyContextValue}>
             {/* @ts-ignore */}
-            <Wrapper style={{ '--color-primary': primaryColor, '--offset-top': `${offsetTop}px` }}>
+            <Wrapper
+              style={{ '--color-primary': primaryColor, '--offset-top': `${offsetTop}px` } as React.CSSProperties}
+              $fillViewport={fillViewport}
+            >
               <AnnotatorToolbar extra={toolbarExtra} right={toolbarRight} />
               <LabelSection />
-              <Content>
+              <Content className="labelu-image-annotator__content">
                 <Sidebar renderSidebar={renderSidebar} />
                 <ContentMid>
                   <AnnotationContainer ref={containerRef} />
