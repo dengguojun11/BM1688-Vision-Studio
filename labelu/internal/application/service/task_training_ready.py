@@ -167,10 +167,11 @@ def _can_update_audit_incrementally(audit: Optional[Dict[str, Any]]) -> bool:
     failed_samples = audit.get("failed_samples")
     if not isinstance(failed_samples, list):
         return False
-    # A capped list cannot be updated exactly after one of its rows becomes valid.
-    return int(audit["failed_samples_count"]) <= 50 and len(failed_samples) == int(
-        audit["failed_samples_count"]
-    )
+    # ``failed_samples`` is a display cache capped at 50 rows.  The counters
+    # above remain authoritative, so a capped list must not force a full audit
+    # of every sample (large tasks would otherwise re-audit thousands of rows
+    # on each annotation save).
+    return len(failed_samples) == min(int(audit["failed_samples_count"]), 50)
 
 
 def _apply_sample_audit_delta(

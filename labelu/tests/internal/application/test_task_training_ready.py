@@ -275,3 +275,37 @@ def test_sample_change_updates_cached_audit_without_loading_all_samples(monkeypa
     assert audit["failed_samples_count"] == 0
     assert audit["failed_samples"] == []
     assert task.status == TaskStatus.FINISHED.value
+
+
+def test_incremental_audit_accepts_capped_failed_sample_list():
+    audit = {
+        "total_samples": 1809,
+        "passed_samples": 1600,
+        "failed_samples_count": 209,
+        "failed_missing_tags_count": 9,
+        "failed_missing_rect_count": 0,
+        "failed_missing_geometry_count": 0,
+        "failed_geometry_count": 0,
+        "failed_incomplete_count": 200,
+        "failed_samples": [{"sample_id": index} for index in range(50)],
+        "training_ready": False,
+    }
+
+    assert svc._can_update_audit_incrementally(audit) is True
+
+
+def test_incremental_audit_rejects_uncapped_list_mismatch():
+    audit = {
+        "total_samples": 20,
+        "passed_samples": 10,
+        "failed_samples_count": 10,
+        "failed_missing_tags_count": 0,
+        "failed_missing_rect_count": 0,
+        "failed_missing_geometry_count": 0,
+        "failed_geometry_count": 0,
+        "failed_incomplete_count": 10,
+        "failed_samples": [{"sample_id": index} for index in range(9)],
+        "training_ready": False,
+    }
+
+    assert svc._can_update_audit_incrementally(audit) is False

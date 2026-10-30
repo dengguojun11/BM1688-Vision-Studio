@@ -39,7 +39,10 @@ from labelu.internal.application.service.task_background_jobs import (
     GROUP_TAGS,
     assert_no_active_task_background_job,
 )
-from labelu.internal.application.service.task_training_ready import refresh_task_training_ready
+from labelu.internal.application.service.task_training_ready import (
+    refresh_task_training_ready,
+    refresh_task_training_ready_after_sample_change,
+)
 from labelu.internal.domain.models.auto_label_job import AutoLabelStatus
 from labelu.internal.domain.models.pre_annotation import TaskPreAnnotation
 from labelu.internal.domain.models.sample import SampleState, TaskSample
@@ -1991,6 +1994,8 @@ async def create(
         cached_payload = _json_loads_maybe(latest_pre_annotation.data)
         if isinstance(cached_payload, dict):
             task_cfg_ai = resolve_ai_task_config(db, task)
+            previous_sample_audit = audit_one_sample(sample, task_cfg_ai)
+            previous_sample_state = str(sample.state or "")
             with begin_transaction(db):
                 changed = _apply_ai_global_tags_to_sample(
                     db=db,
@@ -2000,9 +2005,18 @@ async def create(
                     updated_by=current_user.id,
                 )
             if changed:
-                task_for_training_ready = crud_task.get(db=db, task_id=task_id)
-                if task_for_training_ready:
-                    refresh_task_training_ready(db, task_for_training_ready)
+                current_sample_audit = audit_one_sample(sample, task_cfg_ai)
+                if current_sample_audit != previous_sample_audit:
+                    task_for_training_ready = crud_task.get(db=db, task_id=task_id)
+                    if task_for_training_ready:
+                        refresh_task_training_ready_after_sample_change(
+                            db,
+                            task_for_training_ready,
+                            previous_audit=previous_sample_audit,
+                            current_audit=current_sample_audit,
+                            previous_state=previous_sample_state,
+                            current_state=str(sample.state or ""),
+                        )
         biz_log(
             "auto_label.reuse_cached",
             task_id=task_id,
@@ -2114,6 +2128,8 @@ async def create(
     )
     normalized_payload["meta"]["latency_ms"] = int((time.perf_counter() - start) * 1000)
 
+    previous_sample_audit = audit_one_sample(sample, task_cfg_ai)
+    previous_sample_state = str(sample.state or "")
     with begin_transaction(db):
         if existing_ai_annotations:
             crud_pre_annotation.delete(
@@ -2163,7 +2179,16 @@ async def create(
 
     task_for_training_ready = crud_task.get(db=db, task_id=task_id)
     if task_for_training_ready:
-        refresh_task_training_ready(db, task_for_training_ready)
+        current_sample_audit = audit_one_sample(sample, task_cfg_ai)
+        if current_sample_audit != previous_sample_audit:
+            refresh_task_training_ready_after_sample_change(
+                db,
+                task_for_training_ready,
+                previous_audit=previous_sample_audit,
+                current_audit=current_sample_audit,
+                previous_state=previous_sample_state,
+                current_state=str(sample.state or ""),
+            )
 
     created_pre_annotation = pre_annotations[0]
     meta = normalized_payload.get("meta", {})
