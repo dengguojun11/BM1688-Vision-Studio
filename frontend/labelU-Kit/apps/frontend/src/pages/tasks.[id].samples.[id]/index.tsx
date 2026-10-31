@@ -50,6 +50,7 @@ import AnnotationContext from './annotation.context';
 import { LoadingWrapper, Wrapper } from './style';
 import { getVisiblePreAnnotations, preAnnotationsHasGeometry } from './preAnnotationVisibility';
 import {
+  sampleHasGeometryAnnotations,
   shouldAutoLoadCanvasPreAnnotationsForSample,
 } from './preAnnotationLoading';
 import {
@@ -671,14 +672,20 @@ const AnnotationPage = () => {
           forcePreAnnotationPreview && effectiveOverwriteExistingAnnotations,
         // Uploaded pre-annotations stay reviewable after a reload; generated
         // batch rows only appear for unannotated samples or an explicit run.
-        allowGeometryForAnnotated: forcePreAnnotationPreview || hasUploadedPreAnnotation,
+        // A DONE/INCOMPLETE sample without any saved geometry is still
+        // unannotated: show its generated AI boxes so a finished batch run is
+        // visible instead of silently hiding the detection result.
+        allowGeometryForAnnotated:
+          forcePreAnnotationPreview ||
+          hasUploadedPreAnnotation ||
+          !sampleHasGeometryAnnotations(sample),
       }),
     [
       effectiveOverwriteExistingAnnotations,
       forcePreAnnotationPreview,
       hasUploadedPreAnnotation,
-      sample.data.state,
       preAnnotations,
+      sample,
     ],
   );
   const defaultPreAnnotations = useMemo(
