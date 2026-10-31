@@ -1,4 +1,4 @@
-import { Alert, Button, Empty, Input, Modal, Pagination, Popover, Spin } from 'antd';
+import { Alert, Button, Empty, Input, Modal, Pagination, Popover, Select, Spin } from 'antd';
 import { useNavigate, useRouteLoaderData, useSearchParams } from 'react-router-dom';
 import _ from 'lodash';
 import styled from 'styled-components';
@@ -11,6 +11,7 @@ import {
   searchTaskImages,
   type TaskImageSearchHit,
 } from '@/api/services/task';
+import request from '@/api/request';
 import { ResponsiveGrid } from '@/components/ResponsiveGrid';
 import type { TasksLoaderResult } from '@/loaders/task.loader';
 
@@ -23,6 +24,16 @@ type TranslationHook = () => {
   i18n: { language: string };
 };
 const useTranslationCompat = useTranslation as unknown as TranslationHook;
+
+type DatasetFilterOption = {
+  id: number;
+  name: string;
+  description?: string;
+  contractId?: number;
+  contractRevision?: number;
+  contractKind?: string;
+  labelNames?: string[];
+};
 
 const Wrapper = styled(FlexLayout)<{ $inIframe?: boolean }>`
   height: ${(p) => (p.$inIframe ? '100vh' : 'calc(100vh - var(--header-height))')};
@@ -487,7 +498,8 @@ const TaskListPanel = () => {
 
   const [imageQuery, setImageQuery] = useState('');
   const [taskSearchInput, setTaskSearchInput] = useState(taskSearch);
-  const [datasetSearchInput, setDatasetSearchInput] = useState(datasetSearch);
+  const [datasetFilterOptions, setDatasetFilterOptions] = useState<DatasetFilterOption[]>([]);
+  const [datasetFilterLoading, setDatasetFilterLoading] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchHits, setSearchHits] = useState<TaskImageSearchHit[]>([]);
@@ -496,26 +508,62 @@ const TaskListPanel = () => {
   const searchPageSize = 24;
   const searchSeqRef = useRef(0);
   useEffect(() => {
-    setDatasetSearchInput(datasetSearch);
-  }, [datasetSearch]);
-  useEffect(() => {
     setTaskSearchInput(taskSearch);
   }, [taskSearch]);
   useEffect(() => {
+    let cancelled = false;
+    setDatasetFilterLoading(true);
+    request
+      .get('/v1/datasets', { params: { page: 0, size: 500 } })
+      .then((response: any) => {
+        if (cancelled) return;
+        const rows = Array.isArray(response?.data) ? response.data : [];
+        setDatasetFilterOptions(
+          rows
+            .map((item: any) => ({
+              id: Number(item?.id),
+              name: String(item?.name || '').trim(),
+              description: item?.description ? String(item.description) : undefined,
+              contractId: item?.dataset_label_contract_id
+                ? Number(item.dataset_label_contract_id)
+                : undefined,
+              contractRevision: item?.dataset_label_contract_revision
+                ? Number(item.dataset_label_contract_revision)
+                : undefined,
+              contractKind: item?.dataset_label_contract_annotation_kind
+                ? String(item.dataset_label_contract_annotation_kind)
+                : undefined,
+              labelNames: Array.isArray(item?.dataset_labels)
+                ? item.dataset_labels
+                    .map((label: any) =>
+                      String(label?.label_key || label?.label_value || '').trim(),
+                    )
+                    .filter(Boolean)
+                : [],
+            }))
+            .filter((item: DatasetFilterOption) => item.id > 0 && item.name),
+        );
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setDatasetFilterLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
     const timer = window.setTimeout(() => {
       const normalizedTaskSearch = taskSearchInput.trim();
-      const normalizedDatasetSearch = datasetSearchInput.trim();
-      if (normalizedTaskSearch === taskSearch && normalizedDatasetSearch === datasetSearch) return;
+      if (normalizedTaskSearch === taskSearch) return;
       const next = new URLSearchParams(searchParams);
       next.set('page', '1');
       if (normalizedTaskSearch) next.set('q', normalizedTaskSearch);
       else next.delete('q');
-      if (normalizedDatasetSearch) next.set('dataset_search', normalizedDatasetSearch);
-      else next.delete('dataset_search');
       setSearchParams(next);
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [taskSearchInput, taskSearch, datasetSearchInput, datasetSearch, searchParams, setSearchParams]);
+  }, [taskSearchInput, taskSearch, searchParams, setSearchParams]);
   const runImageSearch = useCallback(
     async (keyword: string, page: number) => {
       const q = keyword.trim();
@@ -612,6 +660,57 @@ const TaskListPanel = () => {
     </div>
   );
 
+  const selectedDatasetId = Number(searchParams.get('dataset_id') || 0) || undefined;
+  const selectedDatasetContractId =
+    Number(searchParams.get('dataset_label_contract_id') || 0) || undefined;
+  const selectedDatasetFilterValue = selectedDatasetContractId
+    ? `contract:${selectedDatasetContractId}`
+    : selectedDatasetId
+    ? `dataset:${selectedDatasetId}`
+    : undefined;
+  const datasetFilterSelectOptions = useMemo(() => {
+    const datasetOptions = datasetFilterOptions.map((item) => ({
+      value: `dataset:${item.id}`,
+      label: item.name,
+    }));
+    const contractOptions = datasetFilterOptions
+      .filter((item) => item.contractId)
+      .map((item) => {
+        const kind =
+          item.contractKind === 'polygon'
+            ? '多边形'
+            : item.contractKind === 'bbox'
+            ? '矩形框'
+            : item.contractKind || '未设置';
+        const labels = (item.labelNames || []).slice(0, 3).join('/');
+        const suffix = labels ? ` · ${labels}` : '';
+        return {
+          value: `contract:${item.contractId}`,
+          label: `${item.name} · 标签契约 r${item.contractRevision ?? '?'} · ${kind}${suffix}`,
+        };
+      });
+    return [
+      ...(datasetOptions.length ? [{ label: '数据集', options: datasetOptions }] : []),
+      ...(contractOptions.length ? [{ label: '标签契约', options: contractOptions }] : []),
+    ];
+  }, [datasetFilterOptions]);
+  const handleDatasetFilterChange = useCallback(
+    (value?: string) => {
+      const next = new URLSearchParams(searchParams);
+      next.set('page', '1');
+      next.delete('dataset_search');
+      next.delete('dataset_id');
+      next.delete('dataset_label_contract_id');
+      if (typeof value === 'string' && value.startsWith('dataset:')) {
+        next.set('dataset_id', value.slice('dataset:'.length));
+      } else if (typeof value === 'string' && value.startsWith('contract:')) {
+        next.set('dataset_label_contract_id', value.slice('contract:'.length));
+      }
+      setSearchParams(next);
+    },
+    [searchParams, setSearchParams],
+  );
+
   return (
     <>
       <Body>
@@ -665,15 +764,24 @@ const TaskListPanel = () => {
                   </SearchField>
                   <SearchField>
                     数据集 / 标签契约
-                    <Input
+                    <Select
                       allowClear
-                      prefix={<SearchOutlined style={{ color: '#9ca3af' }} />}
-                      placeholder="输入数据集名称或标签契约名称"
-                      aria-label="搜索数据集或标签契约"
-                      value={datasetSearchInput}
-                      onChange={(e) => setDatasetSearchInput(e.target.value)}
+                      showSearch
+                      loading={datasetFilterLoading}
+                      optionFilterProp="label"
+                      placeholder={
+                        datasetSearch && !selectedDatasetFilterValue
+                          ? `已按名称筛选：${datasetSearch}`
+                          : '选择数据集或标签契约'
+                      }
+                      aria-label="选择数据集或标签契约"
+                      value={selectedDatasetFilterValue}
+                      onChange={handleDatasetFilterChange}
+                      options={datasetFilterSelectOptions}
+                      style={{ width: '100%' }}
+                      notFoundContent={datasetFilterLoading ? <Spin size="small" /> : '暂无数据集'}
                     />
-                    <small>按数据集名称或标签契约名称模糊搜索</small>
+                    <small>从数据集管理中选择数据集或标签契约进行筛选</small>
                   </SearchField>
                   <SearchField>
                     图片搜索
