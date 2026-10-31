@@ -349,7 +349,7 @@ export class PolygonTool extends Tool<PolygonData, PolygonStyle, PolygonToolOpti
           }),
         );
       } else {
-        if (this.sketch.shapes[0].coordinate.length + 1 > config.maxPointAmount!) {
+        if (this.sketch.shapes[0].coordinate.length > config.maxPointAmount!) {
           Tool.error({
             type: 'maxPointAmount',
             message: `Polygon must have at most ${config.maxPointAmount} points!`,
@@ -450,7 +450,7 @@ export class PolygonTool extends Tool<PolygonData, PolygonStyle, PolygonToolOpti
       }
 
       // 多边形增加一个点
-      if (this.sketch.shapes[0].coordinate.length + 1 > config.maxPointAmount!) {
+      if (this.sketch.shapes[0].coordinate.length > config.maxPointAmount!) {
         Tool.error({
           type: 'maxPointAmount',
           message: `Polygon must have at most ${config.maxPointAmount} points!`,
