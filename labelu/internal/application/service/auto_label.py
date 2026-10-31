@@ -1932,11 +1932,10 @@ def _filter_batch_targets(
 
 
 def _sample_batch_include_geometry(sample: TaskSample, requested_include_geometry: bool) -> bool:
-    return (
-        requested_include_geometry
-        and sample.state == SampleState.NEW.value
-        and not _sample_has_formal_geometry(sample)
-    )
+    # Detection batches must be able to fill samples that still lack geometry,
+    # including INCOMPLETE/DONE samples.  The formal-geometry guard is what
+    # protects existing human annotations, not the sample state.
+    return requested_include_geometry and not _sample_has_formal_geometry(sample)
 
 
 @log_business_operation("auto_label.sample")

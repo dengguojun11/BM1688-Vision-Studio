@@ -88,7 +88,7 @@ def test_batch_mode_is_forced_to_tags_only():
     assert _batch_mode_requests_geometry(BatchAutoLabelCommand(mode="BOX_AND_TAGS", include_geometry_tools=True)) is True
 
 
-def test_batch_box_mode_only_includes_geometry_for_new_samples_without_formal_geometry():
+def test_batch_box_mode_includes_geometry_for_samples_without_formal_geometry():
     new_without_geometry = TaskSample(
         state=SampleState.NEW.value,
         data=json.dumps({"result": json.dumps({"tagTool": {"toolName": "tagTool", "result": []}})}),
@@ -109,12 +109,16 @@ def test_batch_box_mode_only_includes_geometry_for_new_samples_without_formal_ge
         ),
     )
     incomplete_without_geometry = TaskSample(state=SampleState.INCOMPLETE.value, data=json.dumps({"result": "{}"}))
+    done_without_geometry = TaskSample(state=SampleState.DONE.value, data=json.dumps({"result": "{}"}))
 
     assert _sample_has_formal_geometry(new_without_geometry) is False
     assert _sample_has_formal_geometry(new_with_geometry) is True
     assert _sample_batch_include_geometry(new_without_geometry, True) is True
     assert _sample_batch_include_geometry(new_with_geometry, True) is False
-    assert _sample_batch_include_geometry(incomplete_without_geometry, True) is False
+    # Batch detection fills samples that still have no boxes, regardless of
+    # whether the sample was previously marked NEW/INCOMPLETE/DONE.
+    assert _sample_batch_include_geometry(incomplete_without_geometry, True) is True
+    assert _sample_batch_include_geometry(done_without_geometry, True) is True
     assert _sample_batch_include_geometry(new_without_geometry, False) is False
 
 
