@@ -664,6 +664,14 @@ const AnnotationPage = () => {
     void decodeImage(editingSample.url, 'high');
   }, [editingSample?.url, task?.media_type]);
 
+  const isAiGeneratedGeometryPreview = useMemo(() => {
+    const meta = (_.get(parsedCanvasPreAnnotation, 'meta', {}) ?? {}) as {
+      source_type?: unknown;
+      preannotation_kind?: unknown;
+    };
+    return meta.source_type === 'ai_generated' && meta.preannotation_kind === 'geometry';
+  }, [parsedCanvasPreAnnotation]);
+
   const visiblePreAnnotations = useMemo(
     () =>
       getVisiblePreAnnotations(sample.data.state, preAnnotations, {
@@ -674,16 +682,19 @@ const AnnotationPage = () => {
         // batch rows only appear for unannotated samples or an explicit run.
         // A DONE/INCOMPLETE sample without any saved geometry is still
         // unannotated: show its generated AI boxes so a finished batch run is
-        // visible instead of silently hiding the detection result.
+        // visible instead of silently hiding the detection result.  Only AI
+        // batch geometry gets this treatment; legacy YOLO rows stay hidden so
+        // a stale preview can never leak into an existing annotation.
         allowGeometryForAnnotated:
           forcePreAnnotationPreview ||
           hasUploadedPreAnnotation ||
-          !sampleHasGeometryAnnotations(sample),
+          (isAiGeneratedGeometryPreview && !sampleHasGeometryAnnotations(sample)),
       }),
     [
       effectiveOverwriteExistingAnnotations,
       forcePreAnnotationPreview,
       hasUploadedPreAnnotation,
+      isAiGeneratedGeometryPreview,
       preAnnotations,
       sample,
     ],
