@@ -1,10 +1,10 @@
 import { Alert, Button, Empty, Input, Modal, Pagination, Popover, Select, Spin } from 'antd';
 import { useNavigate, useRouteLoaderData, useSearchParams } from 'react-router-dom';
 import _ from 'lodash';
-import styled from 'styled-components';
+import styled, { keyframes } from 'styled-components';
 import { FlexLayout } from '@labelu/components-react';
 import { useTranslation } from '@labelu/i18n';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { DownOutlined, RightOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons';
 
 import {
@@ -34,6 +34,63 @@ type DatasetFilterOption = {
   contractKind?: string;
   labelNames?: string[];
 };
+
+const contractMarquee = keyframes`
+  0%, 12% {
+    transform: translateX(0);
+  }
+  70%, 86% {
+    transform: translateX(var(--contract-shift, 0px));
+  }
+  100% {
+    transform: translateX(0);
+  }
+`;
+
+const MarqueeViewport = styled.span`
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+`;
+
+const MarqueeTrack = styled.span<{ $shift: number; $duration: number }>`
+  display: inline-block;
+  padding-right: 1.25rem;
+  white-space: nowrap;
+  animation: ${contractMarquee} ${({ $duration }) => $duration}s linear infinite;
+  --contract-shift: ${({ $shift }) => `-${$shift}px`};
+`;
+
+function ScrollingLabel({ text }: { text: string }) {
+  const viewportRef = useRef<HTMLSpanElement>(null);
+  const trackRef = useRef<HTMLSpanElement>(null);
+  const [shift, setShift] = useState(0);
+
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (!viewportRef.current || !trackRef.current) return;
+      setShift(
+        Math.max(0, Math.ceil(trackRef.current.scrollWidth - viewportRef.current.clientWidth)),
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    if (viewportRef.current) observer.observe(viewportRef.current);
+    return () => observer.disconnect();
+  }, [text]);
+
+  const duration = Math.max(8, Math.min(24, shift / 10));
+
+  return (
+    <MarqueeViewport ref={viewportRef}>
+      <MarqueeTrack ref={trackRef} $shift={shift} $duration={duration}>
+        {text}
+      </MarqueeTrack>
+    </MarqueeViewport>
+  );
+}
 
 const Wrapper = styled(FlexLayout)<{ $inIframe?: boolean }>`
   height: ${(p) => (p.$inIframe ? '100vh' : 'calc(100vh - var(--header-height))')};
@@ -330,7 +387,9 @@ const SearchToolbar = styled.div`
 
 const SearchBarRow = styled.div`
   display: grid;
-  grid-template-columns: minmax(15rem, 1.15fr) minmax(15rem, 1fr) minmax(15rem, 0.85fr);
+  grid-template-columns:
+    minmax(15rem, 1.15fr) minmax(11rem, 0.8fr) minmax(13rem, 1fr)
+    minmax(14rem, 0.9fr);
   gap: 0.75rem;
   padding: 0.875rem;
   background: #fff;
@@ -663,47 +722,81 @@ const TaskListPanel = () => {
   const selectedDatasetId = Number(searchParams.get('dataset_id') || 0) || undefined;
   const selectedDatasetContractId =
     Number(searchParams.get('dataset_label_contract_id') || 0) || undefined;
-  const selectedDatasetFilterValue = selectedDatasetContractId
+  const selectedDatasetValue = selectedDatasetId ? `dataset:${selectedDatasetId}` : undefined;
+  const selectedContractValue = selectedDatasetContractId
     ? `contract:${selectedDatasetContractId}`
-    : selectedDatasetId
-    ? `dataset:${selectedDatasetId}`
     : undefined;
-  const datasetFilterSelectOptions = useMemo(() => {
-    const datasetOptions = datasetFilterOptions.map((item) => ({
-      value: `dataset:${item.id}`,
-      label: item.name,
-    }));
-    const contractOptions = datasetFilterOptions
-      .filter((item) => item.contractId)
-      .map((item) => {
-        const kind =
-          item.contractKind === 'polygon'
-            ? '多边形'
-            : item.contractKind === 'bbox'
-            ? '矩形框'
-            : item.contractKind || '未设置';
-        const labels = (item.labelNames || []).slice(0, 3).join('/');
-        const suffix = labels ? ` · ${labels}` : '';
-        return {
-          value: `contract:${item.contractId}`,
-          label: `${item.name} · 标签契约 r${item.contractRevision ?? '?'} · ${kind}${suffix}`,
-        };
-      });
-    return [
-      ...(datasetOptions.length ? [{ label: '数据集', options: datasetOptions }] : []),
-      ...(contractOptions.length ? [{ label: '标签契约', options: contractOptions }] : []),
-    ];
-  }, [datasetFilterOptions]);
+  const datasetSelectOptions = useMemo(
+    () =>
+      datasetFilterOptions.map((item) => ({
+        value: `dataset:${item.id}`,
+        label: item.name,
+      })),
+    [datasetFilterOptions],
+  );
+  const contractSelectOptions = useMemo(
+    () =>
+      datasetFilterOptions
+        .filter(
+          (item) =>
+            item.contractId &&
+            (!selectedDatasetId ||
+              item.id === selectedDatasetId ||
+              item.contractId === selectedDatasetContractId),
+        )
+        .map((item) => {
+          const kind =
+            item.contractKind === 'polygon'
+              ? '多边形'
+              : item.contractKind === 'bbox'
+              ? '矩形框'
+              : item.contractKind || '未设置';
+          const labels = (item.labelNames || []).slice(0, 4).join('/');
+          const suffix = labels ? ` · ${labels}` : '';
+          const plainLabel = `${item.name} · 标签契约 r${
+            item.contractRevision ?? '?'
+          } · ${kind}${suffix}`;
+          return {
+            value: `contract:${item.contractId}`,
+            label: plainLabel,
+            title: <ScrollingLabel text={plainLabel} />,
+            datasetId: item.id,
+          };
+        }),
+    [datasetFilterOptions, selectedDatasetContractId, selectedDatasetId],
+  );
   const handleDatasetFilterChange = useCallback(
     (value?: string) => {
       const next = new URLSearchParams(searchParams);
       next.set('page', '1');
       next.delete('dataset_search');
       next.delete('dataset_id');
+      const nextDatasetId =
+        typeof value === 'string' && value.startsWith('dataset:')
+          ? value.slice('dataset:'.length)
+          : undefined;
+      if (nextDatasetId) {
+        next.set('dataset_id', nextDatasetId);
+        if (selectedDatasetContractId) {
+          const contract = datasetFilterOptions.find(
+            (item) => item.contractId === selectedDatasetContractId,
+          );
+          if (contract && String(contract.id) !== nextDatasetId) {
+            next.delete('dataset_label_contract_id');
+          }
+        }
+      }
+      setSearchParams(next);
+    },
+    [datasetFilterOptions, searchParams, selectedDatasetContractId, setSearchParams],
+  );
+  const handleContractFilterChange = useCallback(
+    (value?: string) => {
+      const next = new URLSearchParams(searchParams);
+      next.set('page', '1');
+      next.delete('dataset_search');
       next.delete('dataset_label_contract_id');
-      if (typeof value === 'string' && value.startsWith('dataset:')) {
-        next.set('dataset_id', value.slice('dataset:'.length));
-      } else if (typeof value === 'string' && value.startsWith('contract:')) {
+      if (typeof value === 'string' && value.startsWith('contract:')) {
         next.set('dataset_label_contract_id', value.slice('contract:'.length));
       }
       setSearchParams(next);
@@ -763,25 +856,45 @@ const TaskListPanel = () => {
                     <small>支持模糊匹配任务名称、编号和状态</small>
                   </SearchField>
                   <SearchField>
-                    数据集 / 标签契约
+                    数据集
                     <Select
                       allowClear
                       showSearch
                       loading={datasetFilterLoading}
                       optionFilterProp="label"
                       placeholder={
-                        datasetSearch && !selectedDatasetFilterValue
+                        datasetSearch && !selectedDatasetValue
                           ? `已按名称筛选：${datasetSearch}`
-                          : '选择数据集或标签契约'
+                          : '选择数据集'
                       }
-                      aria-label="选择数据集或标签契约"
-                      value={selectedDatasetFilterValue}
+                      aria-label="选择数据集"
+                      value={selectedDatasetValue}
                       onChange={handleDatasetFilterChange}
-                      options={datasetFilterSelectOptions}
+                      options={datasetSelectOptions}
                       style={{ width: '100%' }}
                       notFoundContent={datasetFilterLoading ? <Spin size="small" /> : '暂无数据集'}
                     />
-                    <small>从数据集管理中选择数据集或标签契约进行筛选</small>
+                    <small>从数据集管理中选择数据集进行筛选</small>
+                  </SearchField>
+                  <SearchField>
+                    标签契约
+                    <Select
+                      allowClear
+                      showSearch
+                      loading={datasetFilterLoading}
+                      optionFilterProp="label"
+                      optionLabelProp="title"
+                      placeholder={selectedDatasetId ? '选择该数据集下的标签契约' : '选择标签契约'}
+                      aria-label="选择标签契约"
+                      value={selectedContractValue}
+                      onChange={handleContractFilterChange}
+                      options={contractSelectOptions}
+                      style={{ width: '100%' }}
+                      notFoundContent={
+                        datasetFilterLoading ? <Spin size="small" /> : '暂无标签契约'
+                      }
+                    />
+                    <small>长契约名会向左缓慢滚动展示</small>
                   </SearchField>
                   <SearchField>
                     图片搜索
