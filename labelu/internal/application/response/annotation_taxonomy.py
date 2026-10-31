@@ -12,6 +12,7 @@ class LabelPresetItemResponse(BaseModel):
     label_key: str
     label_value: str
     color: str
+    annotation_kind: str = "bbox"
     sort_order: int
 
 

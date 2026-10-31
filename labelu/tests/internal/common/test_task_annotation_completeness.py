@@ -112,6 +112,59 @@ def _sized_polygon_result(*, tag_value: str = "A", points=None):
     }
 
 
+def _plate_detection_config():
+    return {
+        "defaultRectPresetId": "plateDetection",
+        "tools": [
+            {
+                "tool": "rectTool",
+                "config": {
+                    "attributes": [{"key": "车牌", "value": "doubleEP"}]
+                },
+            },
+            {
+                "tool": "polygonTool",
+                "config": {
+                    "lowerLimitPointNum": 4,
+                    "upperLimitPointNum": 4,
+                    "attributes": [{"key": "关键点", "value": "platePoint"}],
+                },
+            },
+        ],
+    }
+
+
+def _plate_detection_result(*, rect=True, polygon=True):
+    result = {"width": 100, "height": 80}
+    if rect:
+        result["rectTool"] = {
+            "result": [
+                {
+                    "x": 10,
+                    "y": 10,
+                    "width": 80,
+                    "height": 30,
+                    "label": "doubleEP",
+                }
+            ]
+        }
+    if polygon:
+        result["polygonTool"] = {
+            "result": [
+                {
+                    "label": "platePoint",
+                    "points": [
+                        {"x": 12, "y": 12},
+                        {"x": 88, "y": 12},
+                        {"x": 88, "y": 38},
+                        {"x": 12, "y": 38},
+                    ],
+                }
+            ]
+        }
+    return result
+
+
 def test_list_required_global_tag_keys_from_tag_tool():
     keys = list_required_global_tag_keys(_task_config_with_tags_and_rect())
     assert keys == ["scene"]
@@ -177,42 +230,49 @@ def test_audit_one_polygon_sample_uses_configured_polygon_tool():
 
 
 def test_plate_detection_polygon_accepts_legacy_duplicate_closing_point():
-    cfg = {
-        "defaultRectPresetId": "plateDetection",
-        "tools": [
-            {
-                "tool": "polygonTool",
-                "config": {
-                    "lowerLimitPointNum": 4,
-                    "upperLimitPointNum": 4,
-                    "attributes": [{"key": "关键点", "value": "platePoint"}],
-                },
-            }
-        ],
-    }
-    result = {
-        "width": 100,
-        "height": 80,
-        "polygonTool": {
-            "result": [
-                {
-                    "label": "platePoint",
-                    "points": [
-                        {"x": 10, "y": 10},
-                        {"x": 90, "y": 10},
-                        {"x": 90, "y": 40},
-                        {"x": 10, "y": 40},
-                        {"x": 10, "y": 10},
-                    ],
-                }
-            ]
-        },
-    }
+    cfg = _plate_detection_config()
+    result = _plate_detection_result()
+    result["polygonTool"]["result"][0]["points"].append({"x": 12, "y": 12})
 
     row = audit_one_sample(_sample(result), cfg)
 
     assert row["ok"] is True
     assert row["geometry_annotation_ok"] is True
+
+
+def test_plate_detection_requires_rectangle_and_four_corners():
+    cfg = _plate_detection_config()
+
+    only_rect = audit_one_sample(
+        _sample(_plate_detection_result(rect=True, polygon=False)), cfg
+    )
+    assert only_rect["ok"] is False
+    assert only_rect["geometry_annotation_ok"] is False
+    assert only_rect["geometry_tool"] == "polygonTool"
+
+    only_polygon = audit_one_sample(
+        _sample(_plate_detection_result(rect=False, polygon=True)), cfg
+    )
+    assert only_polygon["ok"] is False
+    assert only_polygon["geometry_annotation_ok"] is False
+    assert only_polygon["geometry_tool"] == "rectTool"
+
+    complete = audit_one_sample(
+        _sample(_plate_detection_result(rect=True, polygon=True)), cfg
+    )
+    assert complete["ok"] is True
+    assert complete["geometry_annotation_ok"] is True
+    assert complete["geometry_tool"] == "rectTool"
+
+
+def test_plate_detection_does_not_require_recognition_attributes():
+    cfg = _plate_detection_config()
+    result = _plate_detection_result()
+    result["rectTool"]["result"][0]["attributes"] = {}
+
+    row = audit_one_sample(_sample(result), cfg)
+
+    assert row["ok"] is True
 
 
 def test_audit_one_polygon_sample_missing_geometry_is_incomplete():

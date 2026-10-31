@@ -50,8 +50,16 @@
       '<span class="lu-observe-sub">' + esc(sub || "") + '</span></article>';
   }
 
-  function isCompositePlateJob(job) {
+  function isPlateDetectionJob(job) {
     return !!(job && (
+      job.job_type === "plate_detection" ||
+      job.training_profile === "plate_detection_v1" ||
+      (job.dataset_manifest && job.dataset_manifest.format === "labelu_plate_detection_dataset_v1")
+    ));
+  }
+
+  function isCompositePlateJob(job) {
+    return !!(job && !isPlateDetectionJob(job) && (
       job.job_type === "plate_recognition" ||
       job.training_profile === "plate_recognition_v1" ||
       job.component_metrics ||
@@ -83,11 +91,14 @@
   function manifestHtml(job) {
     var dataset = job && job.dataset_manifest || null;
     var split = compositeSplitCounts(dataset);
+    var detection = isPlateDetectionJob(job);
     var composite = isCompositePlateJob(job);
     var classes = dataset && Array.isArray(dataset.class_names) ? dataset.class_names.length : 0;
     var splitTotal = Number(split.train || 0) + Number(split.val || 0) + Number(split.test || 0);
     var datasetCount = dataset && dataset.file_count != null ? dataset.file_count : splitTotal;
-    var datasetDimension = composite ? "组件 4 个" : ("类别 " + classes + " 个");
+    var datasetDimension = detection
+      ? "Pose：车牌框 + 四角点"
+      : composite ? "组件 4 个" : ("类别 " + classes + " 个");
     var datasetText = dataset
       ? ("文件 " + value(datasetCount, "0") + " 个 · " + datasetDimension + " · train/val/test " +
         value(split.train, "0") + "/" + value(split.val, "0") + "/" + value(split.test, "0"))
@@ -134,6 +145,7 @@
     });
     var val = job.training_val_metrics || {};
     var test = job.test_val_metrics || {};
+    var detection = isPlateDetectionJob(job);
     var composite = isCompositePlateJob(job);
     var componentProgress = job.component_progress || {};
     var componentMetrics = job.component_metrics || {};
@@ -143,7 +155,7 @@
     var quality = job.quality_assessment || {};
     var trainingQuality = quality.training_quality || {};
     var validation = job.validation_pass || {};
-    var progress = composite && componentProgress.summary
+    var progress = (detection || composite) && componentProgress.summary
       ? componentProgress.summary
       : job.current_epoch != null && job.epochs
       ? (String(job.current_epoch) + " / " + String(job.epochs))
@@ -164,7 +176,12 @@
     var datasetDetail = datasetReady ? "data.yaml 与 train/val/test 已固化" : "等待训练数据清单";
     var weightsStatus = job.weights_path ? "已生成" : (job.status === "COMPLETED" ? "未找到" : "等待训练完成");
     var weightsDetail = job.weights_path ? String(job.weights_path).split(/[\\/]/).pop() : "目标产物 best.pt";
-    var metricCards = composite
+    var metricCards = detection
+      ? metricHtml("Pose 进度", progress, "车牌框 + 四角点") +
+        metricHtml("车牌框 mAP50-95", number(pose.box_map50_95), "检测框") +
+        metricHtml("四角点 mAP50-95", number(pose.pose_map50_95), "关键点") +
+        metricHtml("训练结论", validationStatus, "Pose 指标判定")
+      : composite
       ? metricHtml("组件进度", progress, "Pose / OCR / 颜色 / 类型") +
         metricHtml("Pose mAP50-95", number(pose.box_map50_95) + " / " + number(pose.pose_map50_95), "车牌框 / 四角点") +
         metricHtml("OCR Test 准确率", percent(ocr.test && ocr.test.accuracy), value(ocr.test && ocr.test.total, "0") + " 张测试图片") +
@@ -179,8 +196,8 @@
       alertHtml(job) +
       '<div class="lu-observe-pipeline">' +
       stageHtml("数据准备", datasetStatus, datasetDetail) +
-      stageHtml(composite ? "组件训练" : "YOLO 训练", trainingStatus, value(job.train_phase_detail || job.progress_snapshot, "当前阶段")) +
-      stageHtml(composite ? "复合指标判定" : "指标验证", validationStatus, validationDetail) +
+      stageHtml(detection ? "Pose 训练" : (composite ? "组件训练" : "YOLO 训练"), trainingStatus, value(job.train_phase_detail || job.progress_snapshot, "当前阶段")) +
+      stageHtml(detection ? "Pose 指标判定" : (composite ? "复合指标判定" : "指标验证"), validationStatus, validationDetail) +
       stageHtml("PT 权重", weightsStatus, weightsDetail) +
       '</div>' +
       '<div class="lu-observe-metrics">' +

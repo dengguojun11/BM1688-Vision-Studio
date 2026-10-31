@@ -21,9 +21,10 @@ class LabelPresetItemInput(BaseModel):
     label_key: str = Field(max_length=128)
     label_value: str = Field(max_length=128)
     color: str = Field(max_length=32, description="如 #RRGGBB")
+    annotation_kind: str = Field(default="bbox", max_length=32)
     sort_order: int = Field(default=0)
 
-    @validator("label_key", "label_value", "color", pre=True)
+    @validator("label_key", "label_value", "color", "annotation_kind", pre=True)
     def _strip(cls, v):
         if v is None:
             return v
@@ -47,6 +48,12 @@ class LabelPresetItemInput(BaseModel):
             return "#1677ff"
         if not _COLOR_RE.match(v):
             raise ValueError("color 须为 #RRGGBB 六位十六进制色值")
+        return v
+
+    @validator("annotation_kind")
+    def _annotation_kind_supported(cls, v):
+        if v not in {"bbox", "polygon"}:
+            raise ValueError("annotation_kind 仅支持 bbox 或 polygon")
         return v
 
 
@@ -318,9 +325,10 @@ class CreateAnnotationLabelCommand(BaseModel):
 
     @validator("annotation_kind")
     def _kind(cls, value):
-        if value != "bbox":
-            raise ValueError("首期仅支持 bbox 标签")
-        return value
+        normalized = str(value or "").strip().lower()
+        if normalized not in {"bbox", "polygon"}:
+            raise ValueError("annotation_kind 仅支持 bbox 或 polygon")
+        return normalized
 
 
 class UpdateAnnotationLabelCommand(BaseModel):

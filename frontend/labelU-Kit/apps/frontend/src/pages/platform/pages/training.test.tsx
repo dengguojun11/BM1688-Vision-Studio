@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import request from '@/api/request';
 import { trainingQualityGateSummary, trainingRuntimeStatusLabel, trainingStatusLabel } from '../shared';
 import { trainingModelVersionLabel } from './training';
-import TrainingPage, { autoTrainingPlanStatusLabel, evaluationHubUrl, isPlateTrainingTarget, isRemoteNodeMissing, isUnsupportedGenericExecution, legacyTrainingJobUrl, mergeTrainingFormValues, parseTrainingRecipeRef, partitionAiIterationParams, pinIterationWeights, platformTrainingJobUrl, platformTrainingReportsUrl, PRECISION_OPTIONS, precisionOptionLabel, resolveDefaultTrainingContract, resolveTrainingTargetContract, shouldUseLegacyYoloCreate, TARGET_CHIP_OPTIONS, TRAINING_IMPORTED_MODEL_PAGE_SIZE, TRAINING_LABEL_PAGE_SIZE, trainingCandidateBrowserResult, trainingCandidateCanTrain, trainingCandidateContractKey, trainingCandidateRatioLabel, trainingCandidatesShareLabelContract, trainingCandidateSelectionSnapshotKey, trainingCandidateSnapshotKey, trainingCandidateState, trainingCandidateStateLabel, trainingCandidateStats, trainingCandidateQueryParams, trainingCandidateQueryParamsForDimension, trainingChipOptions, trainingCreateErrorMessage, trainingDatasetBrowserResult, trainingDatasetContractLabel, trainingDatasetDisplayLabel, trainingDatasetLabelCount, trainingDatasetLabelsForSelection, trainingDatasetSearchLabel, trainingDatasetVersionLabel, trainingDimensionLabel, trainingGlobalTagDimensionBrowserResult, trainingImportedModelBrowserResult, trainingIterationParentLabel, trainingIterationPolicyLabel, trainingLabelBrowserResult, trainingLabelIdsForCandidates, trainingModelVersionCompatibility, trainingModelVersionWeightFile, trainingProgressSummary, trainingSampleConditionsJson, trainingSampleConditionsKey, trainingTargetFromRecipe, trainingTargetOptions, trainingViewFromLocation, taskTrainingDatasetSelectionError, taskTrainingUsesMergedEndpoint } from './training';
+import TrainingPage, { autoTrainingPlanStatusLabel, evaluationHubUrl, isPlateTrainingTarget, isRemoteNodeMissing, isUnsupportedGenericExecution, legacyTrainingJobUrl, mergeTrainingFormValues, parseTrainingRecipeRef, partitionAiIterationParams, pinIterationWeights, platformTrainingJobUrl, platformTrainingReportsUrl, PRECISION_OPTIONS, precisionOptionLabel, resolveDefaultTrainingContract, resolveTrainingTargetContract, shouldUseLegacyYoloCreate, TARGET_CHIP_OPTIONS, TRAINING_IMPORTED_MODEL_PAGE_SIZE, TRAINING_LABEL_PAGE_SIZE, trainingCandidateBrowserResult, trainingCandidateCanTrain, trainingCandidateContractKey, trainingCandidateRatioLabel, trainingCandidatesShareLabelContract, trainingCandidateSelectionSnapshotKey, trainingCandidateSnapshotKey, trainingCandidateState, trainingCandidateStateLabel, trainingCandidateStats, trainingCandidateQueryParams, trainingCandidateQueryParamsForDimension, trainingChipOptions, trainingCreateErrorMessage, trainingDatasetBrowserResult, trainingDatasetContractLabel, trainingDatasetDisplayLabel, trainingDatasetLabelCount, trainingDatasetLabelsForSelection, trainingDatasetSearchLabel, trainingDatasetVersionLabel, trainingDimensionLabel, trainingEntryParamsFromLocation, trainingGlobalTagDimensionBrowserResult, trainingImportedModelBrowserResult, trainingIterationParentLabel, trainingIterationPolicyLabel, trainingLabelBrowserResult, trainingLabelIdsForCandidates, trainingModelVersionCompatibility, trainingModelVersionWeightFile, trainingProgressSummary, trainingSampleConditionsJson, trainingSampleConditionsKey, trainingTargetFromRecipe, trainingTargetOptions, trainingViewFromLocation, taskTrainingDatasetSelectionError, taskTrainingUsesMergedEndpoint } from './training';
 
 const taskSuperuserState = vi.hoisted(() => ({ value: true, fetched: true }));
 const resourcePageState = vi.hoisted(() => ({ props: null as any }));
@@ -422,8 +422,18 @@ describe('TrainingPage', () => {
       modelWeights: 'yolov8n-pose.pt',
     });
     expect(trainingTargetOptions(recipes).map((item) => item.value)).toEqual([
-      'generic_detection', 'plate_detection', 'plate_recognition',
+      'generic_detection', 'plate_detection',
     ]);
+    expect(trainingTargetOptions(recipes).some((item) => item.value === 'plate_recognition')).toBe(false);
+  });
+
+  it('normalizes legacy recognition deep links to the detection-only target', () => {
+    window.history.replaceState({}, '', '/training?task_id=42&training_target=plate_recognition');
+
+    expect(trainingEntryParamsFromLocation()).toEqual({
+      taskId: 42,
+      target: 'plate_detection',
+    });
   });
 
   it('shows real epoch progress without estimating from elapsed time', () => {

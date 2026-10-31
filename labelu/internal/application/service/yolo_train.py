@@ -4146,6 +4146,12 @@ async def create_train_job(
         else None
     )
     if requested_preset and requested_preset.training_profile in PLATE_PROFILE_NAMES:
+        if str(cmd.execution_mode or "local").strip().lower() == "remote":
+            raise LabelUException(
+                code=ErrorCode.CODE_30002_VALIDATION_ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message="车牌框 + 四角点 Pose 训练暂不支持远程训练，请选择本地训练",
+            )
         if retry_key and requested_preset.training_profile == "plate_recognition_v1":
             raise LabelUException(
                 code=ErrorCode.CODE_30004_PHASE_ONE_CAPABILITY_RETIRED,

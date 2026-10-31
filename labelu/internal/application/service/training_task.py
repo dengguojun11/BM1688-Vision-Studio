@@ -127,6 +127,8 @@ _CORRUPTED_NAME_MESSAGE = "训练任务名称疑似乱码，请使用 UTF-8 编�
 def _plate_target_for_profile(
     profile: str | None,
     requested_target: str | None,
+    *,
+    allow_legacy_recognition: bool = False,
 ) -> str | None:
     normalized_profile = str(profile or "").strip()
     requested = str(requested_target or "").strip()
@@ -146,6 +148,15 @@ def _plate_target_for_profile(
                 message="车牌检测预设只能训练车牌框与四角点",
             )
         return plate_recognition_train.PLATE_DETECTION_JOB_TYPE
+    if not allow_legacy_recognition:
+        raise LabelUException(
+            code=ErrorCode.CODE_30004_PHASE_ONE_CAPABILITY_RETIRED,
+            status_code=status.HTTP_409_CONFLICT,
+            message=(
+                "新建训练仅支持车牌框 + 四角点（仅定位）；"
+                "历史复合车牌识别仅允许读取和迭代"
+            ),
+        )
     if requested and requested not in plate_recognition_train.PLATE_JOB_TYPES:
         raise LabelUException(
             code=ErrorCode.CODE_30002_VALIDATION_ERROR,
@@ -1458,6 +1469,7 @@ def preview_label_dimension_training_task(
     *,
     current_user: User,
     cmd: PreviewLabelDimensionTrainingTaskCommand,
+    allow_legacy_recognition: bool = False,
 ) -> LabelDimensionTrainingPreviewResponse:
     cmd = _normalize_training_contract_command(cmd)
     _reject_plate_label_dimension_request(cmd)
@@ -1541,7 +1553,11 @@ def preview_label_dimension_training_task(
             message="复合训练预设不能与普通检测预设混合选择",
         )
     training_profile = next(iter(profiles), None)
-    _plate_target_for_profile(training_profile, cmd.plate_training_target)
+    _plate_target_for_profile(
+        training_profile,
+        cmd.plate_training_target,
+        allow_legacy_recognition=allow_legacy_recognition,
+    )
 
     task_query = crud_task.visible_query(
         db,
@@ -2477,7 +2493,10 @@ def create_label_dimension_training_task(
         selection_contract=cmd.selection_contract,
     )
     preview = preview_label_dimension_training_task(
-        db, current_user=current_user, cmd=preview_cmd
+        db,
+        current_user=current_user,
+        cmd=preview_cmd,
+        allow_legacy_recognition=bool(cmd.iteration_source_job_id),
     )
     # The preview is the authoritative candidate snapshot for this request.
     # This applies to both task-first and label-first creation: never silently
@@ -2551,6 +2570,7 @@ def create_label_dimension_training_task(
     plate_training_target = _plate_target_for_profile(
         preview.training_profile if is_plate_profile else None,
         cmd.plate_training_target,
+        allow_legacy_recognition=bool(cmd.iteration_source_job_id),
     )
     training_mode = (
         (

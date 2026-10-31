@@ -153,6 +153,29 @@ def _read_manifest(version_response):
 
 def test_label_subset_freeze_filters_historical_result_string_and_preserves_source(db):
     user, task, dataset, labels = _seed_two_label_task(db)
+    first_sample = (
+        db.query(TaskSample)
+        .filter(TaskSample.task_id == task.id)
+        .order_by(TaskSample.id)
+        .first()
+    )
+    payload = json.loads(first_sample.data)
+    result = json.loads(payload["result"])
+    result["polygonTool"] = {
+        "result": [
+            {
+                "label": "helmet",
+                "points": [{"x": 10, "y": 10}, {"x": 40, "y": 10}, {"x": 40, "y": 30}],
+            },
+            {
+                "label": "no_helmet",
+                "points": [{"x": 50, "y": 10}, {"x": 80, "y": 10}, {"x": 80, "y": 30}],
+            },
+        ]
+    }
+    payload["result"] = json.dumps(result, ensure_ascii=False)
+    first_sample.data = json.dumps(payload, ensure_ascii=False)
+    source_data_before = first_sample.data
     db.commit()
 
     subset = asyncio.run(
@@ -170,6 +193,10 @@ def test_label_subset_freeze_filters_historical_result_string_and_preserves_sour
         "rectTool"
     ]["result"]
     assert [item["label"] for item in subset_rects] == ["helmet"]
+    subset_polygons = json.loads(
+        subset_manifest["samples"][0]["annotation"]["result"]
+    )["polygonTool"]["result"]
+    assert [item["label"] for item in subset_polygons] == ["helmet"]
 
     original_data = (
         db.query(TaskSample)
@@ -178,8 +205,7 @@ def test_label_subset_freeze_filters_historical_result_string_and_preserves_sour
         .first()
         .data
     )
-    assert "no_helmet" not in json.loads(original_data)["result"]
-    assert json.loads(original_data)["result"]
+    assert original_data == source_data_before
 
     full = asyncio.run(
         dataset_service.ensure_training_version_for_task(

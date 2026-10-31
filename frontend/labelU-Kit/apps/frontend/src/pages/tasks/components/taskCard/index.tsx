@@ -16,6 +16,7 @@ import { MediaTypeText } from '@/constants/mediaType';
 import type { MediaType, TaskResponse } from '@/api/types';
 import { TaskStatus } from '@/api/types';
 import { jsonParse } from '@/utils';
+import { trainingEntryPath } from '@/utils/trainingEntry';
 import useMe from '@/hooks/useMe';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
 
@@ -167,7 +168,7 @@ const TaskCard = (props: TaskCardProps) => {
 
   const openTraining = (event: React.MouseEvent<HTMLElement>) => {
     event.stopPropagation();
-    navigate(`/training?task_id=${id}`);
+    navigate(trainingEntryPath(Number(id), cardInfo.dataset_id, cardInfo.config));
   };
 
   const handleCardKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {

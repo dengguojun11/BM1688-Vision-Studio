@@ -95,6 +95,7 @@ def _preset_to_resp(db: Session, p: LabelPreset) -> LabelPresetResponse:
                 label_key=label.label_key,
                 label_value=label.label_value,
                 color=label.color,
+                annotation_kind=str(label.annotation_kind or "bbox"),
                 sort_order=relation.sort_order,
             )
             for relation, label in normalized
@@ -121,6 +122,20 @@ def _preset_to_resp(db: Session, p: LabelPreset) -> LabelPresetResponse:
                 label_key=i.label_key,
                 label_value=i.label_value,
                 color=i.color,
+                annotation_kind=str(
+                    (
+                        by_value.get(str(i.label_value or "").strip().lower())
+                        .annotation_kind
+                        if by_value.get(str(i.label_value or "").strip().lower())
+                        else (
+                            "polygon"
+                            if str(i.label_value or "").strip().lower()
+                            == "platepoint"
+                            else "bbox"
+                        )
+                    )
+                    or "bbox"
+                ),
                 sort_order=i.sort_order,
             )
             for i in items
@@ -540,6 +555,7 @@ def _canonicalize_preset_items(db: Session, cmd_items, label_ids: list[int] | No
                 "label_key": row.label_key,
                 "label_value": row.label_value,
                 "color": row.color,
+                "annotation_kind": str(row.annotation_kind or "bbox"),
                 "sort_order": index,
             }
             for index, row in enumerate(labels)
@@ -569,7 +585,14 @@ def _canonicalize_preset_items(db: Session, cmd_items, label_ids: list[int] | No
                 label_key=item["label_key"],
                 label_value=item["label_value"],
                 normalized_label_value=normalized,
-                annotation_kind="bbox",
+                annotation_kind=str(
+                    item.get("annotation_kind")
+                    or (
+                        "polygon"
+                        if normalized == "platepoint"
+                        else "bbox"
+                    )
+                ),
                 color=item["color"],
                 status="active",
                 version=1,
@@ -602,6 +625,14 @@ def _label_preset_items_payload(cmd_items) -> list[dict]:
             "label_key": i.label_key,
             "label_value": i.label_value,
             "color": i.color,
+            "annotation_kind": str(
+                getattr(i, "annotation_kind", None)
+                or (
+                    "polygon"
+                    if str(i.label_value or "").strip().lower() == "platepoint"
+                    else "bbox"
+                )
+            ).strip().lower(),
             "sort_order": i.sort_order,
         }
         for i in cmd_items
@@ -623,7 +654,16 @@ async def label_preset_create(
 ) -> LabelPresetResponse:
     normalized_items = _canonicalize_preset_items(db, cmd.items, cmd.label_ids)
     payload_items = [
-        {key: row[key] for key in ("label_key", "label_value", "color", "sort_order")}
+        {
+            key: row[key]
+            for key in (
+                "label_key",
+                "label_value",
+                "color",
+                "annotation_kind",
+                "sort_order",
+            )
+        }
         for row in normalized_items
     ]
     slug = cmd.slug
@@ -699,7 +739,13 @@ async def label_preset_update(
         replace_items = [
             {
                 key: item[key]
-                for key in ("label_key", "label_value", "color", "sort_order")
+                for key in (
+                    "label_key",
+                    "label_value",
+                    "color",
+                    "annotation_kind",
+                    "sort_order",
+                )
             }
             for item in normalized_items
         ]
@@ -886,15 +932,18 @@ async def apply_label_preset_to_task(
         [_rect_attribute_from_label(label) for _, label in normalized_rows]
         if normalized_rows
         else [
-            {"key": i.label_key, "value": i.label_value, "color": i.color}
+            {
+                "key": i.label_key,
+                "value": i.label_value,
+                "color": i.color,
+            }
             for i in preset_items
         ]
     )
 
     if preset.training_profile in {PLATE_RECOGNITION_PROFILE, PLATE_DETECTION_PROFILE}:
-        # 一期新任务只允许使用普通目标检测的矩形框。复合车牌预设
-        # 依赖 polygonTool/四角点，历史任务仍可读取，但不能再应用到
-        # 没有旧复合配置的新任务。
+        # 新车牌检测任务使用 rectTool + polygonTool 四个定位点；历史复合
+        # 识别预设仍可读取，但不能应用到没有旧复合配置的新任务。
         existing_config = _parse_config(task.config)
         if (
             preset.training_profile == PLATE_RECOGNITION_PROFILE
@@ -904,8 +953,8 @@ async def apply_label_preset_to_task(
                 code=ErrorCode.CODE_30002_VALIDATION_ERROR,
                 status_code=status.HTTP_409_CONFLICT,
                 message=(
-                    "一期车牌训练只支持矩形框。请使用普通目标检测预设，"
-                    "创建“车牌”或“数字位置”标签；历史复合车牌任务仅允许查看和续用。"
+                    "历史复合车牌识别预设包含号码、颜色和类型属性，不能用于新的车牌定位训练。"
+                    "请使用车牌检测预设（车牌框+四个定位点）；历史复合车牌任务仅允许查看和续用。"
                 ),
             )
         profile = parse_profile_config(
@@ -1092,7 +1141,6 @@ async def apply_labels_to_task(
         task.dataset_label_contract_id = int(dataset_contract.id)
     else:
         resolved_scope = resolved_scope or "FULL"
-    attrs = [_rect_attribute_from_label(row) for row in labels]
     cfg = _parse_config(config if config is not None else task.config)
     tools = cfg.setdefault("tools", [])
     requested_tool_name = str(tool_name or "").strip() or None
@@ -1102,32 +1150,78 @@ async def apply_labels_to_task(
             status_code=status.HTTP_400_BAD_REQUEST,
             message=f"不支持为该工具配置任务标签: {requested_tool_name}",
         )
-    label_tool_idx, label_tool_name = _task_label_tool_index(tools, requested_tool_name)
-    if requested_tool_name and label_tool_name != requested_tool_name:
-        raise LabelUException(
-            code=ErrorCode.CODE_30002_VALIDATION_ERROR,
-            status_code=status.HTTP_400_BAD_REQUEST,
-            message=f"当前配置中不存在标注工具: {requested_tool_name}",
+
+    # A dataset contract is an ordered, immutable snapshot.  Materialize its
+    # geometry lists as separate drawing tools before applying the legacy
+    # single-tool path; otherwise a caller that happens to have rectTool
+    # active would silently move polygon labels into the rectangle tool.
+    geometry_snapshot = None
+    if dataset_contract is not None:
+        try:
+            raw_snapshot = json.loads(dataset_contract.labels_snapshot_json or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raw_snapshot = []
+        if isinstance(raw_snapshot, list):
+            selected_id_set = {int(value) for value in label_ids}
+            geometry_snapshot = [
+                item
+                for item in raw_snapshot
+                if isinstance(item, dict)
+                and int(item.get("label_id") or 0) in selected_id_set
+            ]
+    elif any(
+        str(getattr(row, "annotation_kind", "bbox") or "bbox").strip().lower()
+        == "polygon"
+        for row in labels
+    ):
+        geometry_snapshot = contract_service.labels_snapshot(labels)
+
+    geometry_materialized = False
+    if geometry_snapshot:
+        generated = contract_service.task_config_from_label_snapshot(
+            geometry_snapshot,
+            base_config=cfg,
         )
-    if label_tool_idx is None:
-        tools.append(
-            {"tool": "rectTool", "config": _merge_rect_tool_config(None, attrs)}
+        if generated.get("tools"):
+            cfg = generated
+            tools = cfg.setdefault("tools", [])
+            geometry_materialized = True
+
+    if not geometry_materialized:
+        attrs = [_rect_attribute_from_label(row) for row in labels]
+        label_tool_idx, label_tool_name = _task_label_tool_index(
+            tools, requested_tool_name
         )
-    elif label_tool_name == "rectTool":
-        previous = (
-            tools[label_tool_idx].get("config")
-            if isinstance(tools[label_tool_idx].get("config"), dict)
-            else {}
-        )
-        tools[label_tool_idx]["config"] = _merge_rect_tool_config(previous, attrs)
-    else:
-        previous = (
-            tools[label_tool_idx].get("config")
-            if isinstance(tools[label_tool_idx].get("config"), dict)
-            else {}
-        )
-        tools[label_tool_idx]["config"] = _merge_task_label_tool_config(previous, attrs)
-    contract_label_ids = _task_contract_label_ids(tools) or label_ids
+        if requested_tool_name and label_tool_name != requested_tool_name:
+            raise LabelUException(
+                code=ErrorCode.CODE_30002_VALIDATION_ERROR,
+                status_code=status.HTTP_400_BAD_REQUEST,
+                message=f"当前配置中不存在标注工具: {requested_tool_name}",
+            )
+        if label_tool_idx is None:
+            tools.append(
+                {"tool": "rectTool", "config": _merge_rect_tool_config(None, attrs)}
+            )
+        elif label_tool_name == "rectTool":
+            previous = (
+                tools[label_tool_idx].get("config")
+                if isinstance(tools[label_tool_idx].get("config"), dict)
+                else {}
+            )
+            tools[label_tool_idx]["config"] = _merge_rect_tool_config(previous, attrs)
+        else:
+            previous = (
+                tools[label_tool_idx].get("config")
+                if isinstance(tools[label_tool_idx].get("config"), dict)
+                else {}
+            )
+            tools[label_tool_idx]["config"] = _merge_task_label_tool_config(
+                previous, attrs
+            )
+
+    contract_label_ids = (
+        list(label_ids) if geometry_materialized else _task_contract_label_ids(tools) or label_ids
+    )
     contract_service.active_labels_by_ids(db, contract_label_ids)
     if dataset_contract is not None:
         final_ids = {int(value) for value in contract_label_ids}
@@ -1150,7 +1244,8 @@ async def apply_labels_to_task(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 message="FULL 任务必须覆盖数据集契约全部标签",
             )
-    cfg.pop("defaultRectPresetId", None)
+    if not geometry_materialized:
+        cfg.pop("defaultRectPresetId", None)
     with begin_transaction(db):
         contract_service.create_contract(
             db,

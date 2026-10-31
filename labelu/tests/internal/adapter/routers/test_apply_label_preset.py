@@ -156,7 +156,7 @@ def test_apply_plate_label_preset_is_blocked_for_new_task(
         json={"preset_id": preset_id},
     )
     assert apply_response.status_code == 409
-    assert "只支持矩形框" in apply_response.json().get("msg", "")
+    assert "车牌框+四个定位点" in apply_response.json().get("msg", "")
 
 
 def test_patch_new_task_cannot_introduce_legacy_plate_polygon_config(
@@ -181,4 +181,4 @@ def test_patch_new_task_cannot_introduce_legacy_plate_polygon_config(
         },
     )
     assert patch_response.status_code == 409
-    assert "只支持矩形框" in patch_response.json().get("msg", "")
+    assert "车牌框+四个定位点" in patch_response.json().get("msg", "")

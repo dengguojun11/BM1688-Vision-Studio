@@ -193,7 +193,24 @@ assert.match(
 assert.match(html, /id="labelModeTaskWrap"/);
 assert.match(html, /训练输出结构/);
 assert.match(html, /可训练样本 ["'] \+ \(task\.done_count \|\| 0\) \+ ["'] 张 · 训练类别/);
-assert.match(html, /标注结构：车牌框 \+ 四角点/);
+assert.match(html, /使用车牌框和四个定位点训练 Pose 模型/);
+const autoTrainingSeriesSelect = requireMatch(
+  /<select id="autoTrainingSeriesType">([\s\S]*?)<\/select>/,
+  "automatic training series selector",
+)[1];
+const evaluationSeriesSelect = requireMatch(
+  /<select id="evaluationDatasetSeriesType">([\s\S]*?)<\/select>/,
+  "evaluation dataset series selector",
+)[1];
+assert.match(autoTrainingSeriesSelect, /value="plate_detection"[^>]*>车牌框 \+ 四角点（仅定位）/);
+assert.match(evaluationSeriesSelect, /value="plate_detection"[^>]*>车牌框 \+ 四角点（仅定位）/);
+assert.doesNotMatch(autoTrainingSeriesSelect, /value="plate_recognition"/);
+assert.doesNotMatch(evaluationSeriesSelect, /value="plate_recognition"/);
+assert.match(html, /function validateNewTrainingSeries\(selectId\)/);
+assert.match(html, /autoTrainingBasicValidation\(\)[\s\S]*validateNewTrainingSeries\("autoTrainingSeriesType"\)/);
+assert.match(html, /createEvaluationDatasetFromEditor\(\)[\s\S]*validateNewTrainingSeries\("evaluationDatasetSeriesType"\)/);
+assert.match(html, /autoGenerateEvaluationDatasetsFromEditor\(\)[\s\S]*validateNewTrainingSeries\("evaluationDatasetSeriesType"\)/);
+assert.match(html, /历史复合车牌计划仅可查看，不能修改/);
 assert.match(
   html,
   /function setCreateMode\(mode\)[\s\S]*if \(labelModeTaskWrap && !isLabelMode\) labelModeTaskWrap\.style\.display = "none"/,

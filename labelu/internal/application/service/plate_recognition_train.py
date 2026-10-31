@@ -13,13 +13,15 @@ from datetime import datetime
 from dataclasses import dataclass, field
 from itertools import zip_longest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from labelu.internal.application.service.yolo_dataset import _parse_sample_annotation
 from labelu.internal.adapter.persistence import (
     crud_annotation_taxonomy,
+    crud_dataset,
     crud_task,
     crud_training_task,
     crud_yolo_train_job,
@@ -36,6 +38,7 @@ from labelu.internal.common.plate_recognition_profile import (
     task_config_matches_profile,
 )
 from labelu.internal.common.training_sample import is_explicit_negative_sample
+from labelu.internal.common.storage import get_storage_backend
 from labelu.internal.domain.models.sample import SampleState, TaskSample
 from labelu.internal.domain.models.yolo_train_job import YoloTrainJob, YoloTrainStatus
 
@@ -286,6 +289,413 @@ def _job_work_root(job_id: int) -> Path:
     )
 
 
+def _resolve_plate_attachment_local_path(
+    attachment: Any,
+    *,
+    cache_root: Path | None = None,
+) -> Path | None:
+    """Resolve a plate image from local, global storage, or a data source."""
+
+    if not attachment:
+        return None
+    cached = getattr(attachment, "_plate_local_path", None)
+    if cached:
+        cached_path = Path(cached)
+        if cached_path.is_file():
+            return cached_path
+
+    storage = get_storage_backend()
+    is_external = bool(getattr(attachment, "data_source_id", None))
+    from labelu.internal.application.service.attachment import (
+        resolve_attachment_local_path,
+    )
+
+    try:
+        resolved = resolve_attachment_local_path(attachment)
+    except Exception:
+        resolved = None
+    # In global remote-storage mode, a local path may be a stale leftover from
+    # an earlier run.  Only trust the attachment resolver for local uploads or
+    # data-source objects; global remote objects are downloaded below.
+    if resolved is not None and resolved.is_file() and (
+        not getattr(storage, "is_remote", False) or is_external
+    ):
+        return resolved
+
+    object_key = str(getattr(attachment, "path", "") or "").strip()
+    if not object_key:
+        return None
+    # A storage backend may expose a local path even when the attachment is a
+    # legacy row without the data-source relationship loaded.
+    try:
+        direct = storage.get_local_path(object_key)
+    except Exception:
+        direct = None
+    if direct is not None and direct.is_file() and (
+        not getattr(storage, "is_remote", False) or is_external
+    ):
+        return direct
+    if not getattr(storage, "is_remote", False):
+        return None
+
+    root = Path(cache_root or (Path(settings.MEDIA_ROOT) / ".plate_source_cache"))
+    filename = str(getattr(attachment, "filename", "") or "")
+    suffix = Path(filename or object_key).suffix or ".bin"
+    identity = "|".join(
+        (
+            str(getattr(attachment, "id", "") or ""),
+            object_key,
+            str(getattr(attachment, "sha256", "") or ""),
+            str(getattr(attachment, "source_sha256", "") or ""),
+        )
+    )
+    target = root / f"{hashlib.sha256(identity.encode('utf-8')).hexdigest()}{suffix}"
+    expected_sha = str(
+        getattr(attachment, "sha256", None)
+        or getattr(attachment, "source_sha256", None)
+        or ""
+    ).strip().lower()
+    temporary: Path | None = None
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_suffix(target.suffix + ".part")
+        temporary.unlink(missing_ok=True)
+        storage.download_file(object_key, temporary)
+        if not temporary.is_file():
+            return None
+        temporary.replace(target)
+    except Exception:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+        return None
+    if expected_sha:
+        try:
+            if _sha256_file(target) != expected_sha:
+                target.unlink(missing_ok=True)
+                return None
+        except OSError:
+            return None
+    return target if target.is_file() else None
+
+
+def _plate_dataset_manifest_reference(job: Any) -> dict[str, Any] | None:
+    try:
+        params = json.loads(getattr(job, "hyperparams_json", None) or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    reference = params.get("dataset_manifest") if isinstance(params, dict) else None
+    if not isinstance(reference, dict):
+        return None
+    if not str(reference.get("manifest_rel_path") or "").strip():
+        return None
+    return reference
+
+
+def _manifest_annotation_result(value: Any) -> dict[str, Any] | None:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if not isinstance(value, dict):
+        return None
+    result = value.get("result")
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if isinstance(result, dict):
+        return result
+    if any(key in value for key in ("rectTool", "polygonTool")):
+        return value
+    return None
+
+
+def _validate_plate_detection_manifest(
+    manifest: Any,
+    *,
+    version: Any,
+) -> list[dict[str, Any]]:
+    """Validate the frozen mixed-geometry contract and return its samples."""
+
+    if not isinstance(manifest, dict):
+        raise RuntimeError("车牌检测冻结数据集清单格式无效")
+    contract = manifest.get("annotation_contract")
+    labels = contract.get("labels") if isinstance(contract, dict) else None
+    if not isinstance(labels, list):
+        raise RuntimeError("车牌检测冻结标签契约缺少 labels")
+
+    def label_value(row: dict[str, Any]) -> str:
+        return str(row.get("label_value") or row.get("label_key") or "").strip().lower()
+
+    required = {"doubleep": "bbox", "platepoint": "polygon"}
+    display_names = {"doubleep": "doubleEP", "platepoint": "platePoint"}
+    matched: dict[str, dict[str, Any]] = {}
+    for row in labels:
+        if not isinstance(row, dict):
+            continue
+        token = label_value(row)
+        if token in required:
+            if token in matched:
+                raise RuntimeError(f"车牌检测标签契约重复定义 {token}")
+            matched[token] = row
+    if set(matched) != set(required):
+        raise RuntimeError(
+            "车牌检测标签契约必须同时包含 doubleEP(bbox) 和 platePoint(polygon)"
+        )
+    for token, expected_kind in required.items():
+        actual_kind = str(matched[token].get("annotation_kind") or "").strip().lower()
+        if actual_kind != expected_kind:
+            raise RuntimeError(
+                f"车牌检测标签契约 {display_names[token]} 的几何类型必须是 {expected_kind}"
+            )
+
+    for manifest_key, version_attr in (
+        ("dataset_contract_id", "dataset_label_contract_id"),
+        ("dataset_contract_revision", "dataset_contract_revision"),
+        ("label_set_signature", "label_set_signature"),
+        ("class_order_signature", "class_order_signature"),
+    ):
+        manifest_value = contract.get(manifest_key) if isinstance(contract, dict) else None
+        version_value = getattr(version, version_attr, None)
+        if manifest_value not in (None, "") and version_value not in (None, ""):
+            if str(manifest_value).strip() != str(version_value).strip():
+                raise RuntimeError(
+                    f"车牌检测冻结标签契约 {manifest_key} 与数据集版本不一致"
+                )
+
+    samples = manifest.get("samples")
+    if not isinstance(samples, list) or not samples:
+        raise RuntimeError("车牌检测冻结数据集清单没有样本快照")
+    seen_ids: set[int] = set()
+    validated: list[dict[str, Any]] = []
+    for item in samples:
+        if not isinstance(item, dict):
+            raise RuntimeError("车牌检测冻结样本快照格式无效")
+        try:
+            sample_id = int(item.get("sample_id"))
+        except (TypeError, ValueError):
+            sample_id = 0
+        if sample_id <= 0 or sample_id in seen_ids:
+            raise RuntimeError("车牌检测冻结样本快照存在重复或无效 sample_id")
+        split = str(item.get("split") or "").strip().lower()
+        if split not in {"train", "val", "test"}:
+            raise RuntimeError(f"车牌检测冻结样本 {sample_id} 缺少有效 split")
+        result = _manifest_annotation_result(item.get("annotation"))
+        if result is None:
+            raise RuntimeError(f"车牌检测冻结样本 {sample_id} 缺少标注快照")
+        audit = audit_plate_sample(
+            result,
+            parse_profile_config(None, profile=PLATE_DETECTION_PROFILE),
+        )
+        if audit.kind == "invalid":
+            detail = "; ".join(audit.errors) or "几何标注无效"
+            if detail.lower().startswith("plate polygon"):
+                detail = "的 platePoint 必须是四角点"
+            raise RuntimeError(f"车牌检测冻结样本 {sample_id} {detail}")
+        if not str(item.get("asset_sha256") or "").strip():
+            raise RuntimeError(f"车牌检测冻结样本 {sample_id} 缺少图片摘要")
+        seen_ids.add(sample_id)
+        validated.append(item)
+    return validated
+
+
+def _load_frozen_plate_detection_samples(
+    db: Session,
+    *,
+    job: Any,
+    training_task: Any,
+    profile_config: dict[str, Any],
+    source_task_ids: list[int],
+) -> tuple[list[int], list[PlateDatasetSample]] | None:
+    """Load a unified detection job exclusively from its frozen DatasetVersion."""
+
+    reference = _plate_dataset_manifest_reference(job)
+    if reference is None:
+        # Historical plate jobs do not carry a DatasetVersion manifest and keep
+        # their established task-snapshot behavior.
+        return None
+    try:
+        version_id = int(reference.get("dataset_version_id"))
+    except (TypeError, ValueError):
+        version_id = 0
+    if version_id <= 0:
+        raise RuntimeError("车牌检测作业缺少有效的冻结数据集版本")
+    version = crud_dataset.get_version(db, version_id)
+    if version is None or str(getattr(version, "status", "")).upper() != "FROZEN":
+        raise RuntimeError("车牌检测数据集版本未保持 FROZEN，禁止训练")
+    for reference_key, version_attr in (
+        ("dataset_version_id", "id"),
+        ("dataset_id", "dataset_id"),
+        ("version_no", "version_no"),
+        ("manifest_rel_path", "manifest_rel_path"),
+        ("manifest_sha256", "manifest_sha256"),
+    ):
+        expected = reference.get(reference_key)
+        actual = getattr(version, version_attr, None)
+        if reference_key in {"manifest_rel_path", "manifest_sha256"}:
+            expected = str(expected or "").strip().lower()
+            actual = str(actual or "").strip().lower()
+        else:
+            try:
+                expected = int(expected)
+                actual = int(actual)
+            except (TypeError, ValueError):
+                raise RuntimeError(
+                    f"车牌检测冻结数据集版本 {reference_key} 无效"
+                )
+        if expected != actual:
+            raise RuntimeError(
+                f"车牌检测冻结数据集版本 {reference_key} 与作业快照不一致"
+            )
+
+    manifest_path = str(version.manifest_rel_path).strip()
+    expected_sha = str(version.manifest_sha256).strip().lower()
+    try:
+        raw = get_storage_backend().read_text(manifest_path)
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        actual_sha = hashlib.sha256(str(raw).encode("utf-8")).hexdigest()
+        if actual_sha != expected_sha:
+            raise RuntimeError("车牌检测冻结数据集清单摘要不一致")
+        manifest = json.loads(raw)
+    except RuntimeError:
+        raise
+    except Exception as exc:
+        raise RuntimeError("车牌检测冻结数据集清单不可读") from exc
+    manifest_samples = _validate_plate_detection_manifest(manifest, version=version)
+    manifest_ids = {
+        int(item["sample_id"])
+        for item in manifest_samples
+    }
+    manifest_task_ids = {
+        int(item["task_id"])
+        for item in manifest_samples
+        if item.get("task_id") is not None
+    }
+    declared_task_ids = {
+        int(value)
+        for value in (manifest.get("source_task_ids") or [])
+        if str(value).strip()
+    }
+    if declared_task_ids and not manifest_task_ids.issubset(declared_task_ids):
+        raise RuntimeError("车牌检测冻结清单的来源任务与样本不一致")
+    snapshot_task_ids = {int(value) for value in source_task_ids}
+    if snapshot_task_ids and not manifest_task_ids.issubset(snapshot_task_ids):
+        raise RuntimeError("车牌检测冻结清单与训练任务来源快照不一致")
+
+    current_rows = (
+        db.query(TaskSample)
+        .options(joinedload(TaskSample.file))
+        .filter(
+            TaskSample.id.in_(sorted(manifest_ids)),
+            TaskSample.deleted_at.is_(None),
+        )
+        .all()
+    )
+    current_by_id = {int(row.id): row for row in current_rows}
+    if set(current_by_id) != manifest_ids:
+        raise RuntimeError("车牌检测冻结清单中的样本已被删除或不可访问")
+
+    # Materialize each frozen image before validating the mutable row.  The
+    # generic YOLO gate can compare a stored digest for remote objects, but a
+    # plate exporter must also have an actual local file for OpenCV/Pose export.
+    source_cache_root = _job_work_root(int(getattr(job, "id", 0) or 0)) / "plate_source_cache"
+    resolved_paths: dict[int, Path] = {}
+    validation_rows: list[Any] = []
+    for item in manifest_samples:
+        sample_id = int(item["sample_id"])
+        current = current_by_id[sample_id]
+        attachment = getattr(current, "file", None)
+        local_path = _resolve_plate_attachment_local_path(
+            attachment,
+            cache_root=source_cache_root,
+        )
+        if local_path is None:
+            raise RuntimeError(
+                f"车牌检测冻结样本 {sample_id} 图片无法物化"
+            )
+        actual_sha = _sha256_file(local_path)
+        expected_sha = str(item.get("asset_sha256") or "").strip().lower()
+        if not expected_sha or actual_sha != expected_sha:
+            raise RuntimeError(f"冻结样本 {sample_id} 的图片内容已变化，禁止训练")
+        resolved_paths[sample_id] = local_path
+        validation_rows.append(
+            SimpleNamespace(
+                id=sample_id,
+                data=getattr(current, "data", None),
+                file=SimpleNamespace(
+                    path=getattr(attachment, "path", None),
+                    sha256=actual_sha,
+                ),
+            )
+        )
+
+    # Reuse the common immutable-content gate used by the generic YOLO worker.
+    # It compares canonical annotation and the digest we just calculated from
+    # the materialized object, including global S3 and external data sources.
+    from labelu.internal.application.service import yolo_train
+
+    yolo_train._validate_frozen_sample_content(validation_rows, manifest_samples)
+
+    samples_by_task: dict[int, list[PlateDatasetSample]] = {}
+    for item in manifest_samples:
+        sample_id = int(item["sample_id"])
+        current = current_by_id[sample_id]
+        try:
+            manifest_task_id = int(item.get("task_id"))
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"车牌检测冻结样本 {sample_id} 缺少 task_id") from exc
+        if int(current.task_id or 0) != manifest_task_id:
+            raise RuntimeError(f"车牌检测冻结样本 {sample_id} 的来源任务已变化")
+        frozen_annotation = item.get("annotation")
+        attachment = getattr(current, "file", None)
+        if attachment is None or not getattr(attachment, "path", None):
+            raise RuntimeError(f"车牌检测冻结样本 {sample_id} 缺少图片文件")
+        proxy = SimpleNamespace(
+            id=sample_id,
+            inner_id=item.get("inner_id", getattr(current, "inner_id", None)),
+            task_id=manifest_task_id,
+            state=item.get("state") or getattr(current, "state", SampleState.DONE.value),
+            frozen_split=str(item.get("split")),
+            data=json.dumps(frozen_annotation, ensure_ascii=False),
+            file=SimpleNamespace(
+                id=getattr(attachment, "id", None),
+                path=getattr(attachment, "path", None),
+                filename=getattr(attachment, "filename", None),
+                data_source_id=getattr(attachment, "data_source_id", None),
+                data_source=getattr(attachment, "data_source", None),
+                sha256=item.get("asset_sha256"),
+                _plate_local_path=resolved_paths[sample_id],
+            ),
+        )
+        parsed = _parse_sample_annotation(proxy)
+        audit = (
+            audit_plate_sample(parsed[1], profile_config)
+            if parsed
+            else PlateSampleAudit(kind="invalid", errors=("冻结样本标注无法解析",))
+        )
+        if audit.kind == "invalid":
+            detail = "; ".join(audit.errors) or "几何标注无效"
+            raise RuntimeError(f"车牌检测冻结样本 {sample_id} {detail}")
+        if audit.kind not in {"positive", "negative"}:
+            raise RuntimeError(f"车牌检测冻结样本 {sample_id} 类型无效")
+        samples_by_task.setdefault(int(proxy.task_id), []).append(
+            PlateDatasetSample(sample=proxy, audit=audit)
+        )
+
+    frozen_samples: list[PlateDatasetSample] = []
+    for task_id in sorted(samples_by_task):
+        frozen_samples.extend(samples_by_task[task_id])
+    if not any(item.audit.kind == "positive" for item in frozen_samples):
+        raise RuntimeError("车牌检测训练至少需要一个冻结正样本")
+    return sorted(manifest_task_ids), frozen_samples
+
+
 def _load_training_context(
     db: Session,
     *,
@@ -336,6 +746,23 @@ def _load_training_context(
             if row.get("task_id") is not None
         }
     )
+    if expected_job_type == PLATE_DETECTION_JOB_TYPE:
+        frozen_context = _load_frozen_plate_detection_samples(
+            db,
+            job=job,
+            training_task=training_task,
+            profile_config=profile_config,
+            source_task_ids=source_task_ids,
+        )
+        if frozen_context is not None:
+            frozen_task_ids, frozen_samples = frozen_context
+            return (
+                job,
+                training_task,
+                profile_config,
+                frozen_task_ids,
+                frozen_samples,
+            )
     samples: list[PlateDatasetSample] = []
     if getattr(job, "auto_training_round_id", None):
         from labelu.internal.application.service.auto_training_dataset import (
@@ -736,9 +1163,14 @@ def prepare_plate_recognition_dataset(
             attachment = sample.file
             if not attachment or not attachment.path:
                 raise RuntimeError(f"sample #{sample.id} has no image attachment")
-            source_path = Path(settings.MEDIA_ROOT) / str(attachment.path).lstrip("/\\")
-            if not source_path.is_file():
-                raise RuntimeError(f"sample image does not exist: {source_path}")
+            source_path = _resolve_plate_attachment_local_path(
+                attachment,
+                cache_root=_job_work_root(job_id) / "plate_source_cache",
+            )
+            if source_path is None:
+                raise RuntimeError(
+                    f"sample image does not exist: {getattr(attachment, 'path', '')}"
+                )
             image = _read_image(source_path)
             height, width = image.shape[:2]
             suffix = (

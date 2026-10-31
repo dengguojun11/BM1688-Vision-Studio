@@ -7,6 +7,7 @@ import type { ComponentProps } from 'react';
 import { createIdempotencyKey } from '@/api/idempotency';
 import request from '@/api/request';
 import { getDatasetAnalysis, type DatasetAnalysisResponse, type DatasetLabelDistributionItem } from '@/api/services/datasetAnalysis';
+import { getAccessibleDataset } from '@/api/services/task';
 import { createLabelTrainingJob, createTaskTrainingJob } from '@/api/services/training';
 import ServerSearchInput from '@/components/ServerSearchInput';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
@@ -147,13 +148,8 @@ export function trainingTargetOptions(recipes: TrainingRecipeCatalogItem[] = [])
       description: '使用车牌框和四个定位点训练 Pose 模型，不识别号码、颜色或车牌类型。',
     });
   }
-  if (availableTargets.has('plate_recognition')) {
-    options.push({
-      value: 'plate_recognition',
-      label: trainingTargetLabel('plate_recognition'),
-      description: '仅保留历史复合车牌作业的读取和迭代兼容，不改变普通训练入口。',
-    });
-  }
+  // Historical composite recognition remains readable through job details,
+  // but it is not a selectable target for new training jobs.
   return options;
 }
 
@@ -300,6 +296,34 @@ export function trainingViewFromLocation(): TrainingView {
   if (typeof window === 'undefined') return 'jobs';
   const view = new URLSearchParams(window.location.search).get('view');
   return view === 'auto-plan' || view === 'reports' ? view : 'jobs';
+}
+
+export type TrainingEntryParams = {
+  taskId?: number;
+  datasetId?: number;
+  target?: TrainingTarget;
+};
+
+/** Read task-card scope without making a direct visit to /training unusable. */
+export function trainingEntryParamsFromLocation(): TrainingEntryParams {
+  if (typeof window === 'undefined') return {};
+  const params = new URLSearchParams(window.location.search);
+  const positiveInt = (value: string | null) => {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
+  };
+  const rawTarget = String(params.get('training_target') || '').trim();
+  // Historical deep links may still carry the removed recognition target.
+  // Normalize them to the only selectable plate contract so a stale URL can
+  // never reopen the legacy composite-plate creator.
+  const target = rawTarget === 'plate_detection' || rawTarget === 'plate_recognition'
+    ? 'plate_detection'
+    : undefined;
+  return {
+    taskId: positiveInt(params.get('task_id')),
+    datasetId: positiveInt(params.get('dataset_id')),
+    target,
+  };
 }
 
 type AutoTrainingPlanSummary = {
@@ -2198,18 +2222,17 @@ function CreateTrainingAction() {
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
   const [trainingDimension, setTrainingDimension] = useState<TrainingDimension>('task');
-  const [trainingTarget, setTrainingTarget] = useState<TrainingTarget>('generic_detection');
-  const initialTaskId = useMemo(() => {
-    if (typeof window === 'undefined') return undefined;
-    const value = Number(new URLSearchParams(window.location.search).get('task_id'));
-    return Number.isInteger(value) && value > 0 ? value : undefined;
-  }, []);
+  const initialEntry = useMemo(trainingEntryParamsFromLocation, []);
+  const initialTaskId = initialEntry.taskId;
+  const initialDatasetId = initialEntry.datasetId;
+  const initialEntryTarget = initialEntry.target;
+  const [trainingTarget, setTrainingTarget] = useState<TrainingTarget>(initialEntryTarget || 'generic_detection');
   // Keep the first selected task as the primary task for lineage/model
   // resolution while allowing task-first training to merge compatible tasks.
   const [selectedTaskIds, setSelectedTaskIds] = useState<number[]>(initialTaskId ? [initialTaskId] : []);
   const [selectedSourceTaskIds, setSelectedSourceTaskIds] = useState<number[]>([]);
-  const [datasetId, setDatasetId] = useState<number | undefined>();
-  const [selectedDatasetIds, setSelectedDatasetIds] = useState<number[]>([]);
+  const [datasetId, setDatasetId] = useState<number | undefined>(initialDatasetId);
+  const [selectedDatasetIds, setSelectedDatasetIds] = useState<number[]>(initialDatasetId ? [initialDatasetId] : []);
   const [selectedDatasetOverride, setSelectedDatasetOverride] = useState<TrainingDataset | null>(null);
   const [datasetBrowserOpen, setDatasetBrowserOpen] = useState(false);
   const [datasetBrowserPage, setDatasetBrowserPage] = useState(0);
@@ -2340,6 +2363,17 @@ function CreateTrainingAction() {
     },
     enabled: open && isLoggedIn, staleTime: 60_000, retry: false,
   });
+  const entryDatasetQuery = useQuery<TrainingDataset | null>({
+    queryKey: ['training-entry-dataset', initialDatasetId ?? null],
+    queryFn: async () => {
+      if (!initialDatasetId) return null;
+      const dataset = await getAccessibleDataset(initialDatasetId);
+      return dataset as TrainingDataset | null;
+    },
+    enabled: open && isLoggedIn && Boolean(initialDatasetId),
+    staleTime: 60_000,
+    retry: false,
+  });
   const annotationLabels = labelsQuery.data?.items ?? [];
   const annotationLabelTotal = labelsQuery.data?.total ?? annotationLabels.length;
   useEffect(() => {
@@ -2380,6 +2414,10 @@ function CreateTrainingAction() {
       .forEach((item) => byId.set(Number(item.id), item));
     return Array.from(byId.values());
   }, [catalogDatasets, datasetBrowserQuery.data?.items, selectedDatasetOverride]);
+  useEffect(() => {
+    if (!open || !initialDatasetId || !entryDatasetQuery.data) return;
+    setSelectedDatasetOverride((current) => current || entryDatasetQuery.data);
+  }, [entryDatasetQuery.data, initialDatasetId, open]);
   const frozenDatasetVersions = (algorithmsQuery.data?.dataset_versions ?? []) as TrainingDatasetVersion[];
   const pendingDatasetVersions = (algorithmsQuery.data?.pending_dataset_versions ?? []) as TrainingDatasetVersion[];
   const trainingRecipes = algorithmsQuery.data?.training_recipes ?? [];
@@ -2621,6 +2659,26 @@ function CreateTrainingAction() {
       });
     }
   };
+  const shouldPreserveEntryTask = (
+    nextDatasetIds: number[] = selectedDatasetIds,
+    nextTarget: TrainingTarget = trainingTarget,
+    nextDimension: TrainingDimension = trainingDimension,
+  ) => Boolean(
+    initialTaskId
+      && nextDimension === 'task'
+      && (!initialDatasetId || nextDatasetIds.includes(initialDatasetId))
+      && nextTarget === (initialEntryTarget || 'generic_detection'),
+  );
+  const retainEntryTaskSelection = (
+    current: number[],
+    nextDatasetIds: number[] = selectedDatasetIds,
+    nextTarget: TrainingTarget = trainingTarget,
+    nextDimension: TrainingDimension = trainingDimension,
+  ) => {
+    if (!shouldPreserveEntryTask(nextDatasetIds, nextTarget, nextDimension)) return [];
+    if (!initialTaskId || current.includes(initialTaskId)) return current;
+    return [initialTaskId, ...current];
+  };
   const updateSampleConditions = (fieldKey: string, values: string[]) => {
     const normalizedKey = String(fieldKey || '').trim();
     if (!normalizedKey) return;
@@ -2667,7 +2725,7 @@ function CreateTrainingAction() {
     setLabelSearchInput('');
     setLabelCache({});
     setSelectedLabelIds([]);
-    setSelectedTaskIds([]);
+    setSelectedTaskIds((current) => retainEntryTaskSelection(current, next ? [normalizedId] : []));
     setSelectedSourceTaskIds([]);
     clearExplicitTrainedModel();
     resetModelFamilyBrowser();
@@ -2693,7 +2751,7 @@ function CreateTrainingAction() {
     setLabelSearchInput('');
     setLabelCache({});
     setSelectedLabelIds([]);
-    setSelectedTaskIds([]);
+    setSelectedTaskIds((current) => retainEntryTaskSelection(current, normalizedIds));
     setSelectedSourceTaskIds([]);
     clearExplicitTrainedModel();
     resetModelFamilyBrowser();
@@ -3095,11 +3153,11 @@ function CreateTrainingAction() {
     if (!open) {
       setStep(0);
       setTrainingDimension('task');
-      setTrainingTarget('generic_detection');
+      setTrainingTarget(initialEntryTarget || 'generic_detection');
       setSelectedTaskIds(initialTaskId ? [initialTaskId] : []);
       setSelectedSourceTaskIds([]);
-      setDatasetId(undefined);
-      setSelectedDatasetIds([]);
+      setDatasetId(initialDatasetId);
+      setSelectedDatasetIds(initialDatasetId ? [initialDatasetId] : []);
       setSelectedDatasetOverride(null);
       setDatasetBrowserOpen(false);
       setDatasetBrowserPage(0);
@@ -3122,7 +3180,7 @@ function CreateTrainingAction() {
       setSubmitError(null);
       setSubmitConflict(false);
     }
-  }, [open]);
+  }, [initialDatasetId, initialEntryTarget, initialTaskId, open]);
   useEffect(() => {
     if (!open) return;
     // Ant Design keeps the modal wrapper scroll position while the wizard
@@ -3145,7 +3203,12 @@ function CreateTrainingAction() {
     });
   }, [algorithmsQuery.isError, defaultTrainingContract, form, open, selectedTrainingTargetContract.recipeRef, selectedTrainingTargetContract.modelWeights, trainingTarget]);
   useEffect(() => {
-    setSelectedTaskIds([]);
+    setSelectedTaskIds((current) => retainEntryTaskSelection(
+      current,
+      selectedDatasetIds,
+      trainingTarget,
+      trainingDimension,
+    ));
     setSelectedSourceTaskIds([]);
     setCandidateCache({});
     setCandidatePage(0);
@@ -3426,9 +3489,9 @@ function CreateTrainingAction() {
     createTrainingIdempotencyKeyRef.current = null;
     setStep(0);
     setTrainingDimension('task');
-    setTrainingTarget('generic_detection');
-    setDatasetId(undefined);
-    setSelectedDatasetIds([]);
+    setTrainingTarget(initialEntryTarget || 'generic_detection');
+    setDatasetId(initialDatasetId);
+    setSelectedDatasetIds(initialDatasetId ? [initialDatasetId] : []);
     setSelectedDatasetOverride(null);
     setSelectedTaskIds(initialTaskId ? [initialTaskId] : []);
     setSelectedSourceTaskIds([]);
@@ -3506,6 +3569,9 @@ function CreateTrainingAction() {
                   const nextTarget = event.target.value as TrainingTarget;
                   const nextContract = resolveTrainingTargetContract(nextTarget, trainingRecipes, defaultTrainingContract);
                   setTrainingTarget(nextTarget);
+                  const nextDimension = nextTarget !== 'generic_detection' && trainingDimension === 'label'
+                    ? 'task'
+                    : trainingDimension;
                   if (nextTarget !== 'generic_detection' && trainingDimension === 'label') {
                     setTrainingDimension('task');
                     setSelectedLabelIds([]);
@@ -3513,7 +3579,12 @@ function CreateTrainingAction() {
                   createTrainingIdempotencyKeyRef.current = null;
                   setSubmitError(null);
                   setSubmitConflict(false);
-                  setSelectedTaskIds([]);
+                  setSelectedTaskIds((current) => retainEntryTaskSelection(
+                    current,
+                    selectedDatasetIds,
+                    nextTarget,
+                    nextDimension,
+                  ));
                   setSelectedSourceTaskIds([]);
                   setCandidateCache({});
                   setCandidatePage(0);
@@ -3565,7 +3636,12 @@ function CreateTrainingAction() {
                 createTrainingIdempotencyKeyRef.current = null;
                 setSubmitError(null);
                 setSubmitConflict(false);
-                setSelectedTaskIds([]);
+                setSelectedTaskIds((current) => retainEntryTaskSelection(
+                  current,
+                  selectedDatasetIds,
+                  trainingTarget,
+                  nextDimension,
+                ));
                 setSelectedSourceTaskIds([]);
                 setSelectedLabelIds([]);
                 setSampleConditions({});

@@ -117,6 +117,7 @@ from labelu.internal.application.response.task import TaskDatasetCategorySummary
 from labelu.internal.application.response.task import TaskDatasetCategorySummaryResponse
 from labelu.internal.application.response.task import TaskProjectAssignmentResponse
 from labelu.internal.application.service.attachment import build_attachment_response
+from labelu.internal.application.service import annotation_contract as annotation_contract_service
 from labelu.internal.application.service.annotation_taxonomy import (
     build_rect_label_presets_json,
     enrich_task_config_json_for_client,
@@ -383,7 +384,12 @@ async def create(
                     status_code=status.HTTP_409_CONFLICT,
                     message="Idempotency-Key 已用于其他任务请求",
                 )
-            return _task_response_for_create(existing)
+            return _task_response_for_create(
+                existing,
+                contract=annotation_contract_service.current_contract(
+                    db, int(existing.id)
+                ),
+            )
 
     category = _active_dataset_category(db, cmd.dataset_category_id)
 
@@ -391,13 +397,25 @@ async def create(
         dataset, dataset_contract, scope_mode = _resolve_task_dataset_binding(
             db, cmd=cmd, current_user=current_user
         )
+        initial_config = None
+        if dataset_contract is not None:
+            generated_config = annotation_contract_service.task_config_from_label_snapshot(
+                dataset_contract.labels_snapshot_json
+            )
+            if generated_config.get("tools"):
+                initial_config = json.dumps(generated_config, ensure_ascii=False)
         new_task = None
+        created_new_task = False
         try:
             with db.begin_nested():
                 new_task = crud_task.create(
                     db=db,
                     task=Task(
-                        status=TaskStatus.DRAFT.value,
+                        status=(
+                            TaskStatus.CONFIGURED.value
+                            if initial_config
+                            else TaskStatus.DRAFT.value
+                        ),
                         name=cmd.name,
                         description=cmd.description,
                         media_type=cmd.media_type,
@@ -420,8 +438,10 @@ async def create(
                             int(dataset_contract.id) if dataset_contract else None
                         ),
                         task_label_scope_mode=scope_mode,
+                        config=initial_config,
                     ),
                 )
+                created_new_task = True
         except IntegrityError:
             if retry_key:
                 existing = crud_task.get_by_idempotency(
@@ -435,8 +455,26 @@ async def create(
                             message="Idempotency-Key 已用于其他任务请求",
                         )
                     new_task = existing
+                    created_new_task = False
             if new_task is None:
                 raise
+        if created_new_task and dataset_contract is not None and new_task is not None:
+            try:
+                label_ids = [
+                    int(value)
+                    for value in json.loads(dataset_contract.label_ids_json or "[]")
+                ]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                label_ids = []
+            if label_ids:
+                annotation_contract_service.create_contract(
+                    db,
+                    task=new_task,
+                    label_ids=label_ids,
+                    created_by=current_user.id,
+                    dataset_label_contract_id=int(dataset_contract.id),
+                    label_scope_mode=scope_mode,
+                )
         if (
             settings.AUTO_TRAINING_PLAN_WRITES_ENABLED
             and new_task is not None
@@ -455,10 +493,13 @@ async def create(
                 idempotency_key=f"task:{new_task.id}:created",
             )
 
-    return _task_response_for_create(new_task)
+    return _task_response_for_create(
+        new_task,
+        contract=annotation_contract_service.current_contract(db, int(new_task.id)),
+    )
 
 
-def _task_response_for_create(new_task: Task) -> TaskResponse:
+def _task_response_for_create(new_task: Task, *, contract=None) -> TaskResponse:
     """Build the stable task response for initial and idempotent replay paths."""
     return TaskResponse(
         id=new_task.id,
@@ -466,6 +507,7 @@ def _task_response_for_create(new_task: Task) -> TaskResponse:
         name=new_task.name,
         description=new_task.description,
         tips=new_task.tips,
+        config=new_task.config,
         status=new_task.status,
         media_type=new_task.media_type,
         created_at=new_task.created_at,
@@ -483,6 +525,10 @@ def _task_response_for_create(new_task: Task) -> TaskResponse:
         task_label_scope_mode=str(
             getattr(new_task, "task_label_scope_mode", "FULL") or "FULL"
         ),
+        current_annotation_contract_id=(contract.id if contract else None),
+        annotation_contract_revision=(contract.revision if contract else None),
+        label_set_signature=(contract.label_set_signature if contract else None),
+        class_order_signature=(contract.class_order_signature if contract else None),
         **_dataset_category_fields(new_task),
     )
 
@@ -2584,7 +2630,12 @@ async def update(
     if "dataset_category_id" in obj_in:
         category = _active_dataset_category(db, cmd.dataset_category_id)
         obj_in[Task.dataset_category_id.key] = int(category.id) if category else None
-    if "dataset_id" in obj_in or "dataset_label_contract_id" in obj_in:
+    dataset_binding_changed = (
+        "dataset_id" in obj_in or "dataset_label_contract_id" in obj_in
+    )
+    dataset_contract = None
+    auto_generated_config = False
+    if dataset_binding_changed:
         effective_dataset_id = obj_in.get("dataset_id", task.dataset_id)
         effective_contract_id = obj_in.get(
             "dataset_label_contract_id", task.dataset_label_contract_id
@@ -2611,7 +2662,23 @@ async def update(
             int(dataset_contract.id) if dataset_contract else None
         )
         obj_in[Task.task_label_scope_mode.key] = scope_mode
-    if Task.config.key in obj_in:
+        if (
+            dataset_contract is not None
+            and Task.config.key not in obj_in
+            and annotation_contract_service.task_config_is_unconfigured(
+                task.config
+            )
+        ):
+            generated_config = annotation_contract_service.task_config_from_label_snapshot(
+                dataset_contract.labels_snapshot_json
+            )
+            if generated_config.get("tools"):
+                obj_in[Task.config.key] = json.dumps(
+                    generated_config, ensure_ascii=False
+                )
+                obj_in[Task.status.key] = TaskStatus.CONFIGURED
+                auto_generated_config = True
+    if Task.config.key in obj_in and not auto_generated_config:
         if cmd.config is not None and str(cmd.config).strip():
             try:
                 incoming_config = json.loads(cmd.config)
@@ -2643,8 +2710,8 @@ async def update(
                         code=ErrorCode.CODE_30002_VALIDATION_ERROR,
                         status_code=status.HTTP_409_CONFLICT,
                         message=(
-                            "一期车牌训练只支持矩形框。请使用普通目标检测预设，"
-                            "创建“车牌”或“数字位置”标签；历史复合车牌任务仅允许查看和续用。"
+                            "历史复合车牌识别预设包含号码、颜色和类型属性，不能用于新的车牌定位训练。"
+                            "请使用车牌检测预设（车牌框+四个定位点）；历史复合车牌任务仅允许查看和续用。"
                         ),
                     )
                 profile_config = (

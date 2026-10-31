@@ -55,7 +55,7 @@ class LabelPreset(Base):
 
 
 class LabelPresetItem(Base):
-    """单个拉框类别：中文名、英文键、颜色。"""
+    """单个预设标签及其绘制几何类型。"""
 
     __tablename__ = "label_preset_item"
 
@@ -64,6 +64,13 @@ class LabelPresetItem(Base):
     label_key = Column(String(128), nullable=False)
     label_value = Column(String(128), nullable=False)
     color = Column(String(32), nullable=False)
+    annotation_kind = Column(
+        String(32),
+        nullable=False,
+        default="bbox",
+        server_default="bbox",
+        comment="标签绘制几何类型：bbox 或 polygon",
+    )
     sort_order = Column(Integer, default=0, nullable=False)
     created_at = Column(DateTime(timezone=True), default=datetime.now)
 

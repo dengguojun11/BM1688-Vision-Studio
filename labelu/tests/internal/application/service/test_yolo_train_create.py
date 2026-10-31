@@ -3,9 +3,12 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from labelu.internal.application.command.yolo_train import CreateYoloTrainJobCommand
 from labelu.internal.application.service import yolo_train as yolo_train_service
 from labelu.internal.common.idempotency import request_payload_hash
+from labelu.internal.common.error_code import LabelUException
 
 
 def test_create_train_job_loads_primary_task_before_building_response(tmp_path: Path, monkeypatch):
@@ -129,6 +132,53 @@ def test_create_train_job_forces_local_execution_mode(tmp_path: Path, monkeypatc
     assert captured["create_kwargs"]["train_node_id"] is None
     assert captured["submit_cmd"].execution_mode == "local"
     assert captured["submit_cmd"].train_node_id is None
+
+
+def test_create_train_job_rejects_remote_plate_preset(monkeypatch):
+    task = SimpleNamespace(id=19, name="plate-remote", config="{}")
+    preset = SimpleNamespace(
+        slug="plateDetection",
+        training_profile="plate_detection_v1",
+        items=[],
+    )
+    current_user = SimpleNamespace(id=1)
+    created = []
+
+    monkeypatch.setattr(yolo_train_service.settings, "YOLO_TRAIN_ENABLED", True)
+    monkeypatch.setattr(yolo_train_service.crud_task, "get", lambda db, task_id: task)
+    monkeypatch.setattr(
+        yolo_train_service, "_assert_task_access", lambda loaded_task, user: None
+    )
+    monkeypatch.setattr(
+        yolo_train_service.crud_annotation_taxonomy,
+        "label_preset_get_by_slug",
+        lambda db, slug: preset if slug == preset.slug else None,
+    )
+    monkeypatch.setattr(
+        yolo_train_service.training_task_service,
+        "create_label_dimension_training_task",
+        lambda *args, **kwargs: created.append((args, kwargs)),
+    )
+
+    with pytest.raises(LabelUException) as exc_info:
+        asyncio.run(
+            yolo_train_service.create_train_job(
+                db=object(),
+                task_id=task.id,
+                cmd=CreateYoloTrainJobCommand(
+                    rect_preset_slug=preset.slug,
+                    execution_mode="remote",
+                    train_node_id="node-1",
+                ),
+                current_user=current_user,
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.msg == (
+        "车牌框 + 四角点 Pose 训练暂不支持远程训练，请选择本地训练"
+    )
+    assert created == []
 
 
 def test_create_train_job_idempotency_replays_without_dispatch(monkeypatch):

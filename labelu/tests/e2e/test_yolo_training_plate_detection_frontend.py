@@ -4,20 +4,18 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 TRAINING_PAGE = REPO_ROOT / "frontend" / "extensions" / "pages" / "yolo_training.html"
 
 
-def test_create_modal_keeps_legacy_plate_target_compatibility_explicit():
+def test_create_modal_exposes_only_plate_detection_target():
     source = TRAINING_PAGE.read_text(encoding="utf-8")
 
-    assert 'name="plateTrainingTarget" value="plate_detection" />' in source
-    assert 'name="plateTrainingTarget" value="plate_recognition" checked' in source
-    assert "车牌检测" in source
-    assert "完整车牌识别" in source
+    assert 'name="plateTrainingTarget" value="plate_detection" checked />' in source
+    assert 'name="plateTrainingTarget" value="plate_recognition"' not in source
+    assert "车牌框 + 四角点（仅定位）" in source
+    assert "不识别号码、颜色或车牌类型" in source
     assert "历史兼容，不可新建" in source
-    assert "历史复合车牌预设不能创建一期新训练，请使用普通目标检测矩形框标签" in source
-    assert "历史复合车牌训练仅用于兼容查看，不能创建一期新训练" in source
-    assert "车牌框 + 四角点（仅兼容查看，不能创建一期新训练）" in source
+    assert 'input.checked = input.value === "plate_detection"' in source
 
 
-def test_plate_training_target_is_submitted_and_locked_for_iteration():
+def test_plate_training_target_is_submitted_and_legacy_iteration_is_preserved():
     source = TRAINING_PAGE.read_text(encoding="utf-8")
 
     assert (
@@ -32,7 +30,10 @@ def test_plate_training_target_is_submitted_and_locked_for_iteration():
         'plateTrainingTarget: isPlateDetectionJob(row) ? "plate_detection" : "plate_recognition"'
         in source
     )
-    assert "input.disabled = lockTarget" in source
+    assert "function isLegacyPlateIterationDraft()" in source
+    assert 'if (isLegacyPlateIterationDraft()) return "plate_recognition";' in source
+    assert 'return "plate_detection";' in source
+    assert 'key !== "plate_recognition_v1" || isLegacyPlateIterationDraft()' in source
     assert (
         source.count("plateIterationSourceJobId: isPlateJob(row) ? row.id : null") == 2
     )
@@ -112,6 +113,7 @@ def test_phase_one_hides_new_composite_plate_entry_but_keeps_legacy_iteration_co
     assert 'opt.disabled = legacyPlate' in source
     assert 'cb.disabled = legacyPlate' in source
     assert "历史兼容，不可新建" in source
+    assert 'key !== "plate_recognition_v1" || isLegacyPlateIterationDraft()' in source
     assert "历史复合车牌预设不能创建一期新训练，请使用普通目标检测矩形框标签" in source
     assert "历史复合车牌结构：车牌框 + 四角点（仅兼容查看，不能创建一期新训练）" in source
     assert "历史复合车牌训练仅用于兼容查看，不能创建一期新训练" in source

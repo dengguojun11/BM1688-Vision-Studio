@@ -42,6 +42,37 @@ def test_remote_result_contract_rejects_signature_mismatch():
         remote_svc._assert_remote_result_class_contract(job, mismatched)
 
 
+def test_remote_plate_pose_request_is_rejected_before_generic_agent():
+    cmd = SimpleNamespace(
+        plate_training_target="plate_detection",
+        training_recipe_key="plate_detection_v1",
+        hyperparams={},
+    )
+
+    assert remote_svc.is_remote_plate_training_request(cmd)
+    with pytest.raises(RuntimeError, match="暂不支持远程训练"):
+        remote_svc.assert_remote_training_supported(cmd)
+
+    generic = SimpleNamespace(
+        plate_training_target=None,
+        training_recipe_key="yolo_detection_v1",
+        hyperparams={},
+    )
+    assert not remote_svc.is_remote_plate_training_request(generic)
+
+
+def test_persisted_plate_profile_is_rejected_even_when_command_is_legacy():
+    job = SimpleNamespace(
+        training_recipe_key="plate_detection_v1",
+        hyperparams_json='{"runtime_profile":"plate_detection_v1"}',
+    )
+
+    with pytest.raises(RuntimeError, match="暂不支持远程训练"):
+        remote_svc.assert_remote_training_supported(
+            SimpleNamespace(training_recipe_key=None), job=job
+        )
+
+
 def test_remote_status_stale_fencing_token_is_rejected(monkeypatch):
     """远程轮询迟到写入不能覆盖已接管执行器的状态。"""
     class _Scope:

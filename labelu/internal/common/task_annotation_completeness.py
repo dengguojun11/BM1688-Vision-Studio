@@ -227,6 +227,59 @@ def _has_valid_configured_geometry(
     tools = configured_geometry_tools(task_config)
     if not tools:
         return True, None, None
+
+    # Plate profiles are composite annotations: a rectangle and its matching
+    # four-corner polygon are one training instance.  The generic geometry
+    # rule below intentionally remains "any configured tool" for all other
+    # task types, but that rule would incorrectly mark a plate sample with
+    # only one half of the annotation as ready.
+    from labelu.internal.common.plate_recognition_profile import (
+        DEFAULT_PLATE_DETECTION_CONFIG,
+        DEFAULT_PLATE_RECOGNITION_CONFIG,
+        PLATE_DETECTION_PRESET_SLUG,
+        PLATE_DETECTION_PROFILE,
+        PLATE_RECOGNITION_PRESET_SLUG,
+        PLATE_RECOGNITION_PROFILE,
+        audit_plate_sample,
+        profile_for_task_config,
+    )
+
+    preset_slug = str(task_config.get("defaultRectPresetId") or "").strip()
+    profile_name = (
+        PLATE_DETECTION_PROFILE
+        if preset_slug == PLATE_DETECTION_PRESET_SLUG
+        else PLATE_RECOGNITION_PROFILE
+        if preset_slug == PLATE_RECOGNITION_PRESET_SLUG
+        else profile_for_task_config(task_config)
+    )
+    if profile_name in {PLATE_DETECTION_PROFILE, PLATE_RECOGNITION_PROFILE}:
+        profile_config = (
+            DEFAULT_PLATE_DETECTION_CONFIG
+            if profile_name == PLATE_DETECTION_PROFILE
+            else DEFAULT_PLATE_RECOGNITION_CONFIG
+        )
+        plate_audit = audit_plate_sample(result, profile_config)
+        if plate_audit.kind == "positive":
+            # Keep the historical first-tool value for successful composite
+            # rows so existing audit consumers do not need a new tool name.
+            return True, None, "rectTool"
+
+        rect_valid = any(
+            _geometry_item_has_valid_shape(item, "rectTool", task_config)
+            for item in _tool_items(result, "rectTool")
+        )
+        polygon_items = _tool_items(result, "polygonTool")
+        if not rect_valid:
+            missing_tool = "rectTool"
+        elif not polygon_items:
+            missing_tool = "polygonTool"
+        else:
+            missing_tool = "polygonTool"
+        error = plate_audit.errors[0] if plate_audit.errors else (
+            "missing plate rectangle and four-corner annotation"
+        )
+        return False, error, missing_tool
+
     for tool_name in tools:
         items = _tool_items(result, tool_name)
         if any(

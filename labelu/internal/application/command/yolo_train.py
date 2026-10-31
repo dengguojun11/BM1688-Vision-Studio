@@ -8,7 +8,8 @@ class CreateYoloTrainJobCommand(BaseModel):
         default="yolo11n.pt",
         description=(
             "Ultralytics 权重名：普通检测使用 yolo11n.pt，"
-            "plate_recognition_v1 使用 yolov8n-pose.pt；weights_source 非 preset 时可忽略"
+            "plate_detection_v1/plate_recognition_v1 使用 yolov8n-pose.pt；"
+            "weights_source 非 preset 时可忽略"
         ),
     )
     weights_source: Optional[Literal["preset", "imported", "trained", "auto"]] = Field(

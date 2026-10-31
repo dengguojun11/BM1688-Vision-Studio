@@ -605,6 +605,9 @@ export interface TaskResponse {
   dataset_category_key?: string | null;
   dataset_category_name?: string | null;
   dataset_category_status?: string | null;
+  dataset_id?: number | null;
+  dataset_label_contract_id?: number | null;
+  task_label_scope_mode?: 'FULL' | 'SUBSET' | string;
 }
 
 export interface TaskResponseWithStatics {
@@ -645,6 +648,9 @@ export interface TaskResponseWithStatics {
   dataset_category_key?: string | null;
   dataset_category_name?: string | null;
   dataset_category_status?: string | null;
+  dataset_id?: number | null;
+  dataset_label_contract_id?: number | null;
+  task_label_scope_mode?: 'FULL' | 'SUBSET' | string;
 }
 
 export enum TaskStatus {

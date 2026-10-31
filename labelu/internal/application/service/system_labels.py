@@ -441,7 +441,13 @@ def _sync_label_color_references(
             continue
         changed = False
         for tool in config.get("tools") or []:
-            if not isinstance(tool, dict) or tool.get("tool") != "rectTool":
+            if not isinstance(tool, dict) or tool.get("tool") not in {
+                "rectTool",
+                "polygonTool",
+                "pointTool",
+                "lineTool",
+                "cuboidTool",
+            }:
                 continue
             tool_config = tool.get("config")
             if not isinstance(tool_config, dict):

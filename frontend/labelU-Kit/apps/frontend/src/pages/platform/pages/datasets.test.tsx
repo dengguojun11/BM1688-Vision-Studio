@@ -96,7 +96,6 @@ describe('dataset version governance', () => {
       expect(mockedPost).toHaveBeenCalledWith('/v1/datasets', {
         name: '占道经营数据集',
         label_ids: [18],
-        annotation_kind: 'bbox',
       }),
     );
   });
@@ -163,7 +162,6 @@ describe('dataset version governance', () => {
     await waitFor(() =>
       expect(mockedPost).toHaveBeenCalledWith('/v1/datasets/7/label-contracts', {
         label_ids: [18],
-        annotation_kind: 'bbox',
       }),
     );
     expect(onClose).toHaveBeenCalled();

@@ -133,6 +133,7 @@ def label_preset_create(
                 label_key=it["label_key"],
                 label_value=it["label_value"],
                 color=it["color"],
+                annotation_kind=it.get("annotation_kind", "bbox"),
                 sort_order=it.get("sort_order", 0),
                 created_at=now,
             )
@@ -176,6 +177,7 @@ def label_preset_update(
                     label_key=it["label_key"],
                     label_value=it["label_value"],
                     color=it["color"],
+                    annotation_kind=it.get("annotation_kind", "bbox"),
                     sort_order=it.get("sort_order", 0),
                     created_at=now,
                 )

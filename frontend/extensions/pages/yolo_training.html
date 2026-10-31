@@ -8597,7 +8597,7 @@
             <p class="auto-training-step-hint">可选择一个或批量选择多个任务；第一个任务确定标签规则，其余任务必须使用相同标签契约。</p>
             <div class="auto-training-essential-grid">
               <label>计划名称<input id="autoTrainingPlanName" type="text" maxlength="128" value="自动训练计划" /></label>
-              <label>训练系列<select id="autoTrainingSeriesType"><option value="yolo_detection">普通检测</option><option value="plate_detection">车牌检测</option><option value="plate_recognition">完整车牌识别</option></select></label>
+              <label>训练系列<select id="autoTrainingSeriesType"><option value="yolo_detection">普通检测</option><option value="plate_detection">车牌框 + 四角点（仅定位）</option></select></label>
               <label>数据集分类<select id="autoTrainingDatasetCategoryId"><option value="">请选择</option></select></label>
               <div class="auto-training-task-field auto-training-essential-wide">
                 <span>代表任务（可多选）</span>
@@ -8808,7 +8808,7 @@
             <div class="auto-training-compact-form">
               <label>名称<input id="evaluationDatasetName" type="text" maxlength="128" placeholder="例如：违停验证集" /></label>
               <label>用途<select id="evaluationDatasetKind"><option value="VALIDATION">验证集</option><option value="BENCHMARK">基准集</option><option value="SEALED_ACCEPTANCE">封存验收集</option><option value="BM1688_CALIBRATION">BM1688 校准集</option><option value="EDGE_VALIDATION">边端验证集</option></select></label>
-              <label>训练系列<select id="evaluationDatasetSeriesType"><option value="yolo_detection">普通检测</option><option value="plate_detection">车牌检测</option><option value="plate_recognition">完整车牌识别</option></select></label>
+              <label>训练系列<select id="evaluationDatasetSeriesType"><option value="yolo_detection">普通检测</option><option value="plate_detection">车牌框 + 四角点（仅定位）</option></select></label>
               <label>数据集分类<select id="evaluationDatasetCategoryId"><option value="">请选择</option></select></label>
               <label>代表任务<select id="evaluationRepresentativeTaskId"><option value="">先选择分类</option></select></label>
               <label>标签签名<input class="auto-training-readonly" id="evaluationLabelSetSignature" type="text" readonly placeholder="自动生成" /></label>
@@ -9447,17 +9447,10 @@
             <label>训练目标</label>
             <div class="plate-training-target" role="radiogroup" aria-label="车牌训练目标">
               <label class="plate-training-target-option">
-                <input type="radio" name="plateTrainingTarget" value="plate_detection" />
+                <input type="radio" name="plateTrainingTarget" value="plate_detection" checked />
                 <span class="plate-training-target-copy">
-                  <strong>车牌检测<span class="plate-training-target-badge">单模型</span></strong>
-                  <span>标注结构：车牌框 + 四角点（不是多边形框）；只训练定位，生成 1 个 PT 和 1 个 BM1688 模型。</span>
-                </span>
-              </label>
-              <label class="plate-training-target-option">
-                <input type="radio" name="plateTrainingTarget" value="plate_recognition" checked />
-                <span class="plate-training-target-copy">
-                  <strong>完整车牌识别<span class="plate-training-target-badge">兼容原方案</span></strong>
-                  <span>训练定位、号码、颜色和类型，保留原有 4 个 PT 及组合 BModel。</span>
+                  <strong>车牌框 + 四角点（仅定位）</strong>
+                  <span>使用车牌框和四个定位点训练 Pose 模型，不识别号码、颜色或车牌类型。</span>
                 </span>
               </label>
             </div>
@@ -14176,7 +14169,7 @@
   };
   var autoTrainingSeriesLabels = {
     yolo_detection: "普通检测",
-    plate_detection: "车牌检测",
+    plate_detection: "车牌框 + 四角点（仅定位）",
     plate_recognition: "完整车牌识别"
   };
   var autoTrainingDatasetKindLabels = {
@@ -14293,6 +14286,18 @@
     return autoTrainingPlanState.qualityPolicyApprovals.find(function (row) { return Number(row.id) === id; }) || null;
   }
 
+  function validateNewTrainingSeries(selectId) {
+    var select = document.getElementById(selectId);
+    var value = String(select && select.value || "").trim();
+    if (value === "plate_recognition") {
+      return "历史复合车牌系列仅可查看或从历史作业迭代，不能新建";
+    }
+    if (value !== "yolo_detection" && value !== "plate_detection") {
+      return "请选择有效的训练系列";
+    }
+    return "";
+  }
+
   function autoTrainingSelectedText(id) {
     var select = document.getElementById(id);
     var option = select && select.options && select.selectedIndex >= 0 ? select.options[select.selectedIndex] : null;
@@ -14307,6 +14312,8 @@
   }
 
   function autoTrainingBasicValidation() {
+    var seriesError = validateNewTrainingSeries("autoTrainingSeriesType");
+    if (seriesError) return seriesError;
     if (!document.getElementById("autoTrainingPlanName").value.trim()) return "请填写计划名称";
     if (!Number(document.getElementById("autoTrainingDatasetCategoryId").value || 0)) return "请选择数据集分类";
     if (!autoTrainingPlanState.selectedRepresentativeTaskIds.length) return "请至少选择一个代表任务";
@@ -14789,6 +14796,8 @@
   }
 
   function validateAutoTrainingDraftPayload(payload) {
+    if (payload.series_type === "plate_recognition") return "历史复合车牌系列仅可查看或从历史作业迭代，不能新建";
+    if (payload.series_type !== "yolo_detection" && payload.series_type !== "plate_detection") return "请选择有效的训练系列";
     if (!payload.name) return "请填写计划名称";
     if (!Number.isInteger(payload.dataset_category_id) || payload.dataset_category_id <= 0) return "请选择数据集分类";
     if (!/^[0-9a-f]{64}$/i.test(payload.label_set_signature)) return "标签集合签名必须是 64 位十六进制值";
@@ -14974,10 +14983,13 @@
 
   async function createEvaluationDatasetFromEditor() {
     var errorHost = document.getElementById("evaluationDatasetFormError");
+    var seriesError = validateNewTrainingSeries("evaluationDatasetSeriesType");
+    if (seriesError) { errorHost.textContent = seriesError; return; }
+    var seriesType = document.getElementById("evaluationDatasetSeriesType").value;
     var payload = {
       name: document.getElementById("evaluationDatasetName").value.trim(),
       dataset_kind: document.getElementById("evaluationDatasetKind").value,
-      series_type: document.getElementById("evaluationDatasetSeriesType").value,
+      series_type: seriesType,
       dataset_category_id: Number(document.getElementById("evaluationDatasetCategoryId").value || 0),
       label_set_signature: document.getElementById("evaluationLabelSetSignature").value.trim(),
       grouping_policy: {
@@ -14998,9 +15010,12 @@
   async function autoGenerateEvaluationDatasetsFromEditor() {
     var errorHost = document.getElementById("evaluationDatasetFormError");
     var button = document.getElementById("btnAutoGenerateEvaluationDatasets");
+    var seriesError = validateNewTrainingSeries("evaluationDatasetSeriesType");
+    if (seriesError) { errorHost.textContent = seriesError; return; }
+    var seriesType = document.getElementById("evaluationDatasetSeriesType").value;
     var payload = {
       name_prefix: document.getElementById("evaluationDatasetName").value.trim() || null,
-      series_type: document.getElementById("evaluationDatasetSeriesType").value,
+      series_type: seriesType,
       dataset_category_id: Number(document.getElementById("evaluationDatasetCategoryId").value || 0),
       label_set_signature: document.getElementById("evaluationLabelSetSignature").value.trim(),
       grouping_policy: {
@@ -19841,6 +19856,15 @@
     return preset ? String(preset.training_profile || "").trim() : "";
   }
 
+  function isLegacyPlateIterationDraft() {
+    var snapshot = lastIterationDraftSnapshot;
+    return !!(
+      snapshot
+      && Number(snapshot.plateIterationSourceJobId)
+      && String(snapshot.plateTrainingTarget || "").trim() === "plate_recognition"
+    );
+  }
+
   function isPlateCreateMode() {
     var profile = selectedCreateTrainingProfile();
     return profile === "plate_detection_v1" || profile === "plate_recognition_v1";
@@ -19856,32 +19880,19 @@
 
   function selectedPlateTrainingTarget() {
     if (isPlateDetectionCreateMode()) return "plate_detection";
-    var selected = document.querySelector('input[name="plateTrainingTarget"]:checked');
-    return selected ? String(selected.value || "plate_recognition") : "plate_recognition";
+    if (isLegacyPlateIterationDraft()) return "plate_recognition";
+    return "plate_detection";
   }
 
   function syncPlateTrainingTargetControl() {
     var wrap = document.getElementById("plateTrainingTargetWrap");
     if (!wrap) return;
-    var legacyIteration = !!(
-      lastIterationDraftSnapshot
-      && lastIterationDraftSnapshot.plateIterationSourceJobId
-    );
-    var visible = isPlateRecognitionCreateMode() && legacyIteration;
+    var visible = isPlateDetectionCreateMode();
     wrap.style.display = visible ? "" : "none";
-    if (!isPlateRecognitionCreateMode()) return;
     if (!visible) return;
-    var draftTarget = String(
-      lastIterationDraftSnapshot && lastIterationDraftSnapshot.plateTrainingTarget || ""
-    ).trim();
-    var target = draftTarget || selectedPlateTrainingTarget() || "plate_recognition";
-    var lockTarget = !!(
-      lastIterationDraftSnapshot
-      && lastIterationDraftSnapshot.plateIterationSourceJobId
-    );
     document.querySelectorAll('input[name="plateTrainingTarget"]').forEach(function (input) {
-      input.checked = input.value === target;
-      input.disabled = lockTarget;
+      input.checked = input.value === "plate_detection";
+      input.disabled = false;
     });
   }
 
@@ -20401,7 +20412,11 @@
     if (recipe) {
       var previousRecipe = recipe.value;
       recipe.innerHTML = "";
-      trainingRecipeCatalog.filter(function (row) { return row.status === "active"; }).forEach(function (row) {
+      trainingRecipeCatalog.filter(function (row) {
+        var key = String(row.recipe_key || "").trim();
+        return row.status === "active"
+          && (key !== "plate_recognition_v1" || isLegacyPlateIterationDraft());
+      }).forEach(function (row) {
         var option = document.createElement("option"); option.value = row.recipe_key + "::" + row.version;
         option.textContent = row.name + " · " + (row.model_family || "模型") + " · " + (row.annotation_kind || "bbox") + " · v" + row.version;
         option.title = "训练阶段：模型家族 " + (row.model_family || "-") + "，标注类型 " + (row.annotation_kind || "-") + "，组件契约已冻结";
@@ -22386,7 +22401,7 @@
     setHyperSourceHint({ source: "platform" });
     updateOfficialHyperButtonLabel();
     document.querySelectorAll('input[name="plateTrainingTarget"]').forEach(function (input) {
-      input.checked = input.value === "plate_recognition";
+      input.checked = input.value === "plate_detection";
       input.disabled = false;
     });
 
@@ -23793,6 +23808,11 @@
       var detailResponse = await api("/auto-training-plans/" + planId, { method: "GET" });
       editButton.disabled = false;
       if (!detailResponse.ok) { toast(errMsg(detailResponse), "err"); return; }
+      if (detailResponse.json && detailResponse.json.data
+        && String(detailResponse.json.data.series_type || "").trim() === "plate_recognition") {
+        toast("历史复合车牌计划仅可查看，不能修改", "err");
+        return;
+      }
       setAutoTrainingPlanEditorVisible(true, "edit");
       try {
         await loadAutoTrainingCatalogs({});

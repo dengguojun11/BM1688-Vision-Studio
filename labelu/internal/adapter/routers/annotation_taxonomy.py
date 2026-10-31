@@ -55,7 +55,9 @@ async def list_annotation_labels(
     label_status: str | None = Query(
         default=None, alias="status", pattern="^(active|disabled)$"
     ),
-    annotation_kind: str | None = Query(default=None, pattern="^bbox$"),
+    annotation_kind: str | None = Query(
+        default=None, pattern="^(bbox|polygon)$"
+    ),
     include_disabled: bool = Query(default=True),
     authorization: HTTPAuthorizationCredentials = Security(security),
     db: Session = Depends(db_module.get_db),

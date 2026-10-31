@@ -1,7 +1,13 @@
+import json
 from datetime import datetime
 
 from labelu.internal.application.service import algorithm as algorithm_service
-from labelu.internal.domain.models.annotation_taxonomy import TrainingRecipe
+from labelu.internal.domain.models.annotation_taxonomy import (
+    AnnotationLabel,
+    LabelPreset,
+    LabelPresetItem,
+    TrainingRecipe,
+)
 
 
 def test_ensure_seeded_restores_plate_training_recipes_for_legacy_databases(db):
@@ -61,3 +67,91 @@ def test_ensure_seeded_does_not_duplicate_soft_deleted_plate_recipe(db):
     assert rows[0].id == row.id
     assert rows[0].status == "disabled"
     assert rows[0].deleted_at is not None
+
+
+def test_ensure_seeded_restores_missing_plate_detection_preset(db):
+    preset = (
+        db.query(LabelPreset).filter(LabelPreset.slug == "plateDetection").one_or_none()
+    )
+    if preset is not None:
+        db.query(LabelPresetItem).filter(
+            LabelPresetItem.preset_id == int(preset.id)
+        ).delete(synchronize_session=False)
+        db.delete(preset)
+        db.commit()
+
+    algorithm_service.ensure_seeded(db)
+    algorithm_service.ensure_seeded(db)
+
+    rows = db.query(LabelPreset).filter(LabelPreset.slug == "plateDetection").all()
+    assert len(rows) == 1
+    assert rows[0].training_profile == "plate_detection_v1"
+    assert rows[0].training_profile_config == (
+        '{"profile":"plate_detection_v1","rect_label":"doubleEP",'
+        '"polygon_label":"platePoint","attributes":{}}'
+    )
+    items = (
+        db.query(LabelPresetItem)
+        .filter(LabelPresetItem.preset_id == int(rows[0].id))
+        .all()
+    )
+    assert [
+        (item.label_key, item.label_value, item.annotation_kind, item.color)
+        for item in items
+    ] == [
+        ("车牌框", "doubleEP", "bbox", "#ff6600"),
+        ("车牌四角点", "platePoint", "polygon", "#00aaee"),
+    ]
+
+
+def test_ensure_seeded_does_not_resurrect_soft_deleted_plate_detection_preset(db):
+    algorithm_service.ensure_seeded(db)
+    preset = db.query(LabelPreset).filter(LabelPreset.slug == "plateDetection").one()
+    preset_id = int(preset.id)
+    preset.deleted_at = datetime.now()
+    db.commit()
+
+    algorithm_service.ensure_seeded(db)
+
+    rows = db.query(LabelPreset).filter(LabelPreset.slug == "plateDetection").all()
+    assert len(rows) == 1
+    assert int(rows[0].id) == preset_id
+    assert rows[0].deleted_at is not None
+
+
+def test_ensure_seeded_repairs_plate_detection_geometry_contract(db):
+    algorithm_service.ensure_seeded(db)
+    preset = db.query(LabelPreset).filter(LabelPreset.slug == "plateDetection").one()
+    point_label = (
+        db.query(AnnotationLabel)
+        .filter(AnnotationLabel.normalized_label_value == "platepoint")
+        .one()
+    )
+    point_item = (
+        db.query(LabelPresetItem)
+        .filter(
+            LabelPresetItem.preset_id == int(preset.id),
+            LabelPresetItem.label_value == "platePoint",
+        )
+        .one()
+    )
+    point_label.annotation_kind = "bbox"
+    point_item.annotation_kind = "bbox"
+    preset.training_profile = "plate_recognition_v1"
+    preset.training_profile_config = json.dumps({"attributes": {"plateNumber": {"type": "ocr"}}})
+    db.commit()
+
+    algorithm_service.ensure_seeded(db)
+
+    db.refresh(preset)
+    db.refresh(point_label)
+    db.refresh(point_item)
+    assert preset.training_profile == "plate_detection_v1"
+    assert json.loads(preset.training_profile_config) == {
+        "profile": "plate_detection_v1",
+        "rect_label": "doubleEP",
+        "polygon_label": "platePoint",
+        "attributes": {},
+    }
+    assert point_label.annotation_kind == "polygon"
+    assert point_item.annotation_kind == "polygon"

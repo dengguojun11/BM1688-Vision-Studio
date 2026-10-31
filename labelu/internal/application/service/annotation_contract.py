@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from datetime import datetime
 from typing import Any, Iterable
@@ -27,6 +28,308 @@ from labelu.internal.domain.models.task import Task
 CURRENT_CONTRACT_TRAINING_STATUSES = frozenset(
     {"draft", "active", "frozen", "review_required"}
 )
+
+
+def _snapshot_annotation_kind(value: Any, label_value: Any = None) -> str:
+    """Normalize geometry kinds stored in a label-contract snapshot."""
+
+    kind = str(value or "").strip().lower()
+    # The canonical platePoint value is unambiguous. This also repairs old
+    # snapshots written by the first taxonomy migration, which explicitly
+    # recorded every legacy item as bbox.
+    if str(label_value or "").strip().lower() == "platepoint":
+        return "polygon"
+    kind = kind or "bbox"
+    if kind in {"rect", "rectangle"}:
+        return "bbox"
+    if kind in {"polygon", "bbox"}:
+        return kind
+    # Historical rows were all rectangle labels.  Keep malformed/unknown
+    # values on the safe legacy path instead of dropping their label.
+    return "bbox"
+
+
+def normalize_label_snapshot(snapshot: Any) -> list[dict[str, Any]]:
+    """Normalize per-label geometry before persisting a contract snapshot.
+
+    ``annotation_kind`` was added after the first taxonomy seed.  In that
+    window the canonical ``platePoint`` row could be stored as ``bbox`` even
+    though the task configuration used ``polygonTool``.  The label value is
+    the stable identity for that built-in label, so repair it while retaining
+    every other snapshot field unchanged.
+    """
+
+    if isinstance(snapshot, str):
+        try:
+            snapshot = json.loads(snapshot or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            snapshot = []
+    if not isinstance(snapshot, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    for raw in snapshot:
+        if not isinstance(raw, dict):
+            continue
+        item = copy.deepcopy(raw)
+        item["annotation_kind"] = _snapshot_annotation_kind(
+            item.get("annotation_kind"), item.get("label_value")
+        )
+        normalized.append(item)
+    return normalized
+
+
+def _snapshot_tool_attribute(item: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "labelId": item.get("label_id"),
+        "key": str(item.get("label_key") or item.get("label_value") or ""),
+        "value": str(item.get("label_value") or item.get("label_key") or ""),
+        "color": str(item.get("color") or "#1677ff"),
+    }
+    attributes = item.get("attributes")
+    if isinstance(attributes, list) and attributes:
+        payload["attributes"] = copy.deepcopy(attributes)
+    return payload
+
+
+def task_config_from_label_snapshot(
+    snapshot: Any,
+    *,
+    base_config: Any = None,
+) -> dict[str, Any]:
+    """Materialize geometry tools from an immutable label snapshot.
+
+    Dataset contracts intentionally keep one ordered list of labels while a
+    task config has one attribute list per drawing tool.  This converter is
+    the bridge between those representations.  Existing non-geometry tools
+    are preserved; geometry attributes are replaced by the contract snapshot.
+    """
+
+    if isinstance(snapshot, str):
+        try:
+            snapshot = json.loads(snapshot or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            snapshot = []
+    if not isinstance(snapshot, list):
+        snapshot = []
+
+    rect_attributes: list[dict[str, Any]] = []
+    polygon_attributes: list[dict[str, Any]] = []
+    for raw in snapshot:
+        if not isinstance(raw, dict):
+            continue
+        attribute = _snapshot_tool_attribute(raw)
+        if not attribute["value"]:
+            continue
+        if (
+            _snapshot_annotation_kind(
+                raw.get("annotation_kind"), raw.get("label_value")
+            )
+            == "polygon"
+        ):
+            polygon_attributes.append(attribute)
+        else:
+            rect_attributes.append(attribute)
+
+    config = copy.deepcopy(base_config) if isinstance(base_config, dict) else {}
+    tools = config.get("tools")
+    if not isinstance(tools, list):
+        tools = []
+        config["tools"] = tools
+
+    def upsert_tool(name: str, tool_config: dict[str, Any]) -> None:
+        existing = next(
+            (
+                item
+                for item in tools
+                if isinstance(item, dict) and item.get("tool") == name
+            ),
+            None,
+        )
+        if existing is None:
+            tools.append({"tool": name, "config": tool_config})
+            return
+        previous = existing.get("config")
+        merged = copy.deepcopy(previous) if isinstance(previous, dict) else {}
+        merged.update(tool_config)
+        existing["config"] = merged
+
+    def remove_tool(name: str) -> None:
+        """Drop a geometry tool that is absent from the selected snapshot.
+
+        A task may already contain both geometry tools and then apply a
+        dataset-label subset.  Keeping an old tool would make the saved task
+        configuration claim labels that are not present in its immutable
+        contract.  Non-geometry tools remain untouched.
+        """
+
+        tools[:] = [
+            item
+            for item in tools
+            if not (isinstance(item, dict) and item.get("tool") == name)
+        ]
+
+    if rect_attributes:
+        upsert_tool(
+            "rectTool",
+            {
+                "isShowCursor": False,
+                "showConfirm": False,
+                "skipWhileNoDependencies": False,
+                "drawOutsideTarget": False,
+                "copyBackwardResult": False,
+                "minWidth": 1,
+                "minHeight": 1,
+                "attributeConfigurable": True,
+                "textConfigurable": True,
+                "textCheckType": 4,
+                "customFormat": "",
+                "attributes": rect_attributes,
+            },
+        )
+    else:
+        remove_tool("rectTool")
+
+    if polygon_attributes:
+        is_plate_points = any(
+            str(item.get("value") or "").strip().lower() == "platepoint"
+            for item in polygon_attributes
+        )
+        upsert_tool(
+            "polygonTool",
+            {
+                "isShowCursor": False,
+                "lineType": 1,
+                "drawOutsideTarget": False,
+                "edgeAdsorption": True,
+                "copyBackwardResult": False,
+                "attributeConfigurable": True,
+                "textConfigurable": True,
+                "textCheckType": 0,
+                "customFormat": "",
+                "lowerLimitPointNum": 4 if is_plate_points else 3,
+                "upperLimitPointNum": 4 if is_plate_points else 100,
+                "attributes": polygon_attributes,
+            },
+        )
+    else:
+        remove_tool("polygonTool")
+
+    # The dedicated plate worker is selected from the saved task config.  A
+    # contract containing the canonical rectangle and four-corner labels is
+    # therefore equivalent to applying the plate-detection preset, even when
+    # the task was created directly from a dataset contract.
+    rect_values = {
+        str(item.get("value") or "").strip().lower()
+        for item in rect_attributes
+    }
+    polygon_values = {
+        str(item.get("value") or "").strip().lower()
+        for item in polygon_attributes
+    }
+    if "doubleep" in rect_values and "platepoint" in polygon_values:
+        config["defaultRectPresetId"] = "plateDetection"
+    else:
+        # A subset or non-plate contract must not inherit a stale plate
+        # preset marker from the previous task configuration.
+        config.pop("defaultRectPresetId", None)
+
+    if rect_attributes or polygon_attributes:
+        config.setdefault("commonAttributeConfigurable", True)
+    return config
+
+
+def contract_annotation_kind(snapshot: Any, *, fallback: str = "bbox") -> str:
+    """Return the stable top-level kind for a per-label geometry snapshot.
+
+    The legacy contract column is scalar.  A mixed rectangle/polygon
+    contract therefore retains ``bbox`` as its adapter-compatible top-level
+    value while the immutable label rows carry the authoritative per-label
+    kinds.  Homogeneous polygon contracts can be represented directly.
+    """
+
+    if isinstance(snapshot, str):
+        try:
+            snapshot = json.loads(snapshot or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            snapshot = []
+    kinds = {
+        _snapshot_annotation_kind(
+            item.get("annotation_kind"), item.get("label_value")
+        )
+        for item in snapshot
+        if isinstance(item, dict)
+    }
+    if kinds == {"polygon"}:
+        return "polygon"
+    if kinds == {"bbox"}:
+        return "bbox"
+    return str(fallback or "bbox").strip().lower() or "bbox"
+
+
+def materialize_dataset_contract_task_config(
+    task: Any,
+    contract: Any,
+    *,
+    overwrite_empty_only: bool = True,
+) -> bool:
+    """Populate an unconfigured task from its dataset contract.
+
+    Existing task configs, including historical composite plate configs, are
+    left untouched.  The return value tells callers whether the task changed.
+    """
+
+    if contract is None:
+        return False
+    current = getattr(task, "config", None)
+    if overwrite_empty_only and not task_config_is_unconfigured(current):
+        return False
+    generated = task_config_from_label_snapshot(
+        getattr(contract, "labels_snapshot_json", None),
+        base_config=_parse_config_object(current),
+    )
+    if not generated.get("tools"):
+        return False
+    task.config = json.dumps(generated, ensure_ascii=False)
+    if str(getattr(task, "media_type", "") or "").upper() == "IMAGE":
+        task.status = "CONFIGURED"
+    return True
+
+
+def _parse_config_object(raw: Any) -> dict[str, Any] | None:
+    if isinstance(raw, dict):
+        return copy.deepcopy(raw)
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    return copy.deepcopy(parsed) if isinstance(parsed, dict) else None
+
+
+def task_config_is_unconfigured(raw: Any) -> bool:
+    """Whether a task config has no configured geometry tool yet."""
+
+    parsed = _parse_config_object(raw)
+    if parsed is None:
+        return raw is None or not str(raw or "").strip()
+    tools = parsed.get("tools")
+    if not isinstance(tools, list):
+        return True
+    for tool in tools:
+        if not isinstance(tool, dict) or tool.get("tool") not in {
+            "rectTool",
+            "polygonTool",
+            "pointTool",
+            "lineTool",
+            "cuboidTool",
+        }:
+            continue
+        config = tool.get("config")
+        if isinstance(config, dict) and isinstance(config.get("attributes"), list):
+            if config.get("attributes"):
+                return False
+    return True
 
 
 def active_labels_by_ids(
@@ -177,13 +480,15 @@ def ensure_legacy_rect_contract(
 
     attributes: list[dict[str, Any]] = []
     for tool in payload.get("tools") or []:
-        if not isinstance(tool, dict) or tool.get("tool") != "rectTool":
+        if not isinstance(tool, dict):
+            continue
+        tool_name = str(tool.get("tool") or "").strip()
+        if tool_name not in {"rectTool", "polygonTool"}:
             continue
         config = tool.get("config") if isinstance(tool.get("config"), dict) else {}
         raw_attributes = config.get("attributes")
         if isinstance(raw_attributes, list):
-            attributes = [item for item in raw_attributes if isinstance(item, dict)]
-        break
+            attributes.extend(item for item in raw_attributes if isinstance(item, dict))
     if not attributes:
         return None
 
@@ -243,7 +548,7 @@ def create_contract(
     ids = [int(row.id) for row in labels]
     values = [str(row.label_value) for row in labels]
     existing = current_contract(db, int(task.id))
-    snapshot = labels_snapshot(labels)
+    snapshot = normalize_label_snapshot(labels_snapshot(labels))
     existing_ids = json.loads(existing.label_ids_json) if existing else []
     existing_snapshot = (
         json.loads(existing.labels_snapshot_json or "[]") if existing else []
@@ -282,7 +587,7 @@ def create_contract(
     contract = TaskAnnotationContract(
         task_id=int(task.id),
         revision=revision,
-        annotation_kind="bbox",
+        annotation_kind=contract_annotation_kind(snapshot),
         label_ids_json=json.dumps(ids),
         labels_snapshot_json=json.dumps(snapshot, ensure_ascii=False),
         label_set_signature=label_set_signature(ids),

@@ -46,6 +46,9 @@ from labelu.internal.application.service.annotation_contract import (
     current_contracts_for_tasks,
     ensure_legacy_rect_contract,
     labels_snapshot,
+    normalize_label_snapshot,
+    contract_annotation_kind,
+    materialize_dataset_contract_task_config,
 )
 from labelu.internal.common.label_contract import (
     annotation_sha256 as canonical_annotation_sha256,
@@ -599,14 +602,38 @@ def _sync_tasks_to_dataset_contract(
     )
     refreshed = 0
     for task in tasks:
+        config_materialized = materialize_dataset_contract_task_config(
+            task, current
+        )
+        if config_materialized:
+            db.add(task)
         task_contract = current_task_annotation_contract(db, int(task.id))
         if task_contract is None:
             # A migration-era task may have a dataset pointer but no task
-            # contract yet. Point it at the new immutable dataset revision;
-            # the normal legacy-contract migration can materialize its task
-            # snapshot later when labels are applied.
-            task.dataset_label_contract_id = int(current.id)
-            db.add(task)
+            # contract yet. FULL-scope tasks can inherit the immutable
+            # dataset snapshot immediately; otherwise there is no safe way to
+            # infer a subset without an existing task contract.
+            scope = str(
+                getattr(task, "task_label_scope_mode", None) or "FULL"
+            ).upper()
+            if scope == "FULL":
+                try:
+                    create_task_annotation_contract(
+                        db,
+                        task=task,
+                        label_ids=dataset_label_ids,
+                        created_by=created_by,
+                        dataset_label_contract_id=int(current.id),
+                        label_scope_mode=scope,
+                    )
+                except LabelUException:
+                    # Keep the task gated when a legacy snapshot references a
+                    # disabled/malformed label; the dataset revision itself
+                    # remains valid and can be repaired explicitly.
+                    continue
+                task.dataset_label_contract_id = int(current.id)
+                task.task_label_scope_mode = scope
+                db.add(task)
             continue
 
         if (
@@ -1394,10 +1421,13 @@ def _create_dataset_contract(
         if labels_snapshot_override is not None
         else [str(row.label_value) for row in labels]
     )
-    snapshot = (
+    snapshot = normalize_label_snapshot(
         labels_snapshot_override
         if labels_snapshot_override is not None
         else labels_snapshot(labels)
+    )
+    effective_annotation_kind = contract_annotation_kind(
+        snapshot, fallback=annotation_kind
     )
     expected_label_set_signature = label_set_signature_override or label_set_signature(ids)
     expected_class_order_signature = (
@@ -1409,7 +1439,7 @@ def _create_dataset_contract(
             existing,
             label_ids=ids,
             snapshot=snapshot,
-            annotation_kind=annotation_kind,
+            annotation_kind=effective_annotation_kind,
             label_set_signature_value=expected_label_set_signature,
             class_order_signature_value=expected_class_order_signature,
         ):
@@ -1437,7 +1467,7 @@ def _create_dataset_contract(
     contract = DatasetLabelContract(
         dataset_id=int(dataset.id),
         revision=revision,
-        annotation_kind=str(annotation_kind or "bbox").strip().lower(),
+        annotation_kind=effective_annotation_kind,
         label_ids_json=json.dumps(ids, separators=(",", ":")),
         labels_snapshot_json=json.dumps(
             snapshot, ensure_ascii=False, separators=(",", ":")
@@ -1935,16 +1965,29 @@ async def create_version_from_tasks(
                 except (TypeError, ValueError):
                     result_payload = None
             target = result_payload if isinstance(result_payload, dict) else annotation
-            rect_tool = target.get("rectTool") if isinstance(target, dict) else None
-            if isinstance(rect_tool, dict) and isinstance(
-                rect_tool.get("result"), list
-            ):
-                rect_tool["result"] = [
-                    item
-                    for item in rect_tool["result"]
-                    if isinstance(item, dict)
-                    and str(item.get("label") or "").strip() in selected_tokens
-                ]
+            if isinstance(target, dict):
+                # A label contract may bind different geometry kinds to
+                # different drawing tools.  Filter every geometry result so a
+                # label-subset manifest cannot retain an unselected polygon
+                # (or another non-rect geometry) beside the selected box.
+                for tool_name in (
+                    "rectTool",
+                    "polygonTool",
+                    "pointTool",
+                    "lineTool",
+                    "cuboidTool",
+                ):
+                    tool_payload = target.get(tool_name)
+                    if not isinstance(tool_payload, dict) or not isinstance(
+                        tool_payload.get("result"), list
+                    ):
+                        continue
+                    tool_payload["result"] = [
+                        item
+                        for item in tool_payload["result"]
+                        if isinstance(item, dict)
+                        and str(item.get("label") or "").strip() in selected_tokens
+                    ]
             if result_is_text and isinstance(result_payload, dict):
                 annotation["result"] = json.dumps(
                     result_payload, ensure_ascii=False, separators=(",", ":")

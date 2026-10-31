@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import status
 from sqlalchemy.orm import Session
 
-from labelu.internal.adapter.persistence import crud_algorithm
+from labelu.internal.adapter.persistence import crud_algorithm, crud_annotation_taxonomy
 from labelu.internal.application.command.algorithm import (
     CreateAlgorithmDefinitionCommand,
     UpdateAlgorithmDefinitionCommand,
@@ -26,11 +26,242 @@ from labelu.internal.common.db import begin_transaction
 from labelu.internal.common.error_code import ErrorCode, LabelUException
 from labelu.internal.domain.models.algorithm import AlgorithmDefinition, AlgorithmGroup
 from labelu.internal.domain.models.annotation_taxonomy import (
+    AnnotationLabel,
+    LabelPreset,
+    LabelPresetLabel,
+    LabelPresetItem,
     RuntimePublishTemplate,
     TrainingRecipe,
 )
+from labelu.internal.common.plate_recognition_profile import (
+    DEFAULT_PLATE_DETECTION_CONFIG,
+    PLATE_DETECTION_PRESET_SLUG,
+    PLATE_DETECTION_PROFILE,
+)
 from labelu.internal.domain.models.user import User
 from labelu.internal.common.task_access import is_task_superuser
+
+
+_PLATE_DETECTION_LABEL_SPECS = (
+    {
+        "label_key": "车牌框",
+        "label_value": "doubleEP",
+        "annotation_kind": "bbox",
+        "color": "#ff6600",
+        "sort_order": 0,
+    },
+    {
+        "label_key": "车牌四角点",
+        "label_value": "platePoint",
+        "annotation_kind": "polygon",
+        "color": "#00aaee",
+        "sort_order": 1,
+    },
+)
+
+
+def _plate_detection_preset_needs_sync(db: Session) -> bool:
+    """Check whether the built-in plate preset has both canonical geometries."""
+
+    preset = crud_annotation_taxonomy.label_preset_find_by_slug_ci(
+        db, PLATE_DETECTION_PRESET_SLUG, active_only=False
+    )
+    if preset is None or preset.deleted_at is not None:
+        # A soft-deleted operator preset is intentionally left disabled. A
+        # missing preset, however, must be created for metadata-only databases.
+        return preset is None
+    if str(preset.training_profile or "").strip() != PLATE_DETECTION_PROFILE:
+        return True
+    try:
+        profile_config = json.loads(preset.training_profile_config or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return True
+    if profile_config != DEFAULT_PLATE_DETECTION_CONFIG:
+        return True
+    for spec in _PLATE_DETECTION_LABEL_SPECS:
+        label = (
+            db.query(AnnotationLabel)
+            .filter(
+                AnnotationLabel.normalized_label_value
+                == spec["label_value"].lower(),
+            )
+            .first()
+        )
+        if label is None:
+            return True
+        if str(label.annotation_kind or "bbox").strip().lower() != spec["annotation_kind"]:
+            return True
+        relation = (
+            db.query(LabelPresetLabel.id)
+            .filter(
+                LabelPresetLabel.preset_id == int(preset.id),
+                LabelPresetLabel.label_id == int(label.id),
+            )
+            .first()
+        )
+        if relation is None:
+            return True
+        item = (
+            db.query(LabelPresetItem)
+            .filter(
+                LabelPresetItem.preset_id == int(preset.id),
+                LabelPresetItem.label_value == spec["label_value"],
+            )
+            .first()
+        )
+        if item is None:
+            return True
+        if (
+            str(item.annotation_kind or "bbox").strip().lower()
+            != spec["annotation_kind"]
+        ):
+            return True
+    return False
+
+
+def _available_annotation_color(
+    db: Session, desired: str, *, label_id: int | None = None
+) -> str:
+    """Return a deterministic color that respects the global color uniqueness."""
+
+    candidates = [desired, "#00aaef", "#00aaec", "#ff6601", "#ff6602"]
+    used = {
+        str(value).strip().lower()
+        for (value,) in db.query(AnnotationLabel.color).all()
+        if value
+    }
+    current = None
+    if label_id is not None:
+        current = (
+            db.query(AnnotationLabel.color)
+            .filter(AnnotationLabel.id == int(label_id))
+            .scalar()
+        )
+        if current:
+            used.discard(str(current).strip().lower())
+    for color in candidates:
+        if color.lower() not in used:
+            return color
+    suffix = 0
+    while True:
+        color = f"#00{suffix:04x}"[-7:]
+        if color.lower() not in used:
+            return color
+        suffix += 1
+
+
+def _ensure_plate_detection_preset(db: Session) -> None:
+    """Create/repair the detection preset and its canonical label relations."""
+
+    preset = crud_annotation_taxonomy.label_preset_find_by_slug_ci(
+        db, PLATE_DETECTION_PRESET_SLUG, active_only=False
+    )
+    if preset is None:
+        preset = LabelPreset(
+            slug=PLATE_DETECTION_PRESET_SLUG,
+            name="电动车牌检测与四角定位",
+            description="车牌框 + 四角点，仅训练车牌定位，不识别号码、颜色或类型",
+            training_profile=PLATE_DETECTION_PROFILE,
+            training_profile_config=json.dumps(
+                DEFAULT_PLATE_DETECTION_CONFIG,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ),
+            sort_order=1,
+        )
+        db.add(preset)
+        db.flush()
+    if preset.deleted_at is not None:
+        return
+
+    preset.name = "电动车牌检测与四角定位"
+    preset.description = "车牌框 + 四角点，仅训练车牌定位，不识别号码、颜色或类型"
+    preset.training_profile = PLATE_DETECTION_PROFILE
+    preset.training_profile_config = json.dumps(
+        DEFAULT_PLATE_DETECTION_CONFIG,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    db.add(preset)
+
+    for spec in _PLATE_DETECTION_LABEL_SPECS:
+        normalized = spec["label_value"].lower()
+        label = (
+            db.query(AnnotationLabel)
+            .filter(AnnotationLabel.normalized_label_value == normalized)
+            .first()
+        )
+        if label is None:
+            label = AnnotationLabel(
+                label_key=spec["label_key"],
+                label_value=spec["label_value"],
+                normalized_label_value=normalized,
+                annotation_kind=spec["annotation_kind"],
+                color=_available_annotation_color(db, spec["color"]),
+                status="active",
+                version=1,
+                sort_order=spec["sort_order"],
+            )
+            db.add(label)
+            db.flush()
+        else:
+            # These two canonical values have fixed geometry semantics. Repair
+            # the legacy bbox backfill without changing operator-owned labels.
+            label.annotation_kind = spec["annotation_kind"]
+            if not label.label_key:
+                label.label_key = spec["label_key"]
+            if not label.label_value:
+                label.label_value = spec["label_value"]
+            db.add(label)
+            db.flush()
+
+        item = (
+            db.query(LabelPresetItem)
+            .filter(
+                LabelPresetItem.preset_id == int(preset.id),
+                LabelPresetItem.label_value == spec["label_value"],
+            )
+            .order_by(LabelPresetItem.id.asc())
+            .first()
+        )
+        if item is None:
+            db.add(
+                LabelPresetItem(
+                    preset_id=int(preset.id),
+                    label_key=spec["label_key"],
+                    label_value=spec["label_value"],
+                    color=str(label.color or spec["color"]),
+                    annotation_kind=spec["annotation_kind"],
+                    sort_order=spec["sort_order"],
+                )
+            )
+        else:
+            item.label_key = spec["label_key"]
+            item.color = str(label.color or spec["color"])
+            item.annotation_kind = spec["annotation_kind"]
+            item.sort_order = spec["sort_order"]
+            db.add(item)
+
+        relation = (
+            db.query(LabelPresetLabel)
+            .filter(
+                LabelPresetLabel.preset_id == int(preset.id),
+                LabelPresetLabel.label_id == int(label.id),
+            )
+            .first()
+        )
+        if relation is None:
+            db.add(
+                LabelPresetLabel(
+                    preset_id=int(preset.id),
+                    label_id=int(label.id),
+                    sort_order=spec["sort_order"],
+                )
+            )
+        else:
+            relation.sort_order = spec["sort_order"]
+            db.add(relation)
+    db.flush()
 
 
 def _decode_json(value: str | None, default: Any) -> Any:
@@ -192,6 +423,12 @@ def ensure_seeded(db: Session) -> None:
         .first()
         is None
     ]
+    # The training catalog and annotation presets are separate tables. A
+    # legacy database can therefore have the detection recipe without the
+    # matching canonical labels/relations, which makes the candidate endpoint
+    # lose the four-corner geometry. Repair only the active built-in preset;
+    # an operator-soft-deleted preset remains disabled.
+    plate_detection_preset_needs_sync = _plate_detection_preset_needs_sync(db)
     # The task-dimension wizard validates the runtime contract before it can
     # create a job. Some older/local databases were created from metadata
     # without running the migration seed, so provide the built-in default
@@ -227,6 +464,7 @@ def ensure_seeded(db: Session) -> None:
         not missing_groups
         and not missing_definitions
         and not missing_recipes
+        and not plate_detection_preset_needs_sync
         and not chip_updates
         and runtime_template_exists
     ):
@@ -321,6 +559,8 @@ def ensure_seeded(db: Session) -> None:
             )
         if not runtime_template_exists:
             db.add(RuntimePublishTemplate(**runtime_template_defaults))
+        if plate_detection_preset_needs_sync:
+            _ensure_plate_detection_preset(db)
         for row, chips in chip_updates:
             row.supported_chips_json = json.dumps(chips, ensure_ascii=False)
 

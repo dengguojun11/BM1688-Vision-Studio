@@ -1,3 +1,4 @@
+import hashlib
 import json
 from datetime import datetime
 from types import SimpleNamespace
@@ -104,6 +105,140 @@ def _version(db: Session, dataset: Dataset, user_id: int) -> DatasetVersion:
     return row
 
 
+def _plate_detection_manifest(*, points=None, labels=None):
+    annotation = {
+        "result": {
+            "rectTool": {
+                "result": [
+                    {
+                        "label": "doubleEP",
+                        "x": 10,
+                        "y": 10,
+                        "width": 80,
+                        "height": 40,
+                    }
+                ]
+            },
+            "polygonTool": {
+                "result": [
+                    {
+                        "label": "platePoint",
+                        "points": points
+                        or [[10, 10], [90, 10], [90, 50], [10, 50]],
+                    }
+                ]
+            },
+        }
+    }
+    return {
+        "format": "7gai.dataset_manifest.v1",
+        "source_task_ids": [11],
+        "annotation_contract": {
+            "dataset_contract_id": 3,
+            "dataset_contract_revision": 1,
+            "label_set_signature": "label-signature",
+            "class_order_signature": "class-signature",
+            "labels": labels
+            or [
+                {
+                    "label_id": 1,
+                    "label_key": "车牌框",
+                    "label_value": "doubleEP",
+                    "annotation_kind": "bbox",
+                },
+                {
+                    "label_id": 2,
+                    "label_key": "车牌四角点",
+                    "label_value": "platePoint",
+                    "annotation_kind": "polygon",
+                },
+            ],
+        },
+        "samples": [
+            {
+                "sample_id": 101,
+                "task_id": 11,
+                "split": "train",
+                "annotation": annotation,
+                "asset_sha256": "a" * 64,
+            }
+        ],
+    }
+
+
+class _ManifestStorage:
+    def __init__(self, raw: str):
+        self.raw = raw
+
+    def read_text(self, _path):
+        return self.raw
+
+
+def _plate_version_for_manifest(manifest):
+    raw = json.dumps(manifest, ensure_ascii=False, separators=(",", ":"))
+    return SimpleNamespace(
+        id=7,
+        dataset_id=3,
+        version_no=1,
+        status="FROZEN",
+        manifest_rel_path="datasets/dataset-3/v-7/manifest.json",
+        manifest_sha256=hashlib.sha256(raw.encode("utf-8")).hexdigest(),
+        dataset_label_contract_id=3,
+        dataset_contract_revision=1,
+        label_set_signature="label-signature",
+        class_order_signature="class-signature",
+    ), raw
+
+
+def test_plate_detection_frozen_contract_requires_mixed_geometry(monkeypatch):
+    manifest = _plate_detection_manifest()
+    version, raw = _plate_version_for_manifest(manifest)
+    monkeypatch.setattr(
+        training_router,
+        "get_storage_backend",
+        lambda: _ManifestStorage(raw),
+    )
+
+    assert training_router._validate_plate_detection_dataset_version(version) == manifest
+
+    missing = _plate_detection_manifest(labels=[manifest["annotation_contract"]["labels"][0]])
+    missing_version, missing_raw = _plate_version_for_manifest(missing)
+    monkeypatch.setattr(
+        training_router,
+        "get_storage_backend",
+        lambda: _ManifestStorage(missing_raw),
+    )
+    with pytest.raises(LabelUException, match="doubleEP.*platePoint"):
+        training_router._validate_plate_detection_dataset_version(missing_version)
+
+
+def test_plate_detection_frozen_contract_rejects_wrong_polygon_kind(monkeypatch):
+    manifest = _plate_detection_manifest()
+    manifest["annotation_contract"]["labels"][1]["annotation_kind"] = "bbox"
+    version, raw = _plate_version_for_manifest(manifest)
+    monkeypatch.setattr(
+        training_router,
+        "get_storage_backend",
+        lambda: _ManifestStorage(raw),
+    )
+
+    with pytest.raises(LabelUException, match="platePoint.*polygon"):
+        training_router._validate_plate_detection_dataset_version(version)
+
+
+def test_plate_detection_frozen_contract_rejects_non_four_point_polygon(monkeypatch):
+    manifest = _plate_detection_manifest(points=[[10, 10], [90, 10], [90, 50]])
+    version, raw = _plate_version_for_manifest(manifest)
+    monkeypatch.setattr(
+        training_router,
+        "get_storage_backend",
+        lambda: _ManifestStorage(raw),
+    )
+
+    with pytest.raises(LabelUException, match="四角点"):
+        training_router._validate_plate_detection_dataset_version(version)
+
+
 def test_unified_training_contract_has_no_project_dimension():
     command = CreateTrainingJobCommand(
         task_id=11,
@@ -195,6 +330,7 @@ def test_training_eligible_tasks_forwards_plate_training_recipe(
     monkeypatch,
 ):
     calls = []
+    seeded = []
 
     async def fake_candidates(db, current_user, **kwargs):
         calls.append(kwargs)
@@ -204,6 +340,11 @@ def test_training_eligible_tasks_forwards_plate_training_recipe(
         training_router.task_service,
         "list_task_dimension_training_candidates",
         fake_candidates,
+    )
+    monkeypatch.setattr(
+        training_router,
+        "ensure_seeded",
+        lambda _db: seeded.append(True),
     )
     response = client.get(
         "/api/v1/training/eligible-tasks",
@@ -217,6 +358,7 @@ def test_training_eligible_tasks_forwards_plate_training_recipe(
     )
 
     assert response.status_code == 200, response.text
+    assert seeded == [True]
     assert calls == [
         {"page": 0, "size": 20, "training_recipe_key": "plate_detection_v1"}
     ]

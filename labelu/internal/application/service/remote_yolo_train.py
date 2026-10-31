@@ -56,6 +56,17 @@ _REMOTE_TOKEN_LOCK = threading.Lock()
 _REMOTE_ACTIVE_PHASES = frozenset(
     {"preparing", "uploading", "downloading", "uploaded", "remote_running"}
 )
+# The node agent currently invokes the generic Ultralytics detection trainer.
+# Plate jobs require the dedicated local Pose exporter and must never be sent
+# through that generic worker, otherwise polygon keypoints would be discarded.
+_REMOTE_UNSUPPORTED_PLATE_MARKERS = frozenset(
+    {
+        "plate_detection",
+        "plate_detection_v1",
+        "plate_recognition",
+        "plate_recognition_v1",
+    }
+)
 REMOTE_TRAIN_ANALYSIS_ARTIFACTS = (
     "train/args.yaml",
     "train/results.png",
@@ -78,6 +89,65 @@ REMOTE_TRAIN_ANALYSIS_ARTIFACTS = (
     "train/val_batch2_labels.jpg",
     "train/val_batch2_pred.jpg",
 )
+
+
+def is_remote_plate_training_request(
+    cmd: Any | None = None,
+    *,
+    job: Any | None = None,
+) -> bool:
+    """Return whether a request/job selects one of the dedicated plate profiles."""
+
+    values: list[Any] = []
+    for source in (cmd, job):
+        if source is None:
+            continue
+        for field in (
+            "plate_training_target",
+            "training_recipe_key",
+            "runtime_profile",
+            "training_profile",
+            "job_type",
+            "category",
+        ):
+            values.append(getattr(source, field, None))
+        raw_hyperparams = getattr(source, "hyperparams", None)
+        if raw_hyperparams is None:
+            raw_hyperparams = getattr(source, "hyperparams_json", None)
+        if isinstance(raw_hyperparams, str):
+            try:
+                raw_hyperparams = json.loads(raw_hyperparams)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                raw_hyperparams = None
+        if isinstance(raw_hyperparams, dict):
+            values.extend(
+                raw_hyperparams.get(field)
+                for field in (
+                    "plate_training_target",
+                    "training_recipe_key",
+                    "runtime_profile",
+                    "training_profile",
+                    "job_type",
+                    "category",
+                )
+            )
+    return any(
+        str(value or "").strip().lower() in _REMOTE_UNSUPPORTED_PLATE_MARKERS
+        for value in values
+    )
+
+
+def assert_remote_training_supported(
+    cmd: Any | None = None,
+    *,
+    job: Any | None = None,
+) -> None:
+    """Fail closed before a plate job can reach the generic remote agent."""
+
+    if is_remote_plate_training_request(cmd, job=job):
+        raise RuntimeError(
+            "车牌框 + 四角点 Pose 训练暂不支持远程训练，请选择本地训练"
+        )
 
 
 def is_remote_train_job_dispatching(job_id: int) -> bool:
@@ -623,6 +693,7 @@ def prepare_local_dataset_for_job(
         job = crud_yolo_train_job.get(db=db, job_id=job_id)
         if not job:
             raise RuntimeError(f"训练作业不存在: {job_id}")
+        assert_remote_training_supported(cmd, job=job)
         owner = crud_user.get(db, job.created_by) if job.created_by else None
         if not owner:
             raise RuntimeError("训练作业缺少创建者")
@@ -1197,6 +1268,12 @@ def _dispatch_remote_train_job(
     execution_token: ExecutionLeaseToken | None = None
     lease_handed_to_poll = False
     try:
+        # Check the persisted row as well as the caller command.  This covers
+        # manually queued or replayed jobs whose command was reconstructed
+        # from older database fields.
+        with session_scope() as db:
+            persisted_job = crud_yolo_train_job.get(db=db, job_id=job_id)
+        assert_remote_training_supported(cmd, job=persisted_job)
         _assert_remote_hmac_ready()
         execution_token = _claim_remote_execution(job_id)
         node = resolve_node_for_train(node_id)

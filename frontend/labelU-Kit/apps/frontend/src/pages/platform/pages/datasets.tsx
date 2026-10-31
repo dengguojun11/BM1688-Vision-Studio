@@ -111,13 +111,31 @@ export type DatasetLabelContract = PromptContract & {
   revision: number;
   annotation_kind: string;
   label_ids: number[];
-  labels: Array<{ label_id?: number; label_key?: string; label_value?: string; color?: string }>;
+  labels: Array<{
+    label_id?: number;
+    label_key?: string;
+    label_value?: string;
+    annotation_kind?: string;
+    color?: string;
+  }>;
   label_set_signature?: string;
   class_order_signature?: string;
   status: string;
   created_at?: string;
   frozen_at?: string | null;
 };
+
+export function isBboxOnlyContract(contract: Pick<DatasetLabelContract, 'labels'> | null | undefined) {
+  return Boolean(
+    contract &&
+      (contract.labels || []).every((label) => {
+        const kind = String(label.annotation_kind || '').trim().toLowerCase();
+        // Legacy snapshots omitted the per-label kind and are known bbox
+        // contracts; an explicit polygon makes the contract non-bbox.
+        return !kind || kind === 'bbox';
+      }),
+  );
+}
 type ValidationResult = { version_id: number; valid: boolean; checks: Record<string, boolean>; warnings?: string[] };
 
 function labelDisplayName(label: { label_key?: string; label_value?: string; label_id?: number }) {
@@ -125,6 +143,13 @@ function labelDisplayName(label: { label_key?: string; label_value?: string; lab
   const englishName = String(label.label_value || '').trim();
   if (chineseName && englishName) return `${chineseName}（${englishName}）`;
   return chineseName || englishName || `标签 #${label.label_id ?? ''}`;
+}
+
+function annotationKindLabel(value: unknown) {
+  const kind = String(value || '').trim().toLowerCase();
+  if (kind === 'polygon') return '多边形';
+  if (kind === 'bbox') return '矩形框';
+  return kind || '未设置';
 }
 
 export function fetchDatasets(page = 0, size = 20, search?: string) {
@@ -745,7 +770,7 @@ const GovernanceModalContent = styled.div`
   .tag-binding-table-head,
   .tag-binding-row {
     display: grid;
-    grid-template-columns: 34px minmax(0, 1.1fr) minmax(0, 1fr);
+    grid-template-columns: 34px minmax(0, 1.05fr) minmax(0, .9fr) minmax(76px, .65fr);
     align-items: center;
     gap: 8px;
     padding: 0 14px;
@@ -966,9 +991,8 @@ function CreateDatasetAction() {
     try {
       await request.post('/v1/datasets', {
         name: values.name.trim(),
-        description: values.description?.trim() || undefined,
+        ...(values.description?.trim() ? { description: values.description.trim() } : {}),
         label_ids: (values.label_ids || []).map((value) => Number(value)),
-        annotation_kind: 'bbox',
       });
       message.success('数据集已创建');
       setOpen(false);
@@ -1059,7 +1083,16 @@ function TagBindingTransfer({
   value?: number[];
   onChange?: (value: number[]) => void;
   enabled?: boolean;
-  initialLabels?: Array<AnnotationLabel | { label_id?: number; label_key?: string; label_value?: string; color?: string }>;
+  initialLabels?: Array<
+    | AnnotationLabel
+    | {
+        label_id?: number;
+        label_key?: string;
+        label_value?: string;
+        annotation_kind?: string;
+        color?: string;
+      }
+  >;
 }) {
   const selectedIds = Array.from(
     new Set(
@@ -1203,6 +1236,9 @@ function TagBindingTransfer({
         <span className="tag-binding-cell tag-binding-cell-secondary">
           {label.label_value || label.label_key || `label_${id}`}
         </span>
+        <span className="tag-binding-cell tag-binding-cell-secondary">
+          {annotationKindLabel(label.annotation_kind)}
+        </span>
       </div>
     );
   };
@@ -1257,6 +1293,7 @@ function TagBindingTransfer({
           />
           <span>中文名称</span>
           <span>标签编码</span>
+          <span>几何类型</span>
         </div>
         <div className="tag-binding-list">
           {labelsQuery.isLoading ? (
@@ -1322,6 +1359,7 @@ function TagBindingTransfer({
           />
           <span>中文名称</span>
           <span>标签编码</span>
+          <span>几何类型</span>
         </div>
         <div className="tag-binding-list">
           {boundLabels.length ? (
@@ -1366,7 +1404,7 @@ export function DatasetLabelContractModal({
     retry: false,
   });
   const contract = contractQuery.data;
-  const bboxPromptSupported = String(contract?.annotation_kind || 'bbox').trim().toLowerCase() === 'bbox';
+  const bboxPromptSupported = isBboxOnlyContract(contract);
 
   useEffect(() => {
     if (!open) {
@@ -1389,7 +1427,6 @@ export function DatasetLabelContractModal({
     try {
       await request.post(`/v1/datasets/${dataset.id}/label-contracts`, {
         label_ids: labelIds,
-        annotation_kind: 'bbox',
       });
       message.success(contract ? '数据集标签契约已更新为新版本' : '数据集标签契约已绑定');
       await queryClient.invalidateQueries({

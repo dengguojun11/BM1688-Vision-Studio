@@ -71,6 +71,47 @@ def test_build_prompt_spec_uses_contract_order_and_runtime_size_placeholders():
     assert warnings
 
 
+def test_build_prompt_spec_preserves_mixed_geometry_contract():
+    contract = _contract(
+        labels=[
+            {
+                "label_id": 11,
+                "label_key": "车牌框",
+                "label_value": "doubleEP",
+                "annotation_kind": "bbox",
+                "attributes": [],
+            },
+            {
+                "label_id": 12,
+                "label_key": "车牌四角点",
+                "label_value": "platePoint",
+                "annotation_kind": "polygon",
+                "attributes": [],
+            },
+        ]
+    )
+
+    spec, prompt, _ = _build_prompt_spec(
+        contract,
+        operation="bbox_detection",
+        provider_key="volcengine",
+        model_name=None,
+        profile_key="plate_detection_v1",
+        profile_version="1",
+        image_width=1920,
+        image_height=1080,
+    )
+
+    assert [item["tool"] for item in spec["labels"]] == [
+        "rectTool",
+        "polygonTool",
+    ]
+    assert spec["labels"][1]["point_count"] == 4
+    assert spec["constraints"]["allowed_tools"] == ["rectTool", "polygonTool"]
+    assert "恰好输出 4 个点" in prompt
+    _validate_effective_prompt(prompt, spec)
+
+
 def test_render_prompt_template_replaces_transient_image_dimensions():
     rendered = render_prompt_template(
         "图像尺寸 {{image_width}} x {{image_height}}，{{image_width}} 不变",

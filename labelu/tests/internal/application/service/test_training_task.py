@@ -939,22 +939,33 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
 ):
     user = _get_test_user(db)
     from labelu.internal.common.plate_recognition_profile import (
-        DEFAULT_PLATE_RECOGNITION_CONFIG,
-        PLATE_RECOGNITION_PROFILE,
+        DEFAULT_PLATE_DETECTION_CONFIG,
+        PLATE_DETECTION_PROFILE,
     )
 
     with begin_transaction(db):
         crud_annotation_taxonomy.label_preset_create(
             db,
-            slug="plateRecognition",
-            name="双层电动车牌识别",
+            slug="plateDetection",
+            name="电动车牌检测与四角定位",
             description=None,
             sort_order=0,
             items=[
-                {"label_key": "双层车牌", "label_value": "doubleEP", "color": "#ff6600"}
+                {
+                    "label_key": "车牌框",
+                    "label_value": "doubleEP",
+                    "color": "#ff6600",
+                    "annotation_kind": "bbox",
+                },
+                {
+                    "label_key": "车牌四角点",
+                    "label_value": "platePoint",
+                    "color": "#00aaee",
+                    "annotation_kind": "polygon",
+                },
             ],
-            training_profile=PLATE_RECOGNITION_PROFILE,
-            training_profile_config=json.dumps(DEFAULT_PLATE_RECOGNITION_CONFIG),
+            training_profile=PLATE_DETECTION_PROFILE,
+            training_profile_config=json.dumps(DEFAULT_PLATE_DETECTION_CONFIG),
         )
     task_a = _seed_task(db, owner_id=user.id, name="车牌A", config=_plate_task_config())
     task_b = _seed_task(db, owner_id=user.id, name="车牌B", config=_plate_task_config())
@@ -1008,15 +1019,15 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
         db,
         current_user=user,
         cmd=cmd_mod.PreviewLabelDimensionTrainingTaskCommand(
-            selected_presets=[{"preset_slug": "plateRecognition"}],
+            selected_presets=[{"preset_slug": "plateDetection"}],
             selected_label_items=[
-                {"preset_slug": "plateRecognition", "label_value": "doubleEP"}
+                {"preset_slug": "plateDetection", "label_value": "doubleEP"}
             ],
             selected_task_ids=[task_a.id, task_b.id],
         ),
     )
 
-    assert preview.training_profile == PLATE_RECOGNITION_PROFILE
+    assert preview.training_profile == PLATE_DETECTION_PROFILE
     assert preview.included_task_count == 2
     assert preview.included_image_count == 2
     assert preview.positive_image_count == 1
@@ -1033,15 +1044,15 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
             selected_task_ids=[task_a.id, task_b.id],
             dataset_category_id=category.id,
             dataset_category_ids=[category.id],
-            training_recipe_key=PLATE_RECOGNITION_PROFILE,
+            training_recipe_key=PLATE_DETECTION_PROFILE,
         ),
     )
-    assert task_dimension_preview.training_profile == PLATE_RECOGNITION_PROFILE
+    assert task_dimension_preview.training_profile == PLATE_DETECTION_PROFILE
     assert task_dimension_preview.included_image_count == 2
     assert task_dimension_preview.positive_image_count == 1
     assert task_dimension_preview.negative_image_count == 1
     assert task_dimension_preview.dataset_category_id == category.id
-    assert task_dimension_preview.training_recipe_key == PLATE_RECOGNITION_PROFILE
+    assert task_dimension_preview.training_recipe_key == PLATE_DETECTION_PROFILE
 
     dispatched = []
     monkeypatch.setattr(
@@ -1057,7 +1068,7 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
             selected_task_ids=[task_a.id, task_b.id],
             dataset_category_id=category.id,
             dataset_category_ids=[category.id],
-            training_recipe_key=PLATE_RECOGNITION_PROFILE,
+            training_recipe_key=PLATE_DETECTION_PROFILE,
             model_weights="yolov8n-pose.pt",
             weights_source="preset",
             epochs=1,
@@ -1077,44 +1088,23 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
         task_dimension_row.selected_presets_snapshot_json
     )
     assert task_dimension_created.mode == "plate_detection"
-    assert task_dimension_presets[0]["training_profile"] == PLATE_RECOGNITION_PROFILE
+    assert task_dimension_presets[0]["training_profile"] == PLATE_DETECTION_PROFILE
     assert task_dimension_row.dataset_category_id == category.id
-    assert task_dimension_row.training_recipe_key == PLATE_RECOGNITION_PROFILE
+    assert task_dimension_row.training_recipe_key == PLATE_DETECTION_PROFILE
     task_dimension_job = crud_yolo_train_job.get(
         db, task_dimension_created.latest_job_id
     )
     assert task_dimension_job.dataset_category_id == category.id
-    assert task_dimension_job.training_recipe_key == PLATE_RECOGNITION_PROFILE
-
-    created = svc.create_label_dimension_training_task(
-        db,
-        current_user=user,
-        cmd=cmd_mod.CreateLabelDimensionTrainingTaskCommand(
-            name="复合车牌训练",
-            selected_presets=[{"preset_slug": "plateRecognition"}],
-            selected_label_items=[
-                {"preset_slug": "plateRecognition", "label_value": "doubleEP"}
-            ],
-            selected_task_ids=[task_a.id, task_b.id],
-            model_weights="yolov8n-pose.pt",
-            weights_source="preset",
-            epochs=1,
-            imgsz=640,
-        ),
-    )
-    job = crud_yolo_train_job.get(db, created.latest_job_id)
-    assert job.job_type == "plate_recognition"
-    assert job.model_weights == "yolov8n-pose.pt"
-    assert any(item[0] == job.id for item in dispatched)
+    assert task_dimension_job.training_recipe_key == PLATE_DETECTION_PROFILE
 
     detection_created = svc.create_label_dimension_training_task(
         db,
         current_user=user,
         cmd=cmd_mod.CreateLabelDimensionTrainingTaskCommand(
             name="车牌检测单模型训练",
-            selected_presets=[{"preset_slug": "plateRecognition"}],
+            selected_presets=[{"preset_slug": "plateDetection"}],
             selected_label_items=[
-                {"preset_slug": "plateRecognition", "label_value": "doubleEP"}
+                {"preset_slug": "plateDetection", "label_value": "doubleEP"}
             ],
             selected_task_ids=[task_a.id, task_b.id],
             model_weights="yolov8n-pose.pt",
@@ -1125,31 +1115,13 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
         ),
     )
     detection_job = crud_yolo_train_job.get(db, detection_created.latest_job_id)
+    job = detection_job
     assert detection_created.mode == "plate_detection"
     assert detection_job.job_type == "plate_detection"
     assert json.loads(detection_job.component_status_json) == {
         "pose": {"status": "PENDING", "artifact": None, "error": None}
     }
     assert "车牌检测训练任务已创建" in detection_created.message
-
-    component_status = {}
-    component_artifacts = {}
-    for component in svc.plate_recognition_train.PLATE_COMPONENTS:
-        pt_path = tmp_path / f"{component}.pt"
-        onnx_path = tmp_path / f"{component}.onnx"
-        pt_path.write_bytes(b"pt")
-        onnx_path.write_bytes(b"onnx")
-        artifact = {"pt": str(pt_path), "onnx": str(onnx_path)}
-        component_status[component] = {"status": "COMPLETED", "artifact": artifact}
-        component_artifacts[component] = artifact
-    with begin_transaction(db):
-        crud_yolo_train_job.update_status(
-            db,
-            job,
-            "COMPLETED",
-            component_status_json=json.dumps(component_status),
-            component_artifacts_json=json.dumps(component_artifacts),
-        )
 
     detection_pt = tmp_path / "plate_detection_best.pt"
     detection_onnx = tmp_path / "plate_detection.onnx"
@@ -1194,16 +1166,16 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
         == detection_job.id
     )
 
-    with pytest.raises(Exception, match="训练目标与当前车牌训练目标不一致"):
+    with pytest.raises(Exception, match="车牌检测预设只能训练车牌框与四角点"):
         svc.create_label_dimension_training_task(
             db,
             current_user=user,
             cmd=cmd_mod.CreateLabelDimensionTrainingTaskCommand(
                 name="错误的跨模式迭代",
-                selected_presets=[{"preset_slug": "plateRecognition"}],
+                selected_presets=[{"preset_slug": "plateDetection"}],
                 selected_label_items=[
                     {
-                        "preset_slug": "plateRecognition",
+                        "preset_slug": "plateDetection",
                         "label_value": "doubleEP",
                     }
                 ],
@@ -1212,7 +1184,7 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
                 weights_source="preset",
                 epochs=1,
                 imgsz=640,
-                plate_training_target="plate_detection",
+                plate_training_target="plate_recognition",
                 iteration_source_job_id=job.id,
             ),
         )
@@ -1221,10 +1193,10 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
         db,
         current_user=user,
         cmd=cmd_mod.CreateLabelDimensionTrainingTaskCommand(
-            name=created.name + "-v2",
-            selected_presets=[{"preset_slug": "plateRecognition"}],
+            name=detection_created.name + "-manual",
+            selected_presets=[{"preset_slug": "plateDetection"}],
             selected_label_items=[
-                {"preset_slug": "plateRecognition", "label_value": "doubleEP"}
+                {"preset_slug": "plateDetection", "label_value": "doubleEP"}
             ],
             selected_task_ids=[task_a.id, task_b.id],
             model_weights="yolov8n-pose.pt",
@@ -1249,7 +1221,7 @@ def test_plate_profile_preview_includes_done_negative_and_selected_tasks_only(
     auto_iterated = svc.iterate_training_task(
         db,
         current_user=user,
-        training_task_id=created.training_task_id,
+        training_task_id=detection_created.training_task_id,
     )
     auto_iterated_job = crud_yolo_train_job.get(db, auto_iterated.latest_job_id)
     assert auto_iterated.name.endswith("-v3")

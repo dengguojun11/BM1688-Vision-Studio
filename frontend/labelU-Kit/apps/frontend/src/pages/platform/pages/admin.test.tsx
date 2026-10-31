@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import request from '@/api/request';
-import AdminPage, { nextAvailableLabelColor } from './admin';
+import AdminPage, { labelSaveErrorMessage, nextAvailableLabelColor } from './admin';
 import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('@/api/request', () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), delete: vi.fn() } }));
@@ -43,6 +43,30 @@ afterEach(() => {
   projectState.projectId = 1;
   projectState.projectsQuery.data = [{ id: 1, name: '本地项目' }];
   projectState.projectsQuery.refetch.mockClear();
+});
+
+describe('labelSaveErrorMessage', () => {
+  it('identifies the duplicate system value and keeps the value in the prompt', () => {
+    expect(
+      labelSaveErrorMessage({
+        response: {
+          status: 409,
+          data: { msg: 'label_value 已存在: doubleEP' },
+        },
+      }),
+    ).toBe('系统值「doubleEP」已存在，请直接使用已有标签或更换系统值');
+  });
+
+  it('identifies a color conflict and explains the different create and edit actions', () => {
+    const error = {
+      response: {
+        status: 409,
+        data: { msg: 'color 已被其他标签使用: #c027ce' },
+      },
+    };
+    expect(labelSaveErrorMessage(error)).toBe('自动分配的颜色「#c027ce」已被其他标签使用，请重新提交，系统会分配新的颜色');
+    expect(labelSaveErrorMessage(error, true)).toBe('颜色「#c027ce」已被其他标签使用，请换用其他颜色后重试');
+  });
 });
 
 it('keeps governance to the label library and dataset management', async () => {
@@ -415,7 +439,7 @@ it('labels the English system value and delegates new color allocation to the AP
   const previewColor = screen.getByLabelText('颜色（自动分配）') as HTMLInputElement;
   expect(previewColor.disabled).toBe(true);
   expect(previewColor.value).not.toBe('#cf2727');
-  expect((screen.getByLabelText('当前标注类型') as HTMLInputElement).value).toBe('矩形框（目标检测）');
+  expect(screen.getByRole('combobox', { name: '当前标注类型' })).toBeTruthy();
 
   fireEvent.change(screen.getByLabelText('中文名称'), { target: { value: '车辆' } });
   fireEvent.change(screen.getByLabelText('系统值（英文）'), { target: { value: 'vehicle' } });
@@ -428,6 +452,40 @@ it('labels the English system value and delegates new color allocation to the AP
     ),
   );
   expect(mockedPost.mock.calls[0][1]).not.toHaveProperty('color');
+});
+
+it('creates a polygon label when the geometry type is selected', async () => {
+  mockedGet.mockImplementation(async (url: string) => {
+    if (url === '/v1/annotation-taxonomy/labels') {
+      return { data: { data: [] } } as never;
+    }
+    return { data: { data: [] } } as never;
+  });
+  mockedPost.mockResolvedValue({ data: { data: { id: 12, label_key: '定位点', label_value: 'platePoint', annotation_kind: 'polygon' } } } as never);
+
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <MemoryRouter initialEntries={['/admin?view=governance']}>
+      <QueryClientProvider client={queryClient}>
+        <AdminPage />
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+
+  await waitFor(() => expect(screen.getByRole('button', { name: '新建标签' })).toBeTruthy());
+  fireEvent.click(screen.getByRole('button', { name: '新建标签' }));
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: '当前标注类型' }));
+  fireEvent.click(await screen.findByText('多边形（实例分割/定位点）'));
+  fireEvent.change(screen.getByLabelText('中文名称'), { target: { value: '定位点' } });
+  fireEvent.change(screen.getByLabelText('系统值（英文）'), { target: { value: 'platePoint' } });
+  fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }));
+
+  await waitFor(() =>
+    expect(mockedPost).toHaveBeenCalledWith(
+      '/v1/annotation-taxonomy/labels',
+      expect.objectContaining({ label_key: '定位点', label_value: 'platePoint', annotation_kind: 'polygon' }),
+    ),
+  );
 });
 
 it('allows editing the English system value and explains historical snapshot behavior', async () => {

@@ -9,6 +9,7 @@ set.
 from __future__ import annotations
 
 import hashlib
+import copy
 import json
 import re
 from datetime import datetime
@@ -179,22 +180,35 @@ def _build_prompt_spec(
                 + ",".join(incomplete)
             )
 
+    prompt_labels = []
+    for row in labels:
+        annotation_kind = str(row.get("annotation_kind") or "bbox").strip().lower()
+        tool = "polygonTool" if annotation_kind == "polygon" else "rectTool"
+        item = {
+            "name": row["label_value"],
+            "display_name": row["label_key"],
+            "tool": tool,
+            "color": None,
+            "description": row.get("description"),
+            "attributes": row.get("attributes") or [],
+        }
+        if tool == "polygonTool":
+            item["point_count"] = (
+                4 if str(row["label_value"]).strip().lower() == "platepoint" else None
+            )
+        prompt_labels.append(item)
+
+    allowed_geometry_tools = []
+    for tool in ("rectTool", "polygonTool"):
+        if any(item.get("tool") == tool for item in prompt_labels):
+            allowed_geometry_tools.append(tool)
+
     prompt_payload = {
-        "labels": [
-            {
-                "name": row["label_value"],
-                "display_name": row["label_key"],
-                "tool": "rectTool",
-                "color": None,
-                "description": row.get("description"),
-                "attributes": row.get("attributes") or [],
-            }
-            for row in labels
-        ],
+        "labels": prompt_labels,
         "tag_dimensions": [],
         "constraints": {
             "allowed_tools": (
-                ["rectTool"] if operation == "bbox_detection" else ["tagTool"]
+                allowed_geometry_tools if operation == "bbox_detection" else ["tagTool"]
             ),
             "max_results_per_label": 100,
             "filter_by_labels": True,
@@ -221,6 +235,28 @@ def _build_prompt_spec(
         f"class_order_signature：{contract.class_order_signature}\n"
         "契约身份由服务端校验，模型不要自行修改或回显契约信息。\n\n"
     )
+    polygon_rules = [
+        row
+        for row in prompt_labels
+        if row.get("tool") == "polygonTool"
+    ]
+    if polygon_rules:
+        header += (
+            "几何格式补充要求：polygonTool 的 result 必须使用 points 数组，"
+            "每个点包含像素坐标 x、y；不得把多边形标签改写为 rectTool。"
+        )
+        fixed_four_point_labels = [
+            str(row.get("name") or "")
+            for row in polygon_rules
+            if row.get("point_count") == 4
+        ]
+        if fixed_four_point_labels:
+            header += (
+                "以下标签必须恰好输出 4 个点："
+                + ",".join(fixed_four_point_labels)
+                + "。"
+            )
+        header += "\n\n"
     prompt = header + base
     spec = {
         "contract_id": int(contract.id),
@@ -235,12 +271,25 @@ def _build_prompt_spec(
         "profile_key": str(profile_key or DEFAULT_PROFILE_KEY),
         "profile_version": str(profile_version or DEFAULT_PROFILE_VERSION),
         "compiler_version": COMPILER_VERSION,
+        "constraints": copy.deepcopy(prompt_payload["constraints"]),
         "image": {
             "width": int(image_width),
             "height": int(image_height),
             "coordinate_space": "pixel_xywh",
         },
-        "labels": labels,
+        "labels": [
+            {
+                **row,
+                "tool": prompt_item["tool"],
+                "annotation_kind": str(row.get("annotation_kind") or "bbox"),
+                **(
+                    {"point_count": prompt_item["point_count"]}
+                    if "point_count" in prompt_item
+                    else {}
+                ),
+            }
+            for row, prompt_item in zip(labels, prompt_labels)
+        ],
         "output_schema_version": "annotation.v2",
     }
     return spec, prompt, warnings
@@ -293,9 +342,28 @@ def _validate_effective_prompt(prompt: str, spec: dict[str, Any]) -> None:
         ]
         if missing:
             raise _error("提示词不能删除契约类别: " + ",".join(missing))
-        for required in ("rectTool", '"results"', "x", "y", "width", "height"):
-            if required not in text:
-                raise _error(f"提示词缺少契约要求字段: {required}")
+        required = ['"results"']
+        tools = {
+            str(row.get("tool") or "rectTool")
+            for row in spec.get("labels") or []
+            if isinstance(row, dict)
+        }
+        if "rectTool" in tools:
+            required.extend(("rectTool", "x", "y", "width", "height"))
+        if "polygonTool" in tools:
+            required.extend(("polygonTool", "points"))
+        for required_field in required:
+            if required_field not in text:
+                raise _error(f"提示词缺少契约要求字段: {required_field}")
+        fixed_four_point_labels = [
+            str(row.get("label_value") or row.get("name") or "")
+            for row in spec.get("labels") or []
+            if isinstance(row, dict)
+            and str(row.get("tool") or "") == "polygonTool"
+            and int(row.get("point_count") or 0) == 4
+        ]
+        if fixed_four_point_labels and "4" not in text:
+            raise _error("提示词缺少四角点的 4 点约束")
     elif spec.get("operation") == "global_tag":
         for required in ("tagTool", '"tag_values"', '"results"'):
             if required not in text:

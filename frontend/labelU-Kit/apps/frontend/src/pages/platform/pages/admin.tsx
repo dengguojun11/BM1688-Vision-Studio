@@ -1,6 +1,6 @@
 import { ApiOutlined, CloudServerOutlined, ReloadOutlined, SafetyCertificateOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Empty, Form, Input, Modal, Pagination, Space, Table, Tag, Tabs, Typography, message } from 'antd';
+import { Alert, Button, Empty, Form, Input, Modal, Pagination, Select, Space, Table, Tag, Tabs, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -22,6 +22,56 @@ function errorText(error: unknown) {
   if (status === 403) return '当前账号没有系统管理权限';
   if (status === 404) return '管理资源不存在';
   return '管理数据加载失败，请稍后重试';
+}
+
+type LabelSaveError = {
+  response?: {
+    status?: number;
+    data?: unknown;
+  };
+};
+
+function firstLabelErrorMessage(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    const text = value.trim();
+    return text || undefined;
+  }
+  if (!value || typeof value !== 'object') return undefined;
+  const payload = value as Record<string, unknown>;
+  for (const key of ['msg', 'message', 'detail']) {
+    const text = firstLabelErrorMessage(payload[key]);
+    if (text) return text;
+  }
+  return undefined;
+}
+
+export function labelSaveErrorMessage(error: unknown, editing = false): string {
+  const response = (error as LabelSaveError | null)?.response;
+  const status = Number(response?.status);
+  const serverMessage = firstLabelErrorMessage(response?.data);
+
+  if (status === 409) {
+    const duplicateValue = serverMessage?.match(/^label_value\s*已存在[：:]?\s*(.+)?$/i);
+    if (duplicateValue) {
+      const value = duplicateValue[1]?.trim();
+      return value
+        ? `系统值「${value}」已存在，请直接使用已有标签或更换系统值`
+        : '系统值已存在，请直接使用已有标签或更换系统值';
+    }
+
+    const duplicateColor = serverMessage?.match(/^color\s*已被其他标签使用[：:]?\s*(.+)?$/i);
+    if (duplicateColor) {
+      const color = duplicateColor[1]?.trim();
+      const colorText = color ? `「${color}」` : '';
+      return editing
+        ? `颜色${colorText}已被其他标签使用，请换用其他颜色后重试`
+        : `自动分配的颜色${colorText}已被其他标签使用，请重新提交，系统会分配新的颜色`;
+    }
+
+    return '标签系统值或颜色已存在，请检查后重试';
+  }
+  if (status === 403) return '只有管理人员可以维护标签';
+  return '保存标签失败，请检查后重试';
 }
 
 function hslToHex(hue: number, saturation: number, lightness: number): string {
@@ -145,7 +195,7 @@ function GovernancePanel() {
   const labels = listData(labelsQuery.data);
   const labelsCount = labelsQuery.data ? listTotal(labelsQuery.data, labels.length) : undefined;
   const labelSaveMutation = useMutation({
-    mutationFn: async (values: { label_key: string; label_value: string; color?: string; description?: string }) => {
+    mutationFn: async (values: { label_key: string; label_value: string; annotation_kind?: string; color?: string; description?: string }) => {
       if (editingLabel)
         return request.patch(`/v1/annotation-taxonomy/labels/${editingLabel.id}`, {
           version: editingLabel.version,
@@ -158,7 +208,7 @@ function GovernancePanel() {
       return request.post('/v1/annotation-taxonomy/labels', {
         label_key: values.label_key.trim(),
         label_value: values.label_value.trim(),
-        annotation_kind: 'bbox',
+        annotation_kind: values.annotation_kind || 'bbox',
         description: values.description?.trim() || undefined,
       });
     },
@@ -169,14 +219,7 @@ function GovernancePanel() {
       labelForm.resetFields();
       void queryClient.invalidateQueries({ queryKey: ['governance-labels'] });
     },
-    onError: (error: any) =>
-      message.error(
-        error?.response?.status === 409
-          ? '标签标识或颜色已存在'
-          : error?.response?.status === 403
-          ? '只有管理人员可以维护标签'
-          : '保存标签失败，请检查后重试',
-      ),
+    onError: (error: unknown) => message.error(labelSaveErrorMessage(error, Boolean(editingLabel))),
   });
   const labelStatusMutation = useMutation({
     mutationFn: async (row: Row) =>
@@ -382,9 +425,17 @@ function GovernancePanel() {
           ) : null}
           <Form.Item
             label="标注类型"
-            extra="一期训练链路使用 YOLO11 目标检测并部署到 BM1688，只支持矩形框；系统内部仍使用 bbox 保存。"
+            extra={editingLabel ? '标签类型创建后不可修改；如需另一种几何类型，请新建标签。' : '矩形框用于目标检测；多边形用于实例轮廓或四角定位点。'}
+            name="annotation_kind"
           >
-            <Input disabled aria-label="当前标注类型" value="矩形框（目标检测）" />
+            <Select
+              aria-label="当前标注类型"
+              disabled={Boolean(editingLabel)}
+              options={[
+                { value: 'bbox', label: '矩形框（目标检测）' },
+                { value: 'polygon', label: '多边形（实例分割/定位点）' },
+              ]}
+            />
           </Form.Item>
           <Form.Item
             name="color"

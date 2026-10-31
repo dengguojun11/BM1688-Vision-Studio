@@ -216,6 +216,15 @@ interface RectLabelPresetOption {
   presetDbId: number;
 }
 
+function annotationKindLabel(value: unknown): string {
+  const kind = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (kind === 'polygon') return '多边形';
+  if (kind === 'bbox' || kind === 'rect') return '矩形框';
+  return kind || '未设置';
+}
+
 const FormConfig = () => {
   const {
     annotationFormInstance,
@@ -684,7 +693,11 @@ const FormConfig = () => {
         const response = await applyTaskLabels(task.id, {
           label_ids: normalized,
           config: JSON.stringify(currentConfig),
-          tool_name: activeTool,
+          // A dataset contract can contain multiple geometry kinds. Leaving
+          // tool_name unset lets the service materialize each kind into its
+          // corresponding annotation tool instead of using the active tab for
+          // every label.
+          ...(datasetBinding ? {} : { tool_name: activeTool }),
           scope_mode: datasetBinding ? 'FULL' : undefined,
         });
         const nextRawConfig = response.data?.config;
@@ -717,7 +730,10 @@ const FormConfig = () => {
   const currentDataset = datasetPicker.selectedDataset;
   const pendingDataset = datasetPicker.resolve(pendingDatasetId);
   const currentContractLabelNames = (currentDataset?.dataset_labels || [])
-    .map((item) => item.label_key || item.label_value)
+    .map((item) => {
+      const name = item.label_key || item.label_value;
+      return name ? `${name} · ${annotationKindLabel(item.annotation_kind)}` : '';
+    })
     .filter(Boolean) as string[];
 
   const closeDatasetContractModal = useCallback(() => {
@@ -862,7 +878,7 @@ const FormConfig = () => {
               optionFilterProp="label"
               options={systemLabels.map((item) => ({
                 value: item.id,
-                label: `${item.label_key} (${item.label_value})`,
+                label: `${item.label_key} (${item.label_value}) · ${annotationKindLabel(item.annotation_kind)}`,
               }))}
               onChange={(values) => void handleDirectLabelsChange(values)}
             />
@@ -875,8 +891,11 @@ const FormConfig = () => {
                   .filter((item) => selectedLabelIds.includes(item.id))
                   .map((item) => (
                     <LabelImportRow key={item.id}>
-                      <span className="label-name" title={`${item.label_key} (${item.label_value})`}>
-                        {item.label_key} ({item.label_value})
+                      <span
+                        className="label-name"
+                        title={`${item.label_key} (${item.label_value}) · ${annotationKindLabel(item.annotation_kind)}`}
+                      >
+                        {item.label_key} ({item.label_value}) · {annotationKindLabel(item.annotation_kind)}
                       </span>
                       <Switch
                         size="small"
@@ -965,13 +984,14 @@ const FormConfig = () => {
                 type="info"
                 showIcon
                 message={`将按契约顺序读取 ${datasetContract.label_ids.length} 个标签`}
-                description="确认后会更新当前任务的数据集绑定，并覆盖当前标注工具的任务标签；数据集契约本身不会被修改。"
+                description="确认后会更新当前任务的数据集绑定，并按每个标签的几何类型自动生成矩形框和多边形工具；数据集契约本身不会被修改。"
               />
               <Space wrap>
                 {datasetContract.labels.map((label, index) => (
                   <Tag key={`${label.label_id || label.label_key || label.label_value}-${index}`} color={label.color}>
                     {index + 1}. {label.label_key || label.label_value || `标签 ${index + 1}`}
                     {label.label_key && label.label_value ? `（${label.label_value}）` : ''}
+                    {` · ${annotationKindLabel(label.annotation_kind)}`}
                   </Tag>
                 ))}
               </Space>

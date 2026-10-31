@@ -5,6 +5,7 @@ use this router so algorithm registration, automatic task snapshots, dataset
 lineage and worker dispatch are enforced in one place.
 """
 
+import hashlib
 import json
 from typing import Any, List, Optional
 
@@ -53,6 +54,7 @@ from labelu.internal.common.idempotency import (
     request_payload_hash,
 )
 from labelu.internal.common.security import security
+from labelu.internal.common.storage import get_storage_backend
 from labelu.internal.common.task_access import (
     is_consistent_pool_admin,
     is_task_superuser,
@@ -68,6 +70,9 @@ from labelu.internal.common.training_contract import (
     selection_contract_sha256,
 )
 from labelu.internal.common.plate_recognition_profile import (
+    DEFAULT_PLATE_DETECTION_CONFIG,
+    audit_plate_sample,
+    normalize_four_corners,
     PLATE_DETECTION_PRESET_SLUG,
     PLATE_DETECTION_PROFILE,
     PLATE_RECOGNITION_PRESET_SLUG,
@@ -801,6 +806,160 @@ def _normalize_plate_training_contract(
     )
 
 
+def _manifest_annotation_result(value: Any) -> dict[str, Any] | None:
+    """Return the geometry result stored in one frozen manifest sample."""
+
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if not isinstance(value, dict):
+        return None
+    result = value.get("result")
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return None
+    if isinstance(result, dict):
+        return result
+    # A few imported manifests store the result object directly instead of
+    # wrapping it in the task-sample ``result`` field.
+    if any(key in value for key in ("rectTool", "polygonTool")):
+        return value
+    return None
+
+
+def _validate_plate_detection_dataset_version(version: DatasetVersion) -> dict[str, Any]:
+    """Validate the immutable contract consumed by the detection-only Pose worker.
+
+    The generic DatasetVersion contract is intentionally geometry-agnostic at
+    its top level.  The dedicated plate detector therefore validates the two
+    per-label geometry rows and every frozen sample before a job is queued.
+    This keeps a malformed mixed contract from reaching a worker that would
+    otherwise silently discard one of the two tools.
+    """
+
+    manifest_path = str(getattr(version, "manifest_rel_path", "") or "").strip()
+    expected_sha = str(getattr(version, "manifest_sha256", "") or "").strip().lower()
+    if not manifest_path or len(expected_sha) != 64:
+        raise _error("车牌检测需要完整的冻结数据集清单", 409)
+    try:
+        raw = get_storage_backend().read_text(manifest_path)
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        actual_sha = hashlib.sha256(str(raw).encode("utf-8")).hexdigest()
+        if actual_sha != expected_sha:
+            raise _error("车牌检测冻结数据集清单摘要不一致", 409)
+        manifest = json.loads(raw)
+    except LabelUException:
+        raise
+    except Exception as exc:
+        raise _error("车牌检测冻结数据集清单不可读", 409) from exc
+    if not isinstance(manifest, dict):
+        raise _error("车牌检测冻结数据集清单格式无效", 409)
+
+    contract = manifest.get("annotation_contract")
+    labels = contract.get("labels") if isinstance(contract, dict) else None
+    if not isinstance(labels, list):
+        raise _error("车牌检测冻结标签契约缺少 labels", 409)
+
+    def _label_value(row: dict[str, Any]) -> str:
+        return str(row.get("label_value") or row.get("label_key") or "").strip().lower()
+
+    required = {"doubleep": "bbox", "platepoint": "polygon"}
+    display_names = {"doubleep": "doubleEP", "platepoint": "platePoint"}
+    matched: dict[str, dict[str, Any]] = {}
+    for row in labels:
+        if not isinstance(row, dict):
+            continue
+        token = _label_value(row)
+        if token in required:
+            if token in matched:
+                raise _error(f"车牌检测标签契约重复定义 {token}", 409)
+            matched[token] = row
+    missing = sorted(set(required) - set(matched))
+    if missing:
+        raise _error(
+            "车牌检测标签契约必须同时包含 doubleEP(bbox) 和 platePoint(polygon)",
+            409,
+        )
+    for token, expected_kind in required.items():
+        actual_kind = str(matched[token].get("annotation_kind") or "").strip().lower()
+        if actual_kind != expected_kind:
+            raise _error(
+                f"车牌检测标签 {display_names[token]} 的几何类型必须是 {expected_kind}",
+                409,
+            )
+
+    # The copied contract metadata must agree with the frozen row.  Optional
+    # fields remain optional for old imported versions, but a present value may
+    # never point at a different contract revision/signature.
+    contract_fields = (
+        ("dataset_contract_id", "dataset_label_contract_id"),
+        ("dataset_contract_revision", "dataset_contract_revision"),
+        ("label_set_signature", "label_set_signature"),
+        ("class_order_signature", "class_order_signature"),
+    )
+    for manifest_key, version_attr in contract_fields:
+        manifest_value = contract.get(manifest_key) if isinstance(contract, dict) else None
+        version_value = getattr(version, version_attr, None)
+        if manifest_value not in (None, "") and version_value not in (None, ""):
+            if str(manifest_value).strip() != str(version_value).strip():
+                raise _error(
+                    f"车牌检测冻结标签契约 {manifest_key} 与数据集版本不一致",
+                    409,
+                )
+
+    samples = manifest.get("samples")
+    if not isinstance(samples, list) or not samples:
+        raise _error("车牌检测冻结数据集清单没有样本快照", 409)
+    seen_sample_ids: set[int] = set()
+    for sample in samples:
+        if not isinstance(sample, dict):
+            raise _error("车牌检测冻结样本快照格式无效", 409)
+        try:
+            sample_id = int(sample.get("sample_id"))
+        except (TypeError, ValueError):
+            sample_id = 0
+        if sample_id <= 0 or sample_id in seen_sample_ids:
+            raise _error("车牌检测冻结样本快照存在重复或无效 sample_id", 409)
+        seen_sample_ids.add(sample_id)
+        result = _manifest_annotation_result(sample.get("annotation"))
+        if result is None:
+            raise _error(f"车牌检测冻结样本 {sample_id} 缺少标注快照", 409)
+        audit = audit_plate_sample(result, DEFAULT_PLATE_DETECTION_CONFIG)
+        if audit.kind == "invalid":
+            detail = "; ".join(audit.errors) or "几何标注无效"
+            if detail.lower().startswith("plate polygon"):
+                detail = "的 platePoint 必须是四角点"
+            raise _error(f"车牌检测冻结样本 {sample_id} {detail}", 409)
+        # Keep an explicit call here as a contract-level guard: the Pose
+        # adapter accepts an optional duplicated closing vertex, but the
+        # semantic polygon must still normalize to exactly four unique corners.
+        if audit.kind == "positive":
+            for polygon_block in (result.get("polygonTool"), result.get("polygon")):
+                items = (
+                    polygon_block.get("result")
+                    if isinstance(polygon_block, dict)
+                    else polygon_block
+                )
+                for item in items or []:
+                    if not isinstance(item, dict):
+                        continue
+                    if str(item.get("label") or "").strip().lower() != "platepoint":
+                        continue
+                    try:
+                        normalize_four_corners(item.get("points") or item.get("pointList") or [])
+                    except ValueError as exc:
+                        raise _error(
+                            f"车牌检测冻结样本 {sample_id} 的 platePoint 必须是四角点",
+                            409,
+                        ) from exc
+    return manifest
+
+
 def _recipe_json(raw: str | None) -> dict[str, Any]:
     try:
         value = json.loads(raw or "{}")
@@ -1182,6 +1341,10 @@ async def training_eligible_tasks(
     API namespace and one project boundary.
     """
     _ = authorization
+    # The catalog and candidate requests are made in parallel by the wizard.
+    # Seed the built-in plate preset here as well so a direct or faster
+    # candidate request cannot race the catalog request on a legacy database.
+    ensure_seeded(db)
     if dataset_category_id is not None:
         category = (
             db.query(DatasetCategory)
@@ -1719,6 +1882,17 @@ async def create_training_job(
     if recipe is not None and recipe_job_type not in allowed_recipe_job_types:
         raise _error("训练配方与算法能力不匹配", 400)
     cmd = _normalize_plate_training_contract(cmd, recipe)
+    if requested_mode == "remote" and (
+        recipe_job_type in {"plate_detection", "plate_recognition"}
+        or str(cmd.plate_training_target or "").strip()
+        in {"plate_detection", "plate_recognition"}
+    ):
+        raise _error(
+            "车牌框 + 四角点 Pose 训练暂不支持远程训练，请选择本地训练",
+            400,
+        )
+    if recipe_job_type == "plate_detection":
+        _validate_plate_detection_dataset_version(version)
 
     # The immutable dataset snapshot is the backend authority for global-tag
     # filters.  Normalize/validate once here and use the same values for the

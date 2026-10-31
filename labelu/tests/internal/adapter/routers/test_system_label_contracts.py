@@ -115,6 +115,51 @@ def test_taxonomy_write_requires_admin_and_enforces_normalized_uniqueness(
     assert stale.status_code == 409, stale.text
 
 
+def test_taxonomy_can_create_and_filter_polygon_labels(
+    client, testadmin_token_headers, db
+):
+    created = client.post(
+        f"{settings.API_V1_STR}/annotation-taxonomy/labels",
+        headers=testadmin_token_headers,
+        json={
+            "label_key": "车牌定位点",
+            "label_value": "platePoint",
+            "annotation_kind": "polygon",
+            "color": "#123456",
+        },
+    )
+    assert created.status_code == 201, created.text
+    payload = created.json()["data"]
+    assert payload["annotation_kind"] == "polygon"
+    assert (
+        db.query(AnnotationLabel)
+        .filter(AnnotationLabel.id == payload["id"])
+        .one()
+        .annotation_kind
+        == "polygon"
+    )
+
+    listed = client.get(
+        f"{settings.API_V1_STR}/annotation-taxonomy/labels",
+        headers=testadmin_token_headers,
+        params={"annotation_kind": "polygon"},
+    )
+    assert listed.status_code == 200, listed.text
+    assert any(item["id"] == payload["id"] for item in listed.json()["data"])
+
+    invalid = client.post(
+        f"{settings.API_V1_STR}/annotation-taxonomy/labels",
+        headers=testadmin_token_headers,
+        json={
+            "label_key": "无效几何",
+            "label_value": "invalidGeometry",
+            "annotation_kind": "line",
+            "color": "#654321",
+        },
+    )
+    assert invalid.status_code == 422, invalid.text
+
+
 def test_label_semantic_update_creates_new_dataset_contract_revision(
     client, testadmin_token_headers, db
 ):

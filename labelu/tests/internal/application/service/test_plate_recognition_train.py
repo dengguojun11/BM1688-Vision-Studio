@@ -1,3 +1,4 @@
+import hashlib
 import json
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta
@@ -15,6 +16,226 @@ from labelu.internal.common.plate_recognition_profile import (
     PlateInstance,
     PlateSampleAudit,
 )
+
+
+class _FrozenManifestStorage:
+    def __init__(self, raw_manifest, image_path):
+        self.raw_manifest = raw_manifest
+        self.image_path = image_path
+
+    def read_text(self, path):
+        if path == "datasets/dataset-3/v-7/manifest.json":
+            return self.raw_manifest
+        raise FileNotFoundError(path)
+
+    def get_local_path(self, path):
+        return self.image_path if path == "source/sample.jpg" else None
+
+
+class _RowsQuery:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def options(self, *_args, **_kwargs):
+        return self
+
+    def filter(self, *_args, **_kwargs):
+        return self
+
+    def all(self):
+        return list(self.rows)
+
+
+class _RowsDb:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def query(self, _model):
+        return _RowsQuery(self.rows)
+
+
+def _frozen_detection_context_fixture(tmp_path, *, changed=False):
+    from labelu.internal.application.service import yolo_train
+
+    annotation = {
+        "result": {
+            "rectTool": {
+                "result": [
+                    {
+                        "label": "doubleEP",
+                        "x": 10,
+                        "y": 10,
+                        "width": 80,
+                        "height": 40,
+                    }
+                ]
+            },
+            "polygonTool": {
+                "result": [
+                    {
+                        "label": "platePoint",
+                        "points": [[10, 10], [90, 10], [90, 50], [10, 50]],
+                    }
+                ]
+            },
+        }
+    }
+    image_path = tmp_path / "sample.jpg"
+    image_path.write_bytes(b"frozen-image")
+    asset_sha = hashlib.sha256(image_path.read_bytes()).hexdigest()
+    manifest = {
+        "source_task_ids": [11],
+        "annotation_contract": {
+            "dataset_contract_id": 3,
+            "dataset_contract_revision": 1,
+            "label_set_signature": "label-signature",
+            "class_order_signature": "class-signature",
+            "labels": [
+                {
+                    "label_id": 1,
+                    "label_value": "doubleEP",
+                    "annotation_kind": "bbox",
+                },
+                {
+                    "label_id": 2,
+                    "label_value": "platePoint",
+                    "annotation_kind": "polygon",
+                },
+            ],
+        },
+        "samples": [
+            {
+                "sample_id": 101,
+                "task_id": 11,
+                "inner_id": 1,
+                "split": "train",
+                "state": "DONE",
+                "asset_path": "source/sample.jpg",
+                "asset_sha256": asset_sha,
+                "annotation_sha256": yolo_train.canonical_annotation_sha256(annotation),
+                "annotation": annotation,
+            }
+        ],
+    }
+    raw_manifest = json.dumps(manifest, ensure_ascii=False, separators=(",", ":"))
+    version = SimpleNamespace(
+        id=7,
+        dataset_id=3,
+        version_no=1,
+        status="FROZEN",
+        manifest_rel_path="datasets/dataset-3/v-7/manifest.json",
+        manifest_sha256=hashlib.sha256(raw_manifest.encode("utf-8")).hexdigest(),
+        dataset_label_contract_id=3,
+        dataset_contract_revision=1,
+        label_set_signature="label-signature",
+        class_order_signature="class-signature",
+    )
+    current_annotation = (
+        {"result": {"rectTool": {"result": [{"label": "changed"}]}}}
+        if changed
+        else annotation
+    )
+    sample = SimpleNamespace(
+        id=101,
+        task_id=11,
+        inner_id=1,
+        data=json.dumps(current_annotation, ensure_ascii=False),
+        state="DONE",
+        deleted_at=None,
+        file=SimpleNamespace(
+            path="source/sample.jpg",
+            filename="sample.jpg",
+            sha256=None,
+        ),
+    )
+    job = SimpleNamespace(
+        hyperparams_json=json.dumps(
+            {
+                "dataset_manifest": {
+                    "dataset_version_id": 7,
+                    "dataset_id": 3,
+                    "version_no": 1,
+                    "manifest_rel_path": version.manifest_rel_path,
+                    "manifest_sha256": version.manifest_sha256,
+                }
+            }
+        )
+    )
+    storage = _FrozenManifestStorage(raw_manifest, image_path)
+    return job, version, sample, storage
+
+
+def _patch_frozen_detection_context(monkeypatch, job, version, storage):
+    training_task = SimpleNamespace(
+        id=42,
+        selected_presets_snapshot_json=json.dumps(
+            [{"training_profile": service.PLATE_DETECTION_PROFILE}]
+        ),
+        source_tasks_snapshot_json=json.dumps([{"task_id": 11}]),
+    )
+    job.job_type = service.PLATE_DETECTION_JOB_TYPE
+    job.training_task_id = training_task.id
+    monkeypatch.setattr(
+        service.crud_yolo_train_job,
+        "get",
+        lambda _db, _job_id: job,
+    )
+    monkeypatch.setattr(
+        service.crud_training_task,
+        "get",
+        lambda _db, _task_id: training_task,
+    )
+    monkeypatch.setattr(
+        service.crud_dataset,
+        "get_version",
+        lambda _db, _version_id: version,
+    )
+    monkeypatch.setattr(service, "get_storage_backend", lambda: storage)
+    from labelu.internal.application.service import yolo_train
+
+    monkeypatch.setattr(yolo_train, "get_storage_backend", lambda: storage)
+    return training_task
+
+
+def test_plate_detection_context_reads_frozen_manifest_samples(
+    monkeypatch, tmp_path
+):
+    job, version, _sample, storage = _frozen_detection_context_fixture(tmp_path)
+    training_task = _patch_frozen_detection_context(
+        monkeypatch, job, version, storage
+    )
+
+    result = service._load_training_context(
+        _RowsDb([_sample]),
+        job_id=17,
+        expected_job_type=service.PLATE_DETECTION_JOB_TYPE,
+    )
+
+    assert result[0] is job
+    assert result[1] is training_task
+    assert result[3] == [11]
+    assert len(result[4]) == 1
+    frozen = result[4][0]
+    assert frozen.sample.id == 101
+    assert frozen.sample.task_id == 11
+    assert frozen.sample.frozen_split == "train"
+    assert frozen.audit.kind == "positive"
+
+
+def test_plate_detection_context_rejects_changed_frozen_annotation(
+    monkeypatch, tmp_path
+):
+    job, version, sample, storage = _frozen_detection_context_fixture(
+        tmp_path, changed=True
+    )
+    _patch_frozen_detection_context(monkeypatch, job, version, storage)
+
+    with pytest.raises(RuntimeError, match="标注内容已变化"):
+        service._load_training_context(
+            _RowsDb([sample]),
+            job_id=17,
+            expected_job_type=service.PLATE_DETECTION_JOB_TYPE,
+        )
 
 
 def test_plate_detection_runner_persists_only_single_pose_artifact(
@@ -620,6 +841,97 @@ def test_prepare_detection_dataset_is_pose_only_with_four_keypoints(
     assert not (dataset_root / "ocr").exists()
     assert not (dataset_root / "classification").exists()
     assert (dataset_root / "component_samples.jsonl").read_text(encoding="utf-8") == ""
+
+
+def test_prepare_detection_dataset_downloads_global_object_storage_images(
+    tmp_path, monkeypatch
+):
+    media_root = tmp_path / "media"
+    source_dir = tmp_path / "remote"
+    source_dir.mkdir()
+    image = np.full((72, 128, 3), 180, dtype=np.uint8)
+    source = source_dir / "remote.jpg"
+    assert cv2.imwrite(str(source), image)
+    source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+
+    class RemoteStorage:
+        is_remote = True
+
+        def __init__(self):
+            self.downloaded = []
+
+        def get_local_path(self, _key):
+            return None
+
+        def download_file(self, key, target):
+            self.downloaded.append(key)
+            target.write_bytes(source.read_bytes())
+
+    storage = RemoteStorage()
+    monkeypatch.setattr(service.settings, "MEDIA_ROOT", str(media_root))
+    monkeypatch.setattr(service, "_job_work_root", lambda _job_id: tmp_path / "job")
+    monkeypatch.setattr(service, "get_storage_backend", lambda: storage)
+    samples = [
+        _sample(1, 124, "bucket/remote.jpg", plate_number="陕A12345"),
+        _sample(2, 124, "bucket/remote-negative.jpg"),
+    ]
+    for sample in samples:
+        sample.sample.file.id = sample.sample.id
+        sample.sample.file.sha256 = source_sha
+
+    dataset_root, manifest = service.prepare_plate_recognition_dataset(
+        job_id=8,
+        profile_config=DEFAULT_PLATE_DETECTION_CONFIG,
+        source_task_ids=[124],
+        samples=samples,
+        seed=42,
+        training_profile=service.PLATE_DETECTION_PROFILE,
+    )
+
+    assert storage.downloaded == ["bucket/remote.jpg", "bucket/remote-negative.jpg"]
+    assert all(
+        (dataset_root / row["pose_image"]).is_file() for row in manifest["samples"]
+    )
+
+
+def test_prepare_detection_dataset_materializes_external_datasource_images(
+    tmp_path, monkeypatch
+):
+    media_root = tmp_path / "media"
+    source = tmp_path / "datasource.jpg"
+    assert cv2.imwrite(str(source), np.full((72, 128, 3), 180, dtype=np.uint8))
+    monkeypatch.setattr(service.settings, "MEDIA_ROOT", str(media_root))
+    monkeypatch.setattr(service, "_job_work_root", lambda _job_id: tmp_path / "job")
+
+    def materialize(_attachment):
+        return source, "image/jpeg"
+
+    monkeypatch.setattr(
+        "labelu.internal.application.service.attachment._materialize_datasource_attachment_to_cache",
+        materialize,
+    )
+    samples = [
+        _sample(1, 124, "external/remote.jpg", plate_number="陕A12345"),
+        _sample(2, 124, "external/remote-negative.jpg"),
+    ]
+    for sample in samples:
+        sample.sample.file.id = sample.sample.id
+        sample.sample.file.data_source_id = 9
+        sample.sample.file.data_source = object()
+
+    dataset_root, manifest = service.prepare_plate_recognition_dataset(
+        job_id=8,
+        profile_config=DEFAULT_PLATE_DETECTION_CONFIG,
+        source_task_ids=[124],
+        samples=samples,
+        seed=42,
+        training_profile=service.PLATE_DETECTION_PROFILE,
+    )
+
+    assert len(manifest["samples"]) == 2
+    assert all(
+        (dataset_root / row["pose_image"]).is_file() for row in manifest["samples"]
+    )
 
 
 def test_final_fit_rows_preserve_original_split_and_use_all_rows():
