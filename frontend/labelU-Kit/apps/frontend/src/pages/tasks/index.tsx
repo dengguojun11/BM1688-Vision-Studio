@@ -86,11 +86,11 @@ const CardsWrapper = styled(ResponsiveGrid)`
   width: 100%;
   min-width: 0;
   overflow-x: hidden;
-  grid-template-columns: repeat(3, minmax(16rem, 1fr));
-  gap: 0.875rem;
+  grid-template-columns: repeat(3, minmax(14rem, 1fr));
+  gap: 0.75rem;
 
-  @media (max-width: 80rem) {
-    grid-template-columns: repeat(2, minmax(16rem, 1fr));
+  @media (max-width: 72rem) {
+    grid-template-columns: repeat(2, minmax(14rem, 1fr));
   }
 
   @media (max-width: 54rem) {
@@ -110,6 +110,7 @@ const Footer = styled(FlexLayout.Footer)`
 `;
 
 const AppVersion = styled(FlexLayout.Footer)`
+  padding: 0.25rem 0;
   text-align: center;
   color: var(--color-text-tertiary);
 `;
