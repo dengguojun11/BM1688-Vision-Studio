@@ -73,7 +73,11 @@ export class BackgroundRenderer extends Renderer {
 
   private _imageUrl: string | null = null;
 
-  public options: ImageOption = BackgroundRenderer.DEFAULT_OPTIONS;
+  // Renderer's constructor assigns the merged options object.  Do not initialise
+  // this field from DEFAULT_OPTIONS: subclass field initialisers run after
+  // super(), so that would make every renderer share (and mutate) the static
+  // default object, leaking image adjustments across samples.
+  public declare options: ImageOption;
 
   constructor(options: ImageOption) {
     super({
