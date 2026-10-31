@@ -70,12 +70,12 @@ export const CardWrapper = styled.div`
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.35rem;
   width: 100%;
-  height: 16rem;
+  min-height: 14.25rem;
   min-width: 0;
   box-sizing: border-box;
-  padding: 0.7rem 0.85rem 0.6rem;
+  padding: 0.55rem 0.75rem 0.5rem;
   overflow: hidden;
   border: 1px solid #e3e8f0;
   border-radius: 8px;
@@ -109,9 +109,9 @@ export const TaskName = styled.div`
   min-width: 0;
   overflow: hidden;
   color: #142033;
-  font-size: 0.9375rem;
+  font-size: 0.9rem;
   font-weight: 650;
-  line-height: 1.25;
+  line-height: 1.2;
   overflow-wrap: anywhere;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -136,8 +136,8 @@ export const TagRow = styled.div`
 export const MetricGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.3rem;
-  padding: 0.4rem 0.55rem;
+  gap: 0.25rem;
+  padding: 0.32rem 0.45rem;
   border: 1px solid #edf1f6;
   border-radius: 6px;
   background: #f8fafc;
@@ -148,7 +148,7 @@ export const MetricItem = styled.div`
 
   .metric-label {
     display: block;
-    margin-bottom: 0.1rem;
+    margin-bottom: 0.05rem;
     color: #94a3b8;
     font-size: 0.625rem;
   }
@@ -168,7 +168,7 @@ export const MetricItem = styled.div`
 export const ProgressSummary = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.15rem;
 
   .progress-label {
     display: flex;
@@ -207,7 +207,7 @@ export const CardFooter = styled(Row)`
   justify-content: space-between;
   gap: 0.5rem;
   margin-top: auto;
-  padding-top: 0.45rem;
+  padding-top: 0.35rem;
   border-top: 1px solid #f0f2f5;
 `;
 
