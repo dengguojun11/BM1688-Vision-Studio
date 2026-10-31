@@ -1,4 +1,4 @@
-import { MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Layout, Space, Tag, Tooltip, Typography } from 'antd';
 import type React from 'react';
 import { useEffect, useState } from 'react';
@@ -229,6 +229,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   // The task list is the working surface for annotation; its own title block is
   // intentionally removed, so collapse the shell header and top padding too.
   const isTaskListPage = location.pathname === '/tasks' || location.pathname === '/tasks/';
+  const isTaskDetailPage = /^\/tasks\/[^/]+\/?$/.test(location.pathname);
   // Algorithms, rules and providers are advanced surfaces under the
   // training center. Keep their direct URLs working while
   // presenting one primary navigation entry to operators.
@@ -303,12 +304,25 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       {!collapsed && <MobileNavBackdrop aria-label="关闭导航" onClick={() => setCollapsed(true)} />}
       <Layout>
         <Header $compact={isTaskListPage}>
-          {!isTaskListPage && (
-            <PageContext>
-              <Typography.Text strong className="page-title">{pageCopy.title}</Typography.Text>
-              <span className="page-description">{pageCopy.description}</span>
-            </PageContext>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+            {isTaskDetailPage && (
+              <Button
+                type="text"
+                icon={<ArrowLeftOutlined />}
+                onClick={() => navigate('/tasks')}
+                style={{ flex: '0 0 auto', paddingInline: 6 }}
+                aria-label="返回任务列表"
+              >
+                返回任务列表
+              </Button>
+            )}
+            {!isTaskListPage && (
+              <PageContext>
+                <Typography.Text strong className="page-title">{pageCopy.title}</Typography.Text>
+                <span className="page-description">{pageCopy.description}</span>
+              </PageContext>
+            )}
+          </div>
           <Space size="middle">
             <Dropdown
               trigger={['click']}
