@@ -26,10 +26,34 @@ export const AiAnnotateRow = styled.div`
 
 export const ToolbarActionsRow = styled.div`
   display: flex;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  width: 100%;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.5rem;
   min-width: 0;
+`;
+
+/**
+ * Flexible middle slot for the AI actions.  Capability-gated actions resolve
+ * asynchronously; keeping this slot right-aligned and taking the remaining
+ * width prevents every neighbouring toolbar button from jumping when they
+ * appear or disappear.
+ */
+export const DynamicToolbarSlot = styled.div`
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+`;
+
+export const ToolbarRightActions = styled.div`
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.5rem;
 `;
 
 export const NegativeSampleControl = styled.span<{ $active: boolean }>`

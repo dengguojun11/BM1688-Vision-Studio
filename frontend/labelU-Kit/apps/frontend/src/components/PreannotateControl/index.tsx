@@ -27,6 +27,11 @@ interface PreannotateControlProps {
   onCompleted?: (job: PreannotateJobResponse) => void | Promise<void>;
 }
 
+// The sample annotation page remounts when switching images.  Cache the
+// resolved AI-detection capability per task so the toolbar does not hide and
+// re-add the action (which reflows every neighbouring button) on each sample.
+const aiDetectionCapabilityCache = new Map<number, boolean>();
+
 export default function PreannotateControl({
   taskId,
   sampleId,
@@ -45,8 +50,15 @@ export default function PreannotateControl({
   const [completion, setCompletion] = useState<{ boxCount: number | null } | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [providerCapability, setProviderCapability] = useState<PreannotationCapabilityItem | null>(null);
-  const [capabilityResolved, setCapabilityResolved] = useState(type !== 'ai_detection');
-  const [capabilityVisible, setCapabilityVisible] = useState(type !== 'ai_detection');
+  const cachedCapabilityVisible = type === 'ai_detection'
+    ? aiDetectionCapabilityCache.get(taskId)
+    : undefined;
+  const [capabilityResolved, setCapabilityResolved] = useState(
+    type !== 'ai_detection' || cachedCapabilityVisible !== undefined,
+  );
+  const [capabilityVisible, setCapabilityVisible] = useState(
+    type !== 'ai_detection' || cachedCapabilityVisible === true,
+  );
   // Task-level pre-annotation covers the whole task by default. The checkbox
   // remains available when an operator intentionally wants to limit a run to
   // newly added samples.
@@ -141,15 +153,23 @@ export default function PreannotateControl({
       return;
     }
     let disposed = false;
-    setCapabilityResolved(false);
+    const cached = aiDetectionCapabilityCache.get(taskId);
+    setCapabilityResolved(cached !== undefined);
+    setCapabilityVisible(cached === true);
     void getPreannotationCapabilities(taskId)
       .then((response) => {
         if (disposed) return;
         const item = normalizePreannotationCapabilities(response.data).ai_bbox_detection;
-        setCapabilityVisible(isPreannotationCapabilityVisible(item));
+        const visible = isPreannotationCapabilityVisible(item);
+        aiDetectionCapabilityCache.set(taskId, visible);
+        setCapabilityVisible(visible);
       })
       .catch(() => {
-        if (!disposed) setCapabilityVisible(false);
+        if (disposed) return;
+        // Keep the last known capability on a transient lookup failure so the
+        // toolbar does not collapse after a sample switch.
+        const fallback = aiDetectionCapabilityCache.get(taskId);
+        if (fallback !== undefined) setCapabilityVisible(fallback);
       })
       .finally(() => {
         if (!disposed) setCapabilityResolved(true);

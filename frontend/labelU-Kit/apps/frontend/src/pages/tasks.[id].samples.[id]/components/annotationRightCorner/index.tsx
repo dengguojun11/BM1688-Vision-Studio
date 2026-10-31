@@ -57,7 +57,14 @@ import {
 import { resolveDeleteNavigationTarget } from './deleteNavigation';
 import { cacheSampleDetail, prefetchUpcomingSample, warmSampleDetailCacheFromWindow } from '../../annotationPrefetch';
 import { hasRectAnnotations, isExplicitNegativeSample, withExplicitNegativeSample } from './negativeSample';
-import { AiAnnotateRow, ImageDeleteOverlay, NegativeSampleControl, ToolbarActionsRow } from './style';
+import {
+  AiAnnotateRow,
+  DynamicToolbarSlot,
+  ImageDeleteOverlay,
+  NegativeSampleControl,
+  ToolbarActionsRow,
+  ToolbarRightActions,
+} from './style';
 import SamplePreAnnotationUpload from './SamplePreAnnotationUpload';
 import { shouldSaveBeforeSampleNavigation } from './navigationSavePolicy';
 
@@ -1363,6 +1370,7 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
         <Button icon={<ArrowLeftOutlined />} onClick={() => void handleBackToTask()} disabled={isGlobalLoading}>
           返回任务详情
         </Button>
+        <DynamicToolbarSlot>
         {task?.media_type === MediaType.IMAGE && (
           <AiAnnotateRow data-labelu-ai-annotate-toolbar>
             <Button
@@ -1445,6 +1453,8 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
             )}
           </AiAnnotateRow>
         )}
+        </DynamicToolbarSlot>
+        <ToolbarRightActions>
         {isSampleSkipped ? (
           <Button
             type="text"
@@ -1495,6 +1505,7 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
             {t('next')}
           </Button>
         )}
+        </ToolbarRightActions>
         <Modal
           title="复制原图到任务"
           open={copyModalOpen}
