@@ -2554,6 +2554,60 @@ def _run_batch_auto_label_sync(
             logger.error("Failed to update auto-label job status for job {}", job_id)
 
 
+def _invoke_auto_label_model(payload: dict[str, Any], *, include_geometry_tools: bool) -> dict:
+    """Run one vision-model request for the batch worker (synchronous)."""
+
+    import copy
+
+    effective_include_geometry = bool(include_geometry_tools)
+    use_vision_chain = (
+        _configured_bbox_vision_available()
+        if effective_include_geometry
+        else _vision_chain_mode() or _configured_global_tag_vision_available()
+    )
+    if use_vision_chain:
+        return vision_llm_chain.call_vision_llm_chain(
+            payload,
+            provider_key=AI_BBOX_DETECTION_PROVIDER if effective_include_geometry else AI_GLOBAL_TAG_PROVIDER,
+        )
+
+    runtime = _validated_local_http_runtime()
+    request_payload = _apply_model_runtime_options(copy.deepcopy(payload), runtime)
+    http_prompt = _contract_prompt_for_http_payload(request_payload)
+    if http_prompt:
+        # Keep local HTTP behavior aligned with the managed vision path:
+        # a published contract is authoritative, with any request prompt
+        # retained only as supplementary context.
+        request_payload["prompt"] = http_prompt
+    with httpx.Client(
+        timeout=float(runtime.get("timeout_seconds") or settings.AI_MODEL_TIMEOUT_SECONDS),
+        verify=bool(runtime.get("verify_tls", False)),
+        follow_redirects=False,
+    ) as client:
+        response = client.post(
+            runtime["endpoint"],
+            json=request_payload,
+            headers=_model_auth_headers(runtime),
+        )
+        if response.status_code >= 400:
+            logger.error("model service returned {}: {}", response.status_code, response.text)
+        response.raise_for_status()
+        return response.json()
+
+
+def _normalized_geometry_count(normalized_payload: dict[str, Any]) -> int:
+    annotations = normalized_payload.get("annotations")
+    if not isinstance(annotations, dict):
+        return 0
+    total = 0
+    for tool_name in SUPPORTED_IMAGE_TOOLS:
+        block = annotations.get(tool_name)
+        items = block.get("result") if isinstance(block, dict) else block
+        if isinstance(items, list):
+            total += len(items)
+    return total
+
+
 def _process_single_sample(
     *,
     task_id: int,
@@ -2593,39 +2647,10 @@ def _process_single_sample(
     # A tested system-management connection takes precedence over the legacy
     # .env endpoint.  This also applies to the dedicated automatic worker,
     # whose production environment may still have AI_PROVIDER=local_http.
-    use_vision_chain = (
-        _configured_bbox_vision_available()
-        if effective_include_geometry
-        else _vision_chain_mode() or _configured_global_tag_vision_available()
+    model_data = _invoke_auto_label_model(
+        payload,
+        include_geometry_tools=effective_include_geometry,
     )
-    if use_vision_chain:
-        model_data = vision_llm_chain.call_vision_llm_chain(
-            payload,
-            provider_key=AI_BBOX_DETECTION_PROVIDER if effective_include_geometry else AI_GLOBAL_TAG_PROVIDER,
-        )
-    else:
-        runtime = _validated_local_http_runtime()
-        payload = _apply_model_runtime_options(payload, runtime)
-        http_prompt = _contract_prompt_for_http_payload(payload)
-        if http_prompt:
-            # Keep local HTTP behavior aligned with the managed vision path:
-            # a published contract is authoritative, with any request prompt
-            # retained only as supplementary context.
-            payload["prompt"] = http_prompt
-        with httpx.Client(
-            timeout=float(runtime.get("timeout_seconds") or settings.AI_MODEL_TIMEOUT_SECONDS),
-            verify=bool(runtime.get("verify_tls", False)),
-            follow_redirects=False,
-        ) as client:
-            response = client.post(
-                runtime["endpoint"],
-                json=payload,
-                headers=_model_auth_headers(runtime),
-            )
-            if response.status_code >= 400:
-                logger.error("model service returned {}: {}", response.status_code, response.text)
-            response.raise_for_status()
-            model_data = response.json()
 
     normalized_payload = _normalize_results(
         model_data=model_data,
@@ -2637,6 +2662,36 @@ def _process_single_sample(
         image_size=model_data.get("_image_size") if isinstance(model_data, dict) else None,
         contract_prompt=contract_prompt,
     )
+    # Vision models occasionally answer a bbox request with an empty result
+    # while a later single-image call finds boxes.  Retrying empty geometry in
+    # the batch worker closes that intermittent recall gap.
+    empty_retries = int(settings.AI_BATCH_EMPTY_GEOMETRY_RETRIES or 0)
+    attempts = 0
+    while (
+        effective_include_geometry
+        and empty_retries > 0
+        and _normalized_geometry_count(normalized_payload) == 0
+    ):
+        empty_retries -= 1
+        attempts += 1
+        retry_data = _invoke_auto_label_model(
+            payload,
+            include_geometry_tools=effective_include_geometry,
+        )
+        retry_payload = _normalize_results(
+            model_data=retry_data,
+            sample_name=sample_name,
+            task_config=task_config,
+            include_geometry_tools=effective_include_geometry,
+            overwrite_existing_annotations=False,
+            filter_by_labels=filter_by_labels,
+            image_size=retry_data.get("_image_size") if isinstance(retry_data, dict) else None,
+            contract_prompt=contract_prompt,
+        )
+        model_data = retry_data
+        normalized_payload = retry_payload
+    if attempts:
+        normalized_payload.setdefault("meta", {})["empty_geometry_retries"] = attempts
 
     with session_scope() as db:
         existing_pre_annotations, _ = crud_pre_annotation.list_by(

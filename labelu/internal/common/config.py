@@ -241,6 +241,15 @@ class Settings(BaseSettings):
     AI_MODEL_TIMEOUT_SECONDS: int = 300
     AI_MODEL_NAME: str = ""
     AI_IMAGE_URL_EXPIRE_SECONDS: int = 300
+    AI_BATCH_EMPTY_GEOMETRY_RETRIES: int = Field(
+        1,
+        ge=0,
+        le=3,
+        description=(
+            "批量 AI 目标检测单张返回 0 个框时的重试次数。视觉模型在持续批量调用下"
+            "偶尔会返回空结果，重试可恢复漏标；设为 0 关闭重试"
+        ),
+    )
     AI_VISION_MAX_IMAGE_SIDE: int = Field(
         1536,
         ge=0,

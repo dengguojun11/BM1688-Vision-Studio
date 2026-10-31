@@ -10,6 +10,7 @@ from labelu.internal.application.service.auto_label import (
     _filter_batch_targets,
     _merge_ai_global_tags_into_sample_data,
     _normalize_results,
+    _normalized_geometry_count,
     _raise_if_ai_global_tags_incomplete,
     _sample_batch_include_geometry,
     _sample_has_formal_geometry,
@@ -86,6 +87,22 @@ def test_batch_mode_is_forced_to_tags_only():
     assert _batch_mode_requests_geometry(BatchAutoLabelCommand()) is False
     assert _batch_mode_requests_geometry(BatchAutoLabelCommand(mode="BOX_AND_TAGS")) is False
     assert _batch_mode_requests_geometry(BatchAutoLabelCommand(mode="BOX_AND_TAGS", include_geometry_tools=True)) is True
+
+
+def test_normalized_geometry_count_detects_rect_and_other_geometry():
+    assert _normalized_geometry_count({"annotations": {}}) == 0
+    assert (
+        _normalized_geometry_count(
+            {
+                "annotations": {
+                    "rectTool": {"result": [{"x": 1}, {"x": 2}]},
+                    "polygonTool": {"result": [{"points": []}]},
+                }
+            }
+        )
+        == 3
+    )
+    assert _normalized_geometry_count({"annotations": {"tagTool": {"result": [{"value": {}}]}}}) == 0
 
 
 def test_batch_box_mode_includes_geometry_for_samples_without_formal_geometry():
