@@ -211,6 +211,7 @@ const Wrapper = styled.div.attrs((props) => {
   display: flex;
   flex-direction: column;
   width: 100%;
+  min-width: 0;
   flex-grow: 1;
   background-color: #fff;
 
@@ -228,6 +229,7 @@ const Wrapper = styled.div.attrs((props) => {
       .labelu-image-annotator__content {
         flex: 1;
         min-height: 0;
+        min-width: 0;
         overflow: hidden;
       }
 
@@ -238,6 +240,19 @@ const Wrapper = styled.div.attrs((props) => {
 
       .labelu-image-sidebar-cards {
         height: 100%;
+      }
+
+      /* The canvas engine may briefly report a wider intrinsic size while a
+         new image is decoded.  Let the middle column shrink instead of pushing
+         the attribute panel outside the clipped viewport. */
+      .labelu-image-annotator__content-mid {
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .labelu-image-annotator__canvas {
+        min-width: 0;
+        overflow: hidden;
       }
 
       /* When the annotator fills the viewport, allow the top toolbar and its
@@ -272,19 +287,23 @@ const Content = styled.div`
   flex: 1;
   display: flex;
   min-height: 0;
+  min-width: 0;
 `;
 
-const ContentMid = styled.div`
+const ContentMid = styled.div.attrs({ className: 'labelu-image-annotator__content-mid' })`
   position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 `;
 
-const AnnotationContainer = styled.div`
+const AnnotationContainer = styled.div.attrs({ className: 'labelu-image-annotator__canvas' })`
   flex: 1;
   width: auto !important;
   height: auto !important;
+  min-width: 0;
+  overflow: hidden;
 `;
 
 export type { ImageAnnotatorOptions } from './hooks/useImageAnnotator';
