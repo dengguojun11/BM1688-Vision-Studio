@@ -2,6 +2,7 @@ import { App as AntApp, ConfigProvider, Modal } from 'antd';
 import enUS from 'antd/es/locale/en_US';
 import zhCN from 'antd/es/locale/zh_CN';
 import { I18nProvider, useTranslation } from '@labelu/i18n';
+import { TooltipGlobalStyle } from '@labelu/components-react';
 import { useMemo } from 'react';
 import { StyleSheetManager } from 'styled-components';
 
@@ -47,6 +48,7 @@ const App: React.FC = () => {
           <AntApp>
             <StaticAnt />
             <GlobalStyle />
+            <TooltipGlobalStyle />
             {/* @ts-ignore */}
             <QueryProvider>
               <RouterContainer routes={routes} />

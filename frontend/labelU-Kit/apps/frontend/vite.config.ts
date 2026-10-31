@@ -113,6 +113,7 @@ export default defineConfig({
       ...(useLocalPackageDist
         ? {
             '@labelu/i18n': resolve(__dirname, '../../packages/i18n/dist/index.mjs'),
+            '@labelu/components-react': resolve(__dirname, '../../packages/components-react/dist/index.mjs'),
             '@labelu/image': resolve(__dirname, '../../packages/image/dist/index.mjs'),
             '@labelu/image-annotator-react': resolve(__dirname, '../../packages/image-annotator-react/dist/index.mjs'),
           }

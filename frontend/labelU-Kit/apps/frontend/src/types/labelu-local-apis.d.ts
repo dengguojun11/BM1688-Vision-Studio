@@ -1,9 +1,16 @@
 import '@labelu/image';
 import '@labelu/image-annotator-react';
+import '@labelu/components-react';
 
 declare module '@labelu/image' {
   export function decodeImage(url?: string | null, priority?: 'low' | 'high' | 'auto'): Promise<undefined>;
   export function preloadImage(url?: string | null): void;
+}
+
+declare module '@labelu/components-react' {
+  import type { ComponentType } from 'react';
+
+  export const TooltipGlobalStyle: ComponentType;
 }
 
 declare module '@labelu/image-annotator-react' {
