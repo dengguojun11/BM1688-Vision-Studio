@@ -132,7 +132,7 @@ const NavItem = styled(Link)<{ $active: boolean }>`
   }
 `;
 
-const Header = styled(Layout.Header)`
+const Header = styled(Layout.Header)<{ $compact?: boolean }>`
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -141,9 +141,9 @@ const Header = styled(Layout.Header)`
   top: 0;
   z-index: 20;
   min-width: 0;
-  min-height: 64px;
-  height: 64px;
-  padding: 0 28px;
+  min-height: ${({ $compact }) => ($compact ? '48px' : '64px')};
+  height: ${({ $compact }) => ($compact ? '48px' : '64px')};
+  padding: ${({ $compact }) => ($compact ? '0 20px' : '0 28px')};
   border-bottom: 1px solid #e6eaf0;
   background: #fff;
   line-height: normal;
@@ -191,19 +191,19 @@ const PageContext = styled.div`
   }
 `;
 
-const Main = styled(Layout.Content)`
+const Main = styled(Layout.Content)<{ $compact?: boolean }>`
   width: 100%;
   max-width: 100%;
   min-width: 0;
   overflow-x: clip;
-  padding: 28px;
+  padding: ${({ $compact }) => ($compact ? '10px 28px 28px' : '28px')};
 
   @media (max-width: 900px) {
-    padding: 20px;
+    padding: ${({ $compact }) => ($compact ? '8px 20px 20px' : '20px')};
   }
 
   @media (max-width: 600px) {
-    padding: 16px 12px;
+    padding: ${({ $compact }) => ($compact ? '6px 12px 16px' : '16px 12px')};
   }
 `;
 
@@ -226,6 +226,9 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const isLegacyFullscreen = isEvolutionScreenPath(location.pathname) && params.get('fullscreen') === '1';
   const hideChrome = params.has('noSave') || isDefaultDataScreen || isLegacyFullscreen || isInAppIframe();
   const active = getActiveModule(location.pathname);
+  // The task list is the working surface for annotation; its own title block is
+  // intentionally removed, so collapse the shell header and top padding too.
+  const isTaskListPage = location.pathname === '/tasks' || location.pathname === '/tasks/';
   // Algorithms, rules and providers are advanced surfaces under the
   // training center. Keep their direct URLs working while
   // presenting one primary navigation entry to operators.
@@ -299,11 +302,13 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
       </Side>
       {!collapsed && <MobileNavBackdrop aria-label="关闭导航" onClick={() => setCollapsed(true)} />}
       <Layout>
-        <Header>
-          <PageContext>
-            <Typography.Text strong className="page-title">{pageCopy.title}</Typography.Text>
-            <span className="page-description">{pageCopy.description}</span>
-          </PageContext>
+        <Header $compact={isTaskListPage}>
+          {!isTaskListPage && (
+            <PageContext>
+              <Typography.Text strong className="page-title">{pageCopy.title}</Typography.Text>
+              <span className="page-description">{pageCopy.description}</span>
+            </PageContext>
+          )}
           <Space size="middle">
             <Dropdown
               trigger={['click']}
@@ -353,7 +358,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
             />
           </Space>
         </Header>
-        <Main>{children}</Main>
+        <Main $compact={isTaskListPage}>{children}</Main>
       </Layout>
     </Shell>
   );

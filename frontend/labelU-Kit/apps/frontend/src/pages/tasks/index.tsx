@@ -275,7 +275,7 @@ const SidebarCount = styled.span<{ $active?: boolean }>`
 `;
 
 const HeaderRow = styled(FlexLayout.Header)`
-  padding: 0.75rem 0 1rem;
+  padding: 0 0 1rem;
   gap: 0.75rem;
   flex-wrap: wrap;
   align-items: flex-start;
@@ -286,58 +286,6 @@ const HeaderActions = styled.div`
   align-items: center;
   gap: 0.75rem;
   min-width: 0;
-`;
-
-const PageHeader = styled.div`
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1.25rem 0 0.25rem;
-
-  @media (max-width: 48rem) {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-`;
-
-const PageTitleBlock = styled.div`
-  min-width: 0;
-
-  h1 {
-    margin: 0;
-    color: #142033;
-    font-size: 1.5rem;
-    font-weight: 650;
-    line-height: 1.3;
-  }
-
-  p {
-    margin: 0.375rem 0 0;
-    color: #64748b;
-    font-size: 0.8125rem;
-    line-height: 1.5;
-  }
-`;
-
-const PageContext = styled.div`
-  flex: 0 0 auto;
-  color: #64748b;
-  font-size: 0.75rem;
-  text-align: right;
-
-  strong {
-    display: block;
-    margin-bottom: 0.25rem;
-    color: #1e293b;
-    font-size: 1rem;
-    font-weight: 650;
-  }
-
-  @media (max-width: 48rem) {
-    text-align: left;
-  }
 `;
 
 const ToolbarSummary = styled.span`
@@ -667,16 +615,6 @@ const TaskListPanel = () => {
     <>
       <Body>
         <MainPanel scroll flex="column">
-          <PageHeader>
-            <PageTitleBlock>
-              <h1>任务与标注</h1>
-              <p>管理数据标注任务，确认标注质量后进入模型训练。</p>
-            </PageTitleBlock>
-            <PageContext>
-              <strong>{meta_data?.total ?? tasks.length}</strong>
-              个任务
-            </PageContext>
-          </PageHeader>
           {window.IS_ONLINE && (
             <Alert
               type="info"
