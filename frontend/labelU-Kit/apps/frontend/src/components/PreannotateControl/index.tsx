@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Checkbox, InputNumber, Modal, Popover, Progress, Select, Typography } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Button, Checkbox, InputNumber, Modal, Progress, Select, Typography } from 'antd';
 
 import type { PreannotateJobResponse } from '@/api/types';
 import type { PreannotationCapabilityItem } from '@/api/types';
@@ -48,6 +48,7 @@ export default function PreannotateControl({
   // close once the job finishes.
   const isAiSingleImage = type === 'ai_detection' && mode === 'sample';
   const [completion, setCompletion] = useState<{ boxCount: number | null } | null>(null);
+  const completionRef = useRef<HTMLDivElement | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [providerCapability, setProviderCapability] = useState<PreannotationCapabilityItem | null>(null);
   const cachedCapabilityVisible = type === 'ai_detection'
@@ -249,6 +250,17 @@ export default function PreannotateControl({
     void resumeActive(taskId, onCompleted);
   }, [mode, onCompleted, resumeActive, taskId]);
 
+  useEffect(() => {
+    if (!completion) return;
+    const dismissOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (target && completionRef.current?.contains(target)) return;
+      setCompletion(null);
+    };
+    document.addEventListener('mousedown', dismissOnOutsideClick, true);
+    return () => document.removeEventListener('mousedown', dismissOnOutsideClick, true);
+  }, [completion]);
+
   if (type === 'ai_detection' && (!capabilityResolved || !capabilityVisible)) {
     return null;
   }
@@ -268,38 +280,39 @@ export default function PreannotateControl({
 
   return (
     <>
-      {isAiSingleImage ? (
-        <Popover
-          open={Boolean(completion)}
-          onOpenChange={(nextOpen) => {
-            if (!nextOpen) setCompletion(null);
+      {actionButton}
+      {isAiSingleImage && completion && (
+        <div
+          ref={completionRef}
+          data-testid="ai-detection-completed"
+          role="status"
+          style={{
+            position: 'fixed',
+            top: 72,
+            right: 24,
+            zIndex: 2000,
+            maxWidth: 360,
+            padding: '10px 14px',
+            border: '1px solid #b7eb8f',
+            borderRadius: 8,
+            background: '#f6ffed',
+            boxShadow: '0 6px 20px rgba(0, 0, 0, 0.16)',
           }}
-          trigger="click"
-          placement="bottomLeft"
-          content={
-            <div data-testid="ai-detection-completed" style={{ maxWidth: 320 }}>
-              <Typography.Text>
-                AI目标检测完成，生成 {completion?.boxCount ?? '若干'} 个框
-              </Typography.Text>
-              <div style={{ marginTop: 8 }}>
-                <Button
-                  type="link"
-                  style={{ padding: 0 }}
-                  onClick={() => {
-                    setDetailOpen(true);
-                    setCompletion(null);
-                  }}
-                >
-                  点击详细查看
-                </Button>
-              </div>
-            </div>
-          }
         >
-          {actionButton}
-        </Popover>
-      ) : (
-        actionButton
+          <Typography.Text>
+            AI目标检测完成，生成 {completion.boxCount ?? '若干'} 个框
+          </Typography.Text>
+          <Button
+            type="link"
+            style={{ padding: 0, marginLeft: 8 }}
+            onClick={() => {
+              setDetailOpen(true);
+              setCompletion(null);
+            }}
+          >
+            点击详细查看
+          </Button>
+        </div>
       )}
       {!isAiSingleImage && <Modal
         title={modalTitle}
