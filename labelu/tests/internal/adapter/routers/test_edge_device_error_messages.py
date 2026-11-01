@@ -44,13 +44,22 @@ def test_create_field_errors_are_localized_chinese(client, testadmin_token_heade
     assert "String should have" not in long_body["msg"]
 
 
-def test_create_root_validator_message_drops_english_prefix(
+def test_create_without_credentials_uses_deployment_defaults(
     client, testadmin_token_headers
 ):
-    missing_credential = _create(client, testadmin_token_headers, password=None)
-    assert missing_credential.status_code == 422, missing_credential.text
-    msg = missing_credential.json()["msg"]
-    assert "SSH 通道必须填写 SSH 密码或私钥路径" in msg
+    created = _create(client, testadmin_token_headers, password=None)
+    assert created.status_code == 201, created.text
+    device = created.json()["data"]
+    assert device["user"] == "linaro"
+    assert device["password_configured"] is True
+    assert device["password_masked_hint"]
+
+
+def test_create_missing_host_keeps_localized_message(client, testadmin_token_headers):
+    missing_host = _create(client, testadmin_token_headers, host="")
+    assert missing_host.status_code == 422, missing_host.text
+    msg = missing_host.json()["msg"]
+    assert "SSH 通道必须填写主机地址" in msg
     assert not msg.startswith("Value error,")
 
 
@@ -98,3 +107,15 @@ def test_board_agent_switch_does_not_need_ssh_host(client, testadmin_token_heade
     )
     assert switched.status_code == 200, switched.text
     assert switched.json()["data"]["validation_channel"] == "board_agent"
+
+    # 切回 SSH 且不填凭据时，使用部署默认账号/密码，保证能直接保存。
+    back = client.patch(
+        f"{API}/{device_id}",
+        headers=testadmin_token_headers,
+        json={"validation_channel": "ssh"},
+    )
+    assert back.status_code == 200, back.text
+    back_device = back.json()["data"]
+    assert back_device["validation_channel"] == "ssh"
+    assert back_device["user"] == "linaro"
+    assert back_device["password_configured"] is True

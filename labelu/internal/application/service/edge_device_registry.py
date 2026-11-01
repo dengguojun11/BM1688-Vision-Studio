@@ -105,6 +105,34 @@ def _bad_request(message: str) -> LabelUException:
     )
 
 
+def _default_ssh_user() -> str:
+    """新增设备页面留空时使用的默认 SSH 账号。"""
+    value = str(getattr(settings, "YOLO_EDGE_DEFAULT_SSH_USER", "") or "").strip()
+    return value or "linaro"
+
+
+def _default_ssh_password() -> str:
+    """新增/切回 SSH 通道且未填写凭据时使用的默认密码（不回传前端）。"""
+    return str(getattr(settings, "YOLO_EDGE_DEFAULT_SSH_PASSWORD", "") or "")
+
+
+def _resolve_create_credentials(
+    cmd: CreateEdgeDeviceCommand,
+) -> tuple[str, Optional[str]]:
+    """返回 (user, password)：SSH 通道留空账号/密码时回落到部署默认值。"""
+    channel = str(cmd.validation_channel or "ssh").strip().lower()
+    user = str(cmd.user or "").strip() or _default_ssh_user()
+    password = cmd.password
+    if channel == "ssh":
+        has_password = bool(str(password or "").strip())
+        has_private_key = bool(str(cmd.private_key_path or "").strip())
+        if not has_password and not has_private_key:
+            default_password = _default_ssh_password()
+            if default_password:
+                password = default_password
+    return user, password
+
+
 def _device_mutation_lock_unavailable(operation: str) -> LabelUException:
     """Fail closed when another worker is changing the edge registry."""
 
@@ -442,7 +470,9 @@ def _run_auto_agent_bootstrap_retry(device_id: str) -> None:
     try:
         record = registry_io.find_device_record(key)
     except Exception:
-        logger.exception("read edge device for deferred Agent retry failed device_id={}", key)
+        logger.exception(
+            "read edge device for deferred Agent retry failed device_id={}", key
+        )
         return
     if not _auto_agent_bootstrap_enabled(record) or not _auto_agent_bootstrap_retryable(
         record
@@ -527,9 +557,11 @@ def _runtime_config_changed(
     key_action = str(private_key_path_secret_action or "keep").strip().lower()
     if action in {"set", "clear"} or key_action in {"set", "clear"}:
         return True
-    return bool(before.get("password_encrypted")) != bool(after.get("password_encrypted")) or bool(
-        before.get("private_key_path_encrypted")
-    ) != bool(after.get("private_key_path_encrypted"))
+    return bool(before.get("password_encrypted")) != bool(
+        after.get("password_encrypted")
+    ) or bool(before.get("private_key_path_encrypted")) != bool(
+        after.get("private_key_path_encrypted")
+    )
 
 
 def _legacy_environment_is_ready(record: dict) -> bool:
@@ -1083,7 +1115,9 @@ def _edge_device_matches_query(record: dict[str, Any], query: str | None) -> boo
     return normalized in searchable.casefold()
 
 
-def _edge_device_matches_status(view: EdgeDeviceResponse, status_filter: str | None) -> bool:
+def _edge_device_matches_status(
+    view: EdgeDeviceResponse, status_filter: str | None
+) -> bool:
     """Apply the existing UI status tabs on the server-side page."""
 
     normalized = str(status_filter or "all").strip().casefold()
@@ -1116,7 +1150,9 @@ def _list_response(
     busy_jobs = _busy_job_map(active_device_id)
     devices = []
     for record in list(store.get("devices") or []):
-        if not isinstance(record, dict) or not _edge_device_matches_query(record, query):
+        if not isinstance(record, dict) or not _edge_device_matches_query(
+            record, query
+        ):
             continue
         view = _device_to_view(
             record,
@@ -1179,6 +1215,7 @@ def get_edge_device(
 
 def create_edge_device(cmd: CreateEdgeDeviceCommand) -> EdgeDeviceResponse:
     _assert_yolo_enabled()
+    user, password = _resolve_create_credentials(cmd)
     # Keep the registry write and the follow-up readiness marker in one
     # mutation window.  Otherwise the scheduler can observe a newly-created
     # device as ready before Agent bootstrap or the legacy environment check
@@ -1192,8 +1229,8 @@ def create_edge_device(cmd: CreateEdgeDeviceCommand) -> EdgeDeviceResponse:
                 enabled=cmd.enabled,
                 host=cmd.host,
                 port=cmd.port,
-                user=cmd.user,
-                password=cmd.password,
+                user=user,
+                password=password,
                 private_key_path=cmd.private_key_path,
                 edge_root=cmd.edge_root,
                 remote_base=cmd.remote_base,
@@ -1214,8 +1251,8 @@ def create_edge_device(cmd: CreateEdgeDeviceCommand) -> EdgeDeviceResponse:
         device_id = str(record.get("id") or "")
         auto_setup_ok = True
         if cmd.auto_configure_agent:
-            auto_setup_ok, auto_setup_code, auto_setup_message = _auto_configure_agent_for_page(
-                record
+            auto_setup_ok, auto_setup_code, auto_setup_message = (
+                _auto_configure_agent_for_page(record)
             )
             if not auto_setup_ok:
                 _persist_page_auto_config_failure(
@@ -1256,6 +1293,53 @@ def update_edge_device(
             raise _device_mutation_lock_unavailable("修改边端设备")
         before_record = registry_io.find_device_record(device_id)
         _assert_no_active_job_runtime_change(device_id, before_record, cmd)
+        before_channel = (
+            str((before_record or {}).get("validation_channel") or "ssh")
+            .strip()
+            .lower()
+        )
+        requested_channel = (
+            str(cmd.validation_channel or before_channel).strip().lower()
+        )
+        switch_to_ssh = requested_channel == "ssh" and before_channel != "ssh"
+        password_secret_action = cmd.password_secret_action
+        password_value = cmd.password
+        private_key_path_secret_action = (
+            "clear"
+            if cmd.clear_private_key_path is True
+            else (
+                "set"
+                if str(cmd.private_key_path or "").strip()
+                and cmd.private_key_path_secret_action == "keep"
+                else cmd.private_key_path_secret_action
+            )
+        )
+        if switch_to_ssh:
+            # 设备程序主动连接通常没有保存 SSH 凭据；切回 SSH 时若用户没有
+            # 填写地址/密码，使用部署默认值，避免「切换后保存不了」。
+            before_host = str((before_record or {}).get("host") or "").strip()
+            effective_host = str(
+                cmd.host if cmd.host is not None else before_host
+            ).strip()
+            if not effective_host:
+                raise _bad_request("SSH 通道必须填写主机地址")
+            has_existing_credentials = bool(
+                (before_record or {}).get("password_is_configured")
+                or (before_record or {}).get("private_key_path_configured")
+                or str((before_record or {}).get("password_encrypted") or "").strip()
+                or str(
+                    (before_record or {}).get("private_key_path_encrypted") or ""
+                ).strip()
+            )
+            if (
+                not has_existing_credentials
+                and not str(password_value or "").strip()
+                and not str(cmd.private_key_path or "").strip()
+            ):
+                default_password = _default_ssh_password()
+                if default_password:
+                    password_secret_action = "set"
+                    password_value = default_password
         try:
             record = registry_io.update_device_record(
                 device_id,
@@ -1264,18 +1348,9 @@ def update_edge_device(
                 host=cmd.host,
                 port=cmd.port,
                 user=cmd.user,
-                password_secret_action=cmd.password_secret_action,
-                password=cmd.password,
-                private_key_path_secret_action=(
-                    "clear"
-                    if cmd.clear_private_key_path is True
-                    else (
-                        "set"
-                        if str(cmd.private_key_path or "").strip()
-                        and cmd.private_key_path_secret_action == "keep"
-                        else cmd.private_key_path_secret_action
-                    )
-                ),
+                password_secret_action=password_secret_action,
+                password=password_value,
+                private_key_path_secret_action=private_key_path_secret_action,
                 private_key_path=cmd.private_key_path,
                 edge_root=cmd.edge_root,
                 remote_base=cmd.remote_base,
@@ -1296,8 +1371,8 @@ def update_edge_device(
         resolved_device_id = str(record.get("id") or device_id)
         auto_setup_ok = True
         if cmd.auto_configure_agent:
-            auto_setup_ok, auto_setup_code, auto_setup_message = _auto_configure_agent_for_page(
-                record
+            auto_setup_ok, auto_setup_code, auto_setup_message = (
+                _auto_configure_agent_for_page(record)
             )
             if not auto_setup_ok:
                 _persist_page_auto_config_failure(
@@ -1313,17 +1388,8 @@ def update_edge_device(
         should_reconcile = _should_reconcile_after_update(
             before_record,
             record,
-            password_secret_action=cmd.password_secret_action,
-            private_key_path_secret_action=(
-                "clear"
-                if cmd.clear_private_key_path is True
-                else (
-                    "set"
-                    if str(cmd.private_key_path or "").strip()
-                    and cmd.private_key_path_secret_action == "keep"
-                    else cmd.private_key_path_secret_action
-                )
-            ),
+            password_secret_action=password_secret_action,
+            private_key_path_secret_action=private_key_path_secret_action,
         )
         if should_reconcile and auto_setup_ok:
             if _auto_agent_bootstrap_enabled(record):
@@ -2086,12 +2152,9 @@ def schedule_system_environment_checks() -> None:
         if _SYSTEM_ENVIRONMENT_BOOTSTRAP_STARTED:
             return
         _SYSTEM_ENVIRONMENT_BOOTSTRAP_STARTED = True
-    disable_background_watchdogs = (
-        os.environ.get("LABELU_DISABLE_BACKGROUND_WATCHDOGS", "")
-        .strip()
-        .lower()
-        in {"1", "true", "yes", "on"}
-    )
+    disable_background_watchdogs = os.environ.get(
+        "LABELU_DISABLE_BACKGROUND_WATCHDOGS", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}
 
     def _bootstrap() -> None:
         try:

@@ -836,6 +836,16 @@ class Settings(BaseSettings):
         default="/data/labelu_edge",
         description="边端所有 LabelU 文件的唯一允许写入根目录",
     )
+    # 新增边端设备时页面留空也会落地的 SSH 默认账号/密码。可按部署环境
+    # 通过环境变量覆盖；不要在接口响应中回传明文密码。
+    YOLO_EDGE_DEFAULT_SSH_USER: str = Field(
+        default="linaro",
+        description="新增边端设备未填写 SSH 账号时使用的默认账号",
+    )
+    YOLO_EDGE_DEFAULT_SSH_PASSWORD: str = Field(
+        default="qiji24@$@1818",
+        description="新增/切换 SSH 通道未填写凭据时使用的默认密码",
+    )
     EDGE_RUNTIME_OFFLINE_ARCHIVE: str = Field(
         default="",
         description="LabelU 服务端已有的 BM1688 离线运行时包路径",

@@ -9,7 +9,11 @@ class CreateEdgeDeviceCommand(BaseModel):
     host: Optional[str] = Field(default=None, max_length=256)
     port: int = Field(default=22, ge=1, le=65535)
     user: str = Field(default="linaro", min_length=1, max_length=128)
-    password: Optional[str] = Field(default=None, max_length=256, description="SSH 密码，仅在请求中传输并加密存入 MySQL")
+    password: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        description="SSH 密码，仅在请求中传输并加密存入 MySQL",
+    )
     private_key_path: Optional[str] = Field(
         default=None,
         max_length=1024,
@@ -37,11 +41,9 @@ class CreateEdgeDeviceCommand(BaseModel):
         if channel == "ssh":
             if not str(values.get("host") or "").strip():
                 raise ValueError("SSH 通道必须填写主机地址")
-            if not (
-                str(values.get("password") or "").strip()
-                or str(values.get("private_key_path") or "").strip()
-            ):
-                raise ValueError("SSH 通道必须填写 SSH 密码或私钥路径")
+            # 账号/密码可以留空：服务端会使用部署默认账号与默认密码
+            # （YOLO_EDGE_DEFAULT_SSH_USER / YOLO_EDGE_DEFAULT_SSH_PASSWORD），
+            # 让页面「新增设备」可以不填凭据直接保存。
         return values
 
 
@@ -52,8 +54,14 @@ class PatchEdgeDeviceCommand(BaseModel):
     port: Optional[int] = Field(default=None, ge=1, le=65535)
     user: Optional[str] = Field(default=None, max_length=128)
     password_secret_action: Literal["keep", "set", "clear"] = Field(default="keep")
-    password: Optional[str] = Field(default=None, max_length=256, description="新 SSH 密码；留空并使用 keep 时保留原密码")
-    private_key_path_secret_action: Literal["keep", "set", "clear"] = Field(default="keep")
+    password: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        description="新 SSH 密码；留空并使用 keep 时保留原密码",
+    )
+    private_key_path_secret_action: Literal["keep", "set", "clear"] = Field(
+        default="keep"
+    )
     private_key_path: Optional[str] = Field(
         default=None,
         max_length=1024,
@@ -83,7 +91,9 @@ class PatchEdgeDeviceCommand(BaseModel):
             values.get("private_key_path_secret_action") == "set"
             and not str(values.get("private_key_path") or "").strip()
         ):
-            raise ValueError("private_key_path_secret_action=set 时必须提供 private_key_path")
+            raise ValueError(
+                "private_key_path_secret_action=set 时必须提供 private_key_path"
+            )
         return values
 
 

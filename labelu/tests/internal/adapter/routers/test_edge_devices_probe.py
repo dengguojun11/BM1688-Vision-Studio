@@ -234,8 +234,8 @@ def test_02_create_validation_matrix(client, testadmin_token_headers):
             {"host": "", "user": "linaro", "password": "pw"},
             422,
         ),
-        ("credential 全空", {"host": "10.1.1.1", "user": "linaro"}, 422),
-        ("password 空串", {"host": "10.1.1.1", "user": "linaro", "password": ""}, 422),
+        ("credential 全空", {"host": "10.1.1.1", "user": "linaro"}, 201),
+        ("password 空串", {"host": "10.1.1.1", "user": "linaro", "password": ""}, 201),
         (
             "name 65 字符",
             {"name": "n" * 65, "host": "10.1.1.1", "user": "linaro", "password": "pw"},
@@ -297,6 +297,24 @@ def test_02_create_validation_matrix(client, testadmin_token_headers):
             print("[PROBE]   422.errors[0].msg={!r}".format(first_msg))
     for label, status, expected in observed:
         assert status == expected, (label, status, expected)
+
+    # 新增设备不填账号/密码时使用部署默认值（linaro / 默认密码）
+    default_credential = create_device(
+        client, testadmin_token_headers, host="10.1.1.99", auto_configure_agent=False
+    )
+    default_body = rec("POST [不填账号密码 -> 部署默认凭据]", default_credential)
+    assert default_credential.status_code == 201
+    default_device = default_body["data"]
+    print(
+        "[PROBE] 默认凭据 user={!r} password_configured={} masked={!r}".format(
+            default_device.get("user"),
+            default_device.get("password_configured"),
+            default_device.get("password_masked_hint"),
+        )
+    )
+    assert default_device.get("user") == "linaro"
+    assert default_device.get("password_configured") is True
+    assert default_device.get("password_masked_hint")
 
 
 def test_03_create_defaults_duplicates_and_frontend_payload(
@@ -490,8 +508,11 @@ def test_05_patch_channel_switch(client, testadmin_token_headers):
         headers=testadmin_token_headers,
         json={"validation_channel": "ssh"},
     )
-    rec("PATCH [board_agent -> ssh 无凭据]", back)
-    assert back.status_code == 400
+    back_body = _data(rec("PATCH [board_agent -> ssh 无凭据 -> 部署默认凭据]", back))
+    # 切回 SSH 且用户未填凭据时，服务端使用部署默认账号/密码，避免切换后无法保存。
+    assert back.status_code == 200
+    assert back_body.get("validation_channel") == "ssh"
+    assert back_body.get("password_configured") is True
 
     back_ok = client.patch(
         f"{API}/{dev['id']}",

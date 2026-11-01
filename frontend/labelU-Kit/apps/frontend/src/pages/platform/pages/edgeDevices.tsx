@@ -132,6 +132,10 @@ type EdgeDeviceFormValues = {
 };
 
 const CHECKING_STATUSES = new Set(['checking', 'installing', 'cleaning']);
+// 与后端 YOLO_EDGE_DEFAULT_SSH_USER / YOLO_EDGE_DEFAULT_SSH_PASSWORD 保持一致：
+// 新增设备默认使用现场统一账号，密码留空时服务端也会回落到默认密码。
+const DEFAULT_EDGE_SSH_USER = 'linaro';
+const DEFAULT_EDGE_SSH_PASSWORD = 'qiji24@$@1818';
 const ACTIVE_BOOTSTRAP_STATUSES = new Set([
   'QUEUED',
   'PREFLIGHT',
@@ -674,7 +678,9 @@ export default function EdgeDevicesPanel() {
       // UI fallback, which can differ from EDGE_REMOTE_ROOT in production.
       if (canonicalEdgeRoot) body.edge_root = canonicalEdgeRoot;
       else delete body.edge_root;
-      body.auto_configure_agent = shouldAutoConfigureAgent(values, editingDevice);
+      // 编辑只改设备配置，不再隐式重新触发 Agent 引导，避免保存后又把
+      // 「平台通过 SSH 连接」自动切回「设备程序主动连接」。
+      body.auto_configure_agent = editingDevice ? false : shouldAutoConfigureAgent(values, editingDevice);
       if (editingDevice) {
         if (isAgentChannel) {
           delete body.password_secret_action;
@@ -793,8 +799,8 @@ export default function EdgeDevicesPanel() {
       validation_channel: current?.validation_channel || 'ssh',
       host: current?.host || '',
       port: current?.port || 22,
-      user: current?.user || 'linaro',
-      password: '',
+      user: current?.user || DEFAULT_EDGE_SSH_USER,
+      password: current ? '' : DEFAULT_EDGE_SSH_PASSWORD,
       private_key_path: '',
       clear_private_key_path: false,
       edge_root: canonicalEdgeRoot || current?.edge_root || '',
@@ -1385,80 +1391,79 @@ export default function EdgeDevicesPanel() {
                 ]}
               />
             </Form.Item>
-            {validationChannel === 'ssh' ? (
-              <>
-                <Form.Item
-                  name="host"
-                  label="设备地址"
-                  rules={[{ required: true, whitespace: true, message: '请输入设备地址' }]}
-                >
-                  <Input placeholder="IP 地址或主机名" autoComplete="off" />
-                </Form.Item>
-                <Form.Item name="port" label="SSH 端口" rules={[{ required: true, message: '请输入 SSH 端口' }]}>
-                  <InputNumber min={1} max={65535} style={{ width: '100%' }} />
-                </Form.Item>
-                <Form.Item
-                  name="user"
-                  label="SSH 账号"
-                  rules={[{ required: true, whitespace: true, message: '请输入 SSH 账号' }]}
-                >
-                  <Input autoComplete="username" />
-                </Form.Item>
-                <Form.Item
-                  name="password"
-                  label="SSH 密码"
-                  extra={
-                    editingDevice
-                      ? '留空表示继续使用已保存的密码。'
-                      : '密码只在保存时提交，服务端加密存储，不会在页面返回明文。'
-                  }
-                  rules={[]}
-                >
-                  <Input.Password autoComplete="new-password" />
-                </Form.Item>
-                <Form.Item
-                  name="private_key_path"
-                  label="SSH 私钥路径（服务端）"
-                  extra={
-                    editingDevice?.private_key_path_configured
-                      ? '留空表示继续使用已保存的私钥路径；路径必须是 LabelU 服务端可读取的文件。'
-                      : '可与密码二选一；只提交服务端路径，不上传私钥内容。'
-                  }
-                  rules={[
-                    {
-                      validator: async (_, value) => {
-                        const hasPassword = Boolean(form.getFieldValue('password')?.trim());
-                        const hasExistingCredential = Boolean(
-                          editingDevice?.password_configured || editingDevice?.private_key_path_configured,
-                        );
-                        const clearingKey = Boolean(form.getFieldValue('clear_private_key_path'));
-                        if (!hasPassword && !String(value || '').trim() && !hasExistingCredential) {
-                          throw new Error('请输入 SSH 密码或私钥路径');
-                        }
-                        if (!hasPassword && !String(value || '').trim() && clearingKey && !editingDevice?.password_configured) {
-                          throw new Error('清除私钥后必须保留 SSH 密码');
-                        }
-                      },
-                    },
-                  ]}
-                >
-                  <Input placeholder="例如：/opt/labelu/.ssh/id_ed25519" autoComplete="off" />
-                </Form.Item>
-                {editingDevice?.private_key_path_configured ? (
-                  <Form.Item name="clear_private_key_path" valuePropName="checked" style={{ marginTop: 30 }}>
-                    <Switch checkedChildren="清除已保存私钥" unCheckedChildren="保留已保存私钥" />
-                  </Form.Item>
-                ) : null}
-              </>
-            ) : (
+            {validationChannel !== 'ssh' ? (
               <Alert
-                style={{ gridColumn: '1 / -1', marginBottom: 16 }}
+                style={{ gridColumn: '1 / -1', marginBottom: 4 }}
                 type="info"
                 showIcon
                 message="设备程序主动连接"
-                description="这种方式不需要填写地址、端口、账号和密码；需要先在 BM1688 设备上部署配套程序，由设备主动上报心跳并领取检查任务。"
+                description="该方式由设备主动上报心跳并领取任务；下方仍显示已保存的地址、账号，把「连接方式」切换为「平台通过 SSH 连接」后即可修改地址、账号和密码。"
               />
-            )}
+            ) : null}
+            <Form.Item
+              name="host"
+              label="设备地址"
+              rules={validationChannel === 'ssh' ? [{ required: true, whitespace: true, message: '请输入设备地址' }] : []}
+            >
+              <Input placeholder="IP 地址或主机名" autoComplete="off" disabled={validationChannel !== 'ssh'} />
+            </Form.Item>
+            <Form.Item
+              name="port"
+              label="SSH 端口"
+              rules={validationChannel === 'ssh' ? [{ required: true, message: '请输入 SSH 端口' }] : []}
+            >
+              <InputNumber min={1} max={65535} style={{ width: '100%' }} disabled={validationChannel !== 'ssh'} />
+            </Form.Item>
+            <Form.Item
+              name="user"
+              label="SSH 账号"
+              rules={validationChannel === 'ssh' ? [{ required: true, whitespace: true, message: '请输入 SSH 账号' }] : []}
+            >
+              <Input
+                autoComplete="username"
+                disabled={validationChannel !== 'ssh'}
+                placeholder={`默认账号 ${DEFAULT_EDGE_SSH_USER}`}
+              />
+            </Form.Item>
+            <Form.Item
+              name="password"
+              label="SSH 密码"
+              extra={
+                editingDevice
+                  ? '留空表示继续使用已保存的密码；设备原本没有密码时，留空将使用服务端默认密码。'
+                  : `默认账号 ${DEFAULT_EDGE_SSH_USER}、默认密码已预填，可直接保存；清空后服务端仍会使用默认密码。`
+              }
+            >
+              <Input.Password
+                autoComplete="new-password"
+                disabled={validationChannel !== 'ssh'}
+                placeholder={editingDevice ? '留空沿用已保存密码 / 服务端默认密码' : '默认密码已预填'}
+              />
+            </Form.Item>
+            <Form.Item
+              name="private_key_path"
+              label="SSH 私钥路径（服务端）"
+              extra={
+                editingDevice?.private_key_path_configured
+                  ? '留空表示继续使用已保存的私钥路径；路径必须是 LabelU 服务端可读取的文件。'
+                  : '可与密码二选一；只提交服务端路径，不上传私钥内容。'
+              }
+            >
+              <Input
+                placeholder="例如：/opt/labelu/.ssh/id_ed25519"
+                autoComplete="off"
+                disabled={validationChannel !== 'ssh'}
+              />
+            </Form.Item>
+            {editingDevice?.private_key_path_configured ? (
+              <Form.Item name="clear_private_key_path" valuePropName="checked" style={{ marginTop: 30 }}>
+                <Switch
+                  checkedChildren="清除已保存私钥"
+                  unCheckedChildren="保留已保存私钥"
+                  disabled={validationChannel !== 'ssh'}
+                />
+              </Form.Item>
+            ) : null}
           </div>
 
           <Typography.Title level={5}>运行设置</Typography.Title>

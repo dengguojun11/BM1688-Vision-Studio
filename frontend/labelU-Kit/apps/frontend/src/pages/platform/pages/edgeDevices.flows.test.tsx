@@ -219,6 +219,7 @@ describe('边端设备管理 · 新增/编辑/查看 点击流程', () => {
       host: inputValue('设备地址'),
       port: inputValue('SSH 端口'),
       user: inputValue('SSH 账号'),
+      password: inputValue('SSH 密码'),
       docker_container: inputValue('运行容器名称'),
       connect_timeout_sec: inputValue('连接超时（秒）'),
       validation_timeout_sec: inputValue('检查超时（秒）'),
@@ -235,6 +236,7 @@ describe('边端设备管理 · 新增/编辑/查看 点击流程', () => {
       host: '',
       port: '22',
       user: 'linaro',
+      password: 'qiji24@$@1818',
       docker_container: 'bm1688',
       connect_timeout_sec: '30',
       validation_timeout_sec: '7200',
@@ -260,7 +262,8 @@ describe('边端设备管理 · 新增/编辑/查看 点击流程', () => {
     expect(await screen.findByText('请输入设备地址')).toBeTruthy();
     expect(await screen.findByText('请输入 SSH 端口')).toBeTruthy();
     expect(await screen.findByText('请输入 SSH 账号')).toBeTruthy();
-    expect(await screen.findByText('请输入 SSH 密码或私钥路径')).toBeTruthy();
+    // 密码/私钥可以留空：服务端会回落到部署默认凭据，因此不应再出现必填提示
+    expect(screen.queryByText('请输入 SSH 密码或私钥路径')).toBeNull();
     expect(mockedPost).not.toHaveBeenCalled();
   });
 
@@ -415,7 +418,7 @@ describe('边端设备管理 · 新增/编辑/查看 点击流程', () => {
     expect(within(detail).getAllByText('通过').length).toBeGreaterThan(0);
   });
 
-  it('连接方式切换：选择「设备程序主动连接」后隐藏 SSH 表单项且不提交旧 SSH 字段', async () => {
+  it('连接方式切换：选择「设备程序主动连接」后地址/账号/密码仍展示但只读，且不提交 SSH 字段', async () => {
     mockList([]);
     mockedPost.mockResolvedValue({
       data: { id: 'edge_agent', name: '主动连接设备', validation_channel: 'board_agent' },
@@ -428,11 +431,12 @@ describe('边端设备管理 · 新增/编辑/查看 点击流程', () => {
     await fillSshIdentity({ host: '10.1.1.147', port: '2222', user: 'linaro', password: 'old-password' });
     await selectChannel('设备程序主动连接');
 
-    expect(screen.queryByLabelText('设备地址')).toBeNull();
-    expect(screen.queryByLabelText('SSH 端口')).toBeNull();
-    expect(screen.queryByLabelText('SSH 账号')).toBeNull();
-    expect(screen.queryByLabelText('SSH 密码')).toBeNull();
-    expect(screen.queryByLabelText('SSH 私钥路径（服务端）')).toBeNull();
+    // 与新增界面保持一致的字段仍然可见，只是只读（切回 SSH 即可编辑）
+    expect((screen.getByLabelText('设备地址') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('SSH 端口') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('SSH 账号') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('SSH 密码') as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText('SSH 私钥路径（服务端）') as HTMLInputElement).disabled).toBe(true);
     // 切换后应出现「设备程序主动连接」说明（选择项文案 + Alert 文案都在弹窗内）
     expect(within(modal).getAllByText('设备程序主动连接').length).toBeGreaterThan(0);
 
@@ -455,6 +459,64 @@ describe('边端设备管理 · 新增/编辑/查看 点击流程', () => {
       password: undefined,
       private_key_path: undefined,
     });
+  });
+
+  it('创建：清空密码后仍可提交，服务端会使用默认密码', async () => {
+    mockList([]);
+    mockedPost.mockResolvedValue({
+      data: { id: 'edge_default', name: '默认凭据设备', validation_channel: 'ssh' },
+    } as never);
+    renderPanel();
+    await openCreateModal();
+    fireEvent.change(screen.getByLabelText('设备地址'), { target: { value: '10.1.1.201' } });
+    fireEvent.change(screen.getByLabelText('SSH 密码'), { target: { value: '' } });
+    clickButton('新增');
+
+    await waitFor(() => expect(mockedPost).toHaveBeenCalledWith('/v1/edge-devices', expect.any(Object)));
+    const call = mockedPost.mock.calls.find(([url]) => url === '/v1/edge-devices');
+    if (!call) throw new Error('没有发出创建设备请求');
+    const payload = call[1] as AnyRecord;
+    expect(payload.user).toBe('linaro');
+    expect(payload.password === '' || payload.password === undefined).toBe(true);
+    expect(payload.auto_configure_agent).toBe(false);
+  });
+
+  it('编辑：设备程序主动连接的设备也展示地址/账号/密码，切换 SSH 后可修改并保存', async () => {
+    mockList([
+      makeDevice({
+        id: 'edge_agent_edit',
+        name: '主动连接设备',
+        validation_channel: 'board_agent',
+        password_configured: false,
+        private_key_path_configured: false,
+      }),
+    ]);
+    mockedPatch.mockResolvedValue({
+      data: { id: 'edge_agent_edit', name: '主动连接设备', validation_channel: 'ssh' },
+    } as never);
+    renderPanel();
+    await screen.findByText('主动连接设备');
+    await openEditModal();
+
+    // 与新增界面字段一致，但 board_agent 下地址等为只读
+    expect((screen.getByLabelText('设备地址') as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByLabelText('SSH 密码')).toBeTruthy();
+    expect(screen.getByText(/切换为「平台通过 SSH 连接」后即可修改地址、账号和密码/)).toBeTruthy();
+
+    await selectChannel('平台通过 SSH 连接');
+    expect((screen.getByLabelText('设备地址') as HTMLInputElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText('设备地址'), { target: { value: '10.1.1.188' } });
+    clickButton('保存');
+
+    await waitFor(() =>
+      expect(mockedPatch).toHaveBeenCalledWith('/v1/edge-devices/edge_agent_edit', expect.any(Object)),
+    );
+    const call = mockedPatch.mock.calls.find(([url]) => url === '/v1/edge-devices/edge_agent_edit');
+    if (!call) throw new Error('没有发出 PATCH 请求');
+    const payload = call[1] as AnyRecord;
+    expect(payload.validation_channel).toBe('ssh');
+    expect(payload.host).toBe('10.1.1.188');
+    expect(payload.auto_configure_agent).toBe(false);
   });
 
   it('提示：保存失败时应展示后端返回的中文 msg', async () => {
