@@ -1806,7 +1806,7 @@ def _get_or_create_draft_task(
     existing_task_id: int | None,
     cmd: CreateExperimentDatasetImportCommand,
     current_user: User,
-    dataset_category_id: int,
+    dataset_category_id: int | None,
 ) -> int:
     if existing_task_id:
         existing = crud_task.get(db=db, task_id=existing_task_id)
@@ -2779,22 +2779,24 @@ def _process_import_group(
                 preannotation_allowed=False,
             )
     if dataset_category is None and not reusable_model_labels:
+        # A missing dataset category must not block the import forever.  The
+        # operator can classify the task later, but the incoming samples should
+        # already become a draft task so they are visible and editable.  This is
+        # also the required fallback when the third party did not provide a
+        # model ID at all.
         _assert_import_worker_lease(lease_guard)
-        _update_group_waiting(
-            db,
-            group=group,
-            rows=pending_rows,
-            status=IMPORT_STATUS_WAITING_FOR_CATEGORY,
-            valid_sample_count=total_valid,
-            declared_sample_count=total_declared,
-            model_resolution=model_resolution,
-            error=(
-                "dataset category is missing; provide dataset_category_key or "
-                "configure the published model source category"
+        manual_model_confirmation_required = True
+        model_resolution = {
+            **model_resolution,
+            "reason": (
+                "model_id_missing_and_dataset_category_missing; draft task created"
+                if not requested_model_id
+                else "dataset_category_missing; draft task created"
             ),
-            metadata_by_row_id=inspection_metadata_by_row_id,
-        )
-        return
+            "manual_confirmation_required": True,
+            "preannotation_allowed": False,
+            "dataset_category_missing": True,
+        }
 
     if group.formal_task_id is None and requested_model_id and not reusable_model_labels:
         _assert_import_worker_lease(lease_guard)
@@ -3070,17 +3072,9 @@ def _process_import_row(
         effective_dataset_category_id = (
             int(dataset_category.id) if dataset_category else None
         )
-    if effective_dataset_category_id is None and model_label_contract is None:
-        return (
-            IMPORT_STATUS_WAITING_FOR_CATEGORY,
-            0,
-            0,
-            0,
-            [],
-            None,
-            "dataset category is missing and cannot be inherited from the published model",
-            None,
-        )
+    # Do not block here when the category is missing: the caller passes
+    # force_draft for this case and _process_import_row will create a draft task
+    # that the operator can classify later.
     dataset_category_id = int(effective_dataset_category_id) if effective_dataset_category_id is not None else None
     _assert_import_worker_lease(lease_guard)
     datasource = _get_or_create_datasource(

@@ -1276,7 +1276,7 @@ class TestExperimentDatasetImportRouter:
         assert pre_annotation_payload["meta"]["width"] == 1672
         assert pre_annotation_payload["meta"]["height"] == 941
 
-    def test_missing_category_waits_without_creating_tasks(
+    def test_missing_category_creates_draft_task_without_waiting_for_category(
         self, client, db: Session, monkeypatch
     ) -> None:
         monkeypatch.setattr(
@@ -1322,10 +1322,11 @@ class TestExperimentDatasetImportRouter:
             .filter(ExperimentDatasetGroup.id == row.aggregation_group_id)
             .one()
         )
-        assert row.status == import_service.IMPORT_STATUS_WAITING_FOR_CATEGORY
-        assert group.status == import_service.GROUP_STATUS_WAITING_FOR_CATEGORY
+        assert row.status == import_service.IMPORT_STATUS_WAITING_FOR_MODEL
+        assert group.status == import_service.GROUP_STATUS_WAITING_FOR_MODEL
         assert row.formal_task_ids_json in (None, "[]")
-        assert row.draft_task_id is None
+        assert row.draft_task_id is not None
+        assert row.draft_sample_count == 1
 
     def test_model_lineage_category_is_used_when_payload_key_is_blank(
         self, db: Session, monkeypatch
