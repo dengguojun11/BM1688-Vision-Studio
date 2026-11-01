@@ -445,7 +445,10 @@ const AnnotationPage = () => {
       }),
     ]);
 
-    const previousSamples = previousResponse.data.slice(0, PREVIOUS_LIMIT);
+    // API returns samples in ascending id order. Keep the samples closest to
+    // the current one; slicing from the start would drop the immediate
+    // predecessor and make "previous" jump over it (e.g. 5 -> 6 -> 4).
+    const previousSamples = previousResponse.data.slice(-PREVIOUS_LIMIT);
     const nextSamples = nextResponse.data.slice(0, PAGE_SIZE);
     nextCursorRef.current = getNextSampleCursor(nextSamples) ?? currentSample.id;
     previousCursorRef.current = getPreviousSampleCursor(previousSamples) ?? currentSample.id;
