@@ -189,6 +189,11 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
   const copyTaskRequestSequence = useRef(0);
   const [imageDeleteHost, setImageDeleteHost] = useState<HTMLElement | null>(null);
   const [isNegativeSample, setIsNegativeSample] = useState(() => isExplicitNegativeSample(currentSample));
+  // `currentSample` comes from the route loader and is not updated by the
+  // save response. Keep the latest server timestamp per sample so a second
+  // save (for example "保存" followed by "下一个") does not send the stale
+  // optimistic-lock timestamp from the page load.
+  const latestSampleUpdatedAtRef = useRef<Record<number, string>>({});
   const isGlobalLoading = isActionPending || isAutoLabeling;
   const isNavigationLoading = isGlobalLoading || isNavigatingSample;
   const supportsNegativeSample =
@@ -476,8 +481,12 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
     if (!validateNegativeSampleResult(result)) {
       return false;
     }
+    const latestUpdatedAt = latestSampleUpdatedAtRef.current[+innerSample.id];
+    const sampleForSave = latestUpdatedAt
+      ? { ...currentSample, updated_at: latestUpdatedAt }
+      : currentSample;
     const body = withExplicitNegativeSample(
-      set('data.result')(JSON.stringify(result))(currentSample),
+      set('data.result')(JSON.stringify(result))(sampleForSave),
       isNegativeSample,
     );
 
@@ -492,6 +501,9 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
       taskContractRevision: task.annotation_contract_revision,
     })) as any;
     const updatedSample = (updateResponse?.inner_id ? updateResponse : updateResponse?.data) ?? savedSample;
+    if (updatedSample?.updated_at) {
+      latestSampleUpdatedAtRef.current[+innerSample.id] = String(updatedSample.updated_at);
+    }
     const sampleDetailKeys = [sampleKey.detail(innerSample.id), sampleKey.detail(String(innerSample.id))];
 
     setSamples(
@@ -551,7 +563,7 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
       return false;
     }
 
-    const sampleToSave = currentSample;
+    const baseSample = currentSample;
     const taskTools = task.config.tools;
     const snapshot = (imageAnnotationRef.current as ImageAnnotatorRefWithSnapshot | null)?.getAnnotationsSnapshot?.();
     const targetSampleId = Number(snapshot?.sample?.id);
@@ -559,6 +571,11 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
     if (!Number.isFinite(targetSampleId)) {
       return false;
     }
+
+    const latestUpdatedAt = latestSampleUpdatedAtRef.current[targetSampleId];
+    const sampleToSave = latestUpdatedAt
+      ? { ...baseSample, updated_at: latestUpdatedAt }
+      : baseSample;
 
     const canvasResult = exportImageAnnotations(snapshot!.annotationsWithGlobal);
     if (!validateNegativeSampleResult(canvasResult)) {
@@ -639,6 +656,9 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
       }).then((updateResponse: any) => {
         const updatedSample = (updateResponse?.inner_id ? updateResponse : updateResponse?.data) ?? savedSample;
 
+        if (updatedSample?.updated_at) {
+          latestSampleUpdatedAtRef.current[targetSampleId] = String(updatedSample.updated_at);
+        }
         setSamples((currentSamples) =>
           currentSamples.map((sample: SampleResponse) =>
             sample.id === targetSampleId ? { ...sample, ...updatedSample } : sample,
