@@ -137,6 +137,10 @@ class TrainingJobResponse(BaseModel):
     parent_model_version_id: int | None = None
     parent_training_job_id: int | None = None
     inheritance_mode: str | None = None
+    # 单作业自动迭代链（按 AI 报告参数续训）的轮次与终态。
+    auto_iteration_root_id: int | None = None
+    auto_iteration_round_no: int | None = None
+    auto_iteration_stop_reason: str | None = None
     status: str
     execution_mode: str
     container_image: str | None = None

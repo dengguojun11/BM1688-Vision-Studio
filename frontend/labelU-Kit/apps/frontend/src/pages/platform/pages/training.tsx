@@ -14,9 +14,10 @@ import useTaskSuperuser from '@/hooks/useTaskSuperuser';
 import { ACTIVE_TRAINING_STATUSES } from '../polling';
 import ResourcePage from '../ResourcePage';
 import { trainingRuntimeStatusLabel, trainingStatusLabel, type Row } from '../shared';
+import AutoIterationSettingsPanel from './AutoIterationSettings';
 import TrainingAiReportAction from './TrainingAiReport';
 
-type TrainingView = 'jobs' | 'auto-plan' | 'reports';
+type TrainingView = 'jobs' | 'auto-plan' | 'reports' | 'iteration-settings';
 
 export const TARGET_CHIP_OPTIONS = [
   { value: 'bm1688', label: 'BM1688' },
@@ -281,7 +282,7 @@ export function trainingProgressSummary(row?: Row | null): TrainingProgressSumma
   };
 }
 
-const TRAINING_PANELS: Record<Exclude<TrainingView, 'jobs'>, { title: string; description: string }> = {
+const TRAINING_PANELS: Record<'auto-plan' | 'reports', { title: string; description: string }> = {
   'auto-plan': {
     title: '历史自动训练计划',
     description: '一期只读保留历史计划、样本池、评测集和质量门禁记录。',
@@ -295,7 +296,7 @@ const TRAINING_PANELS: Record<Exclude<TrainingView, 'jobs'>, { title: string; de
 export function trainingViewFromLocation(): TrainingView {
   if (typeof window === 'undefined') return 'jobs';
   const view = new URLSearchParams(window.location.search).get('view');
-  return view === 'auto-plan' || view === 'reports' ? view : 'jobs';
+  return view === 'auto-plan' || view === 'reports' || view === 'iteration-settings' ? view : 'jobs';
 }
 
 export type TrainingEntryParams = {
@@ -608,7 +609,7 @@ function SummaryState({
   return <>{children}</>;
 }
 
-function LegacyTrainingPanel({ view }: { view: Exclude<TrainingView, 'jobs'> }) {
+function LegacyTrainingPanel({ view }: { view: 'auto-plan' | 'reports' }) {
   const config = TRAINING_PANELS[view];
   const [selectedPlan, setSelectedPlan] = useState<AutoTrainingPlanSummary | null>(null);
   const [selectedReport, setSelectedReport] = useState<TrainingReportSummary | null>(null);
@@ -4508,7 +4509,7 @@ export default function TrainingPage() {
     }
   }, [activeView, isTaskSuperuser, isTaskSuperuserFetched]);
   const handleViewChange = (key: string) => {
-    const requested: TrainingView = key === 'auto-plan' || key === 'reports' ? key : 'jobs';
+    const requested: TrainingView = key === 'auto-plan' || key === 'reports' || key === 'iteration-settings' ? key : 'jobs';
     const next: TrainingView = requested === 'auto-plan' && isTaskSuperuserFetched && !isTaskSuperuser ? 'jobs' : requested;
     setActiveView(next);
     if (typeof window !== 'undefined') {
@@ -4530,6 +4531,7 @@ export default function TrainingPage() {
           ? [{ key: 'auto-plan', label: '历史自动训练计划', children: <LegacyTrainingPanel view="auto-plan" /> }]
           : []),
         { key: 'reports', label: '训练报告', children: <LegacyTrainingPanel view="reports" /> },
+        { key: 'iteration-settings', label: '自动迭代设置', children: <AutoIterationSettingsPanel /> },
       ]}
     />
   </>;

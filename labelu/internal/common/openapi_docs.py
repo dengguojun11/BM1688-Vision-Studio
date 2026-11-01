@@ -24,12 +24,18 @@ CHINESE_TAGS: dict[str, tuple[str, str]] = {
     "datasources": ("数据源", "数据源配置、文件发现和数据接入。"),
     "annotation-taxonomy": ("标签体系", "系统标签、标签预设、数据集分类和标注契约。"),
     "yolo_train": ("模型训练与评估", "YOLO 训练、评估、导出、边端验证和质量策略。"),
-    "training": ("统一训练", "按算法契约、冻结数据集和标准 Worker 协议创建与查询训练作业。"),
+    "training": (
+        "统一训练",
+        "按算法契约、冻结数据集和标准 Worker 协议创建与查询训练作业。",
+    ),
     "yolo-eval": ("评估提示词", "模型评估提示词模板和相关配置。"),
     "ai-labeling": ("AI 标注配置", "AI 辅助标注服务、模型和参数配置。"),
     "模型接入配置": ("模型接入配置", "可配置的远程视觉、检测和全局标签模型服务。"),
     "board_agent": ("板端代理", "板端代理任务下发、状态和结果回传。"),
-    "edge_agents": ("边端 Agent", "7GAI 边端 Agent 注册、心跳、能力上报和 OTA 生命周期。"),
+    "edge_agents": (
+        "边端 Agent",
+        "7GAI 边端 Agent 注册、心跳、能力上报和 OTA 生命周期。",
+    ),
     "edge_device_jobs": ("边缘设备任务", "边缘设备作业创建、执行进度和结果管理。"),
     "tagtool_preannotate": ("分类预标注", "TagTool 分类模型和任务预标注。"),
     "event_review": ("事件复核", "外部事件数据接入、复核和结果回传。"),
@@ -62,6 +68,10 @@ CHINESE_TAGS: dict[str, tuple[str, str]] = {
     "strategy_evolution": FLEXIBLE_WORKFLOW_TAG,
     "local_dev": ("本地开发", "仅用于本地开发和联调的辅助接口。"),
     "auto_training": ("自动训练", "自动训练计划、轮次、评审、评估和质量审批。"),
+    "auto_iteration": (
+        "自动迭代训练",
+        "单作业自动迭代策略（达标阈值、轮数、守护项）的页面可视化配置与变更历史。",
+    ),
     "third_party_calls": FLEXIBLE_WORKFLOW_TAG,
     "published_models": (
         "模型目录管理",
@@ -90,7 +100,10 @@ CHINESE_TAGS: dict[str, tuple[str, str]] = {
     "edge_feedback": ("进化中心", "边端推理事件、难例回流和审核候选。"),
     # Keep the legacy strategy/callback module grouping stable for existing
     # consumers; the new canonical workflow API gets its own explicit tag.
-    "workflows": ("工作流编排", "专家回流、阈值实验、模型优化和第三方回调的统一状态机。"),
+    "workflows": (
+        "工作流编排",
+        "专家回流、阈值实验、模型优化和第三方回调的统一状态机。",
+    ),
     "__system__": ("系统页面与资源", "系统扩展页面、静态资源和基础入口。"),
 }
 

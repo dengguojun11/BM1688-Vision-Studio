@@ -84,6 +84,30 @@ def maybe_auto_compile_job(job_id: int, *, trigger: str = "post_train") -> bool:
                     return False
                 if not (job.weights_path or "").strip():
                     return False
+                # 质量门禁：页面配置「达标才编译」开启时，只有统一谓词判定
+                # 达标的模型才创建导出；历史默认行为（不看质量）由该开关保留。
+                from labelu.internal.application.service.auto_iteration_quality import (
+                    evaluate_iteration_quality,
+                )
+                from labelu.internal.common.auto_iteration_runtime import (
+                    load_auto_iteration_policy,
+                )
+
+                iter_policy = load_auto_iteration_policy()
+                if bool(iter_policy.get("require_quality_for_compile")):
+                    decision = evaluate_iteration_quality(db, job, policy=iter_policy)
+                    if not decision.passed:
+                        logger.info(
+                            "skip automatic BM1688 compile job_id={} quality_not_passed "
+                            "status={} basis={} score={} threshold={} reasons={}",
+                            job_id,
+                            decision.status,
+                            decision.metric_basis,
+                            decision.score,
+                            decision.threshold,
+                            "; ".join(decision.reasons)[:300],
+                        )
+                        return False
                 task = crud_task.get(db=db, task_id=int(job.task_id))
                 owner = (
                     crud_user.get(db=db, id=int(job.created_by))

@@ -288,7 +288,10 @@ def _resolve_inline_private_key_path_from_record(
         try:
             from labelu.internal.common.crypto import decrypt_value
 
-            return _normalize_private_key_path(decrypt_value(encrypted)), PRIVATE_KEY_PATH_SOURCE_ENCRYPTED
+            return (
+                _normalize_private_key_path(decrypt_value(encrypted)),
+                PRIVATE_KEY_PATH_SOURCE_ENCRYPTED,
+            )
         except Exception:
             return "", "mysql:decrypt_failed"
     # Accept the pre-encryption shape so old/dev records can be migrated on
@@ -330,7 +333,9 @@ def _secret_meta_from_record(
         if password_encrypted
         else ""
     )
-    private_key_path, private_key_source = resolve_device_private_key_path_with_source(record)
+    private_key_path, private_key_source = resolve_device_private_key_path_with_source(
+        record
+    )
     private_key_path_encrypted = str(
         record.get("private_key_path_encrypted") or ""
     ).strip()
@@ -768,7 +773,9 @@ def create_device_record(
     record = _normalize_device_record(
         {
             "id": f"edge_{uuid.uuid4().hex[:12]}",
-            "name": str(name or "").strip() or str(host or "").strip() or DEFAULT_DEVICE_NAME,
+            "name": str(name or "").strip()
+            or str(host or "").strip()
+            or DEFAULT_DEVICE_NAME,
             "host": host,
             "port": port,
             "user": user,
@@ -794,7 +801,9 @@ def create_device_record(
             _apply_private_key_path_secret_change(
                 record, action="set", private_key_path=private_key_path
             )
-        if not resolve_device_password(record) and not resolve_device_private_key_path(record):
+        if not resolve_device_password(record) and not resolve_device_private_key_path(
+            record
+        ):
             raise ValueError("SSH 通道必须配置 SSH 密码或私钥路径")
     store = load_device_store()
     devices = list(store.get("devices") or [])
@@ -899,6 +908,12 @@ def update_device_record(
         if enabled is not None:
             mutable["enabled"] = bool(enabled)
         channel = str(mutable.get("validation_channel") or "ssh").strip().lower()
+        if channel != "board_agent":
+            # SSH 通道必须有可连接的主机地址。只在显式提交 host 时校验，
+            # 避免内部状态写入（probe/环境检查只更新状态字段）被历史空
+            # host 记录卡住；board_agent 切回 ssh 的凭据前置校验保持原顺序。
+            if host is not None and not str(host).strip():
+                raise ValueError("SSH 通道必须填写主机地址")
         if channel == "board_agent":
             # A completed Board Agent device does not need an SSH secret, but
             # the SSH credential is still required while an installation is
@@ -938,6 +953,29 @@ def update_device_record(
                 action=private_key_path_secret_action,
                 private_key_path=private_key_path,
             )
+            # 编辑可以分别清除密码或私钥，但 SSH 通道不能同时清空全部凭据：
+            # 否则设备保存成功却再也连不上。仅在本次确实改动凭据时校验，
+            # 兼容历史遗留记录与内部状态写入。
+            if (
+                str(password_secret_action or "keep").strip().lower() != "keep"
+                or str(private_key_path_secret_action or "keep").strip().lower()
+                != "keep"
+                or channel_requested
+            ):
+                has_password = bool(
+                    str(mutable.get("password_encrypted") or "").strip()
+                    or str(mutable.get("password") or "").strip()
+                    or mutable.get("password_is_configured")
+                )
+                has_private_key = bool(
+                    str(mutable.get("private_key_path_encrypted") or "").strip()
+                    or str(mutable.get("private_key_path") or "").strip()
+                    or mutable.get("private_key_path_configured")
+                )
+                if not has_password and not has_private_key:
+                    raise ValueError(
+                        "SSH 通道必须保留 SSH 密码或私钥路径，不能同时清除全部凭据"
+                    )
         if probe_status is not None:
             mutable["probe_status"] = str(probe_status)[:32]
             mutable["last_probe_status"] = mutable["probe_status"]
@@ -976,7 +1014,9 @@ def update_device_record(
         if board_agent_last_heartbeat_at is not None:
             mutable["board_agent_last_heartbeat_at"] = board_agent_last_heartbeat_at
         if board_agent_environment_ready is not None:
-            mutable["board_agent_environment_ready"] = bool(board_agent_environment_ready)
+            mutable["board_agent_environment_ready"] = bool(
+                board_agent_environment_ready
+            )
         if board_agent_capabilities is not None:
             mutable["board_agent_capabilities"] = dict(board_agent_capabilities)
         if board_agent_message is not None:
@@ -1193,14 +1233,14 @@ def mark_active_device_validation(
 def save_active_device_config(data: Dict[str, Any]) -> dict[str, Any]:
     active = get_active_device_record()
     payload = dict(data or {})
-    password_secret_action = str(
-        payload.pop("_password_secret_action", "") or ""
-    ).strip().lower()
+    password_secret_action = (
+        str(payload.pop("_password_secret_action", "") or "").strip().lower()
+    )
     if password_secret_action not in {"keep", "set", "clear"}:
         password_secret_action = "set" if payload.get("password") else "keep"
-    private_key_path_secret_action = str(
-        payload.pop("_private_key_path_secret_action", "") or ""
-    ).strip().lower()
+    private_key_path_secret_action = (
+        str(payload.pop("_private_key_path_secret_action", "") or "").strip().lower()
+    )
     if private_key_path_secret_action not in {"keep", "set", "clear"}:
         private_key_path_secret_action = (
             "set" if payload.get("private_key_path") else "keep"

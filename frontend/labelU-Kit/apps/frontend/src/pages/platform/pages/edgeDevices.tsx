@@ -428,13 +428,37 @@ export function readinessTitle(device: EdgeDevice) {
   return '当前设备尚未就绪';
 }
 
+const SECRET_LEAK_PATTERN = /(?:-----BEGIN [A-Z ]+-----|\bbearer\s+[A-Za-z0-9._-]{12,})/i;
+
+function firstErrorMessage(payload: any): string {
+  if (!payload || typeof payload !== 'object') return '';
+  for (const value of [payload.msg, payload.message, payload.error]) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  const detail = payload.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail.trim();
+  if (Array.isArray(detail) && detail.length) {
+    const first = detail[0];
+    if (typeof first === 'string' && first.trim()) return first.trim();
+    if (first && typeof first.msg === 'string' && first.msg.trim()) return first.msg.trim();
+  }
+  if (Array.isArray(payload.errors) && payload.errors.length) {
+    const first = payload.errors[0];
+    if (first && typeof first.msg === 'string' && first.msg.trim()) return first.msg.trim();
+  }
+  return '';
+}
+
 function actionError(error: any) {
   if (responseStatus(error) === 403) return '当前账号没有边端设备管理权限';
-  const raw = error?.response?.data?.msg || error?.response?.data?.message || '';
-  if (
-    CONTROL_PLANE_ENV_NAMES.some((name) => String(raw).includes(name)) ||
-    /(?:token|secret|password|private\s*key|authorization|bearer|密码|密钥|口令)/i.test(String(raw))
-  ) {
+  const payload = error?.response?.data ?? error?.data;
+  let raw = firstErrorMessage(payload);
+  if (!raw) return '操作失败，请稍后重试';
+  // 后端 root validator 的中文消息会带 pydantic 英文前缀，展示前去掉。
+  raw = raw.replace(/^Value error,\s*/i, '').trim();
+  // 只遮蔽真正可能泄漏配置/凭据形态的内容；「密码」「密钥」等业务提示词
+  // 属于正常中文校验文案，不能再被整体替换成兜底文案。
+  if (CONTROL_PLANE_ENV_NAMES.some((name) => raw.includes(name)) || SECRET_LEAK_PATTERN.test(raw)) {
     return '操作失败，请稍后重试';
   }
   return raw || '操作失败，请稍后重试';
@@ -593,7 +617,8 @@ export default function EdgeDevicesPanel() {
     },
   });
   const devices = devicesQuery.data?.devices || [];
-  const activeDevice = devices.find((device) => device.id === devicesQuery.data?.active_device_id || device.is_active);
+  const activeDeviceId = devicesQuery.data?.active_device_id || devices.find((device) => device.is_active)?.id || '';
+  const activeDevice = devices.find((device) => device.id === activeDeviceId) || null;
   const total = devicesQuery.data?.total ?? devices.length;
 
   useEffect(() => {
@@ -609,11 +634,11 @@ export default function EdgeDevicesPanel() {
     return devices.filter((device) => {
       if (statusFilter === 'ready' && !isDispatchable(device)) return false;
       if (statusFilter === 'blocked' && isDispatchable(device)) return false;
-      if (statusFilter === 'active' && device.id !== activeDevice?.id) return false;
+      if (statusFilter === 'active' && device.id !== activeDeviceId) return false;
       if (statusFilter === 'disabled' && device.enabled !== false) return false;
       return true;
     });
-  }, [activeDevice?.id, devices, statusFilter]);
+  }, [activeDeviceId, devices, statusFilter]);
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ['edge-devices'] });
@@ -621,35 +646,56 @@ export default function EdgeDevicesPanel() {
 
   const saveMutation = useMutation({
     mutationFn: async (values: EdgeDeviceFormValues) => {
-      const body = {
+      const isAgentChannel = values.validation_channel === 'board_agent';
+      const body: Record<string, unknown> = {
         ...values,
         name: values.name?.trim() || null,
-        host: values.host?.trim() || '',
-        user: values.user?.trim() || 'linaro',
-        docker_container: values.docker_container?.trim() || 'bm1688',
-      } as Record<string, unknown>;
+        docker_container: (values.docker_container || '').trim(),
+      };
+      if (isAgentChannel) {
+        // 「设备程序主动连接」不需要 SSH 连接字段：把表单里隐藏项的默认值
+        // 一起提交会污染设备配置（例如切换后仍写入 host 空串、user=linaro）。
+        for (const key of [
+          'host',
+          'port',
+          'user',
+          'password',
+          'private_key_path',
+          'clear_private_key_path',
+        ]) {
+          delete body[key];
+        }
+      } else {
+        body.host = values.host?.trim() || '';
+        body.user = values.user?.trim() || 'linaro';
+        if (!values.private_key_path?.trim()) delete body.private_key_path;
+      }
       // The server owns the canonical remote root.  Never send the legacy
       // UI fallback, which can differ from EDGE_REMOTE_ROOT in production.
       if (canonicalEdgeRoot) body.edge_root = canonicalEdgeRoot;
       else delete body.edge_root;
       body.auto_configure_agent = shouldAutoConfigureAgent(values, editingDevice);
       if (editingDevice) {
-        body.password_secret_action = values.password ? 'set' : 'keep';
-        if (!values.password) delete body.password;
-        if (values.clear_private_key_path) {
-          body.private_key_path_secret_action = 'clear';
-          body.clear_private_key_path = true;
-          delete body.private_key_path;
-        } else if (values.private_key_path?.trim()) {
-          body.private_key_path_secret_action = 'set';
-          body.private_key_path = values.private_key_path.trim();
+        if (isAgentChannel) {
+          delete body.password_secret_action;
+          delete body.private_key_path_secret_action;
         } else {
-          body.private_key_path_secret_action = 'keep';
-          delete body.private_key_path;
+          body.password_secret_action = values.password ? 'set' : 'keep';
+          if (!values.password) delete body.password;
+          if (values.clear_private_key_path) {
+            body.private_key_path_secret_action = 'clear';
+            body.clear_private_key_path = true;
+            delete body.private_key_path;
+          } else if (values.private_key_path?.trim()) {
+            body.private_key_path_secret_action = 'set';
+            body.private_key_path = values.private_key_path.trim();
+          } else {
+            body.private_key_path_secret_action = 'keep';
+            delete body.private_key_path;
+          }
         }
         return (await request.patch(`/v1/edge-devices/${editingDevice.id}`, body)).data;
       }
-      if (!values.private_key_path?.trim()) delete body.private_key_path;
       // A filtered page can be empty even when the registry already contains
       // devices.  Only auto-select the first device when the unfiltered list
       // is known to be empty.
@@ -752,7 +798,7 @@ export default function EdgeDevicesPanel() {
       private_key_path: '',
       clear_private_key_path: false,
       edge_root: canonicalEdgeRoot || current?.edge_root || '',
-      docker_container: current?.docker_container || 'bm1688',
+      docker_container: current ? current.docker_container ?? 'bm1688' : 'bm1688',
       connect_timeout_sec: current?.connect_timeout_sec || 30,
       validation_timeout_sec: current?.validation_timeout_sec || 7200,
       enabled: current?.enabled !== false,
@@ -778,7 +824,7 @@ export default function EdgeDevicesPanel() {
         <div>
           <Space size={6} wrap>
             <strong>{deviceName(device)}</strong>
-            {device.id === activeDevice?.id ? <Tag color="blue">当前</Tag> : null}
+            {device.id === activeDeviceId ? <Tag color="blue">当前</Tag> : null}
           </Space>
           <Typography.Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
             {device.id}
@@ -938,7 +984,7 @@ export default function EdgeDevicesPanel() {
           <Dropdown
             menu={{
               items: [
-                ...(device.id === activeDevice?.id
+                ...(device.id === activeDeviceId
                   ? []
                   : [
                       {
@@ -1012,30 +1058,40 @@ export default function EdgeDevicesPanel() {
           </Space>
         </div>
 
-        {activeDevice ? (
-          <Alert
-            style={{ marginTop: 16 }}
-            type={activeDevice.is_busy ? 'info' : isDispatchable(activeDevice) ? 'success' : 'warning'}
-            showIcon
-            message={readinessTitle(activeDevice)}
-            description={`${deviceName(activeDevice)}：${readinessReason(activeDevice)}`}
-            action={
-              <Space size={6}>
-                {bootstrapNeedsAction(activeDevice) ? (
-                  <Button
-                    size="small"
-                    loading={bootstrapMutation.isPending}
-                    onClick={() => bootstrapMutation.mutate(activeDevice)}
-                  >
-                    {bootstrapStatus(activeDevice) === 'FAILED' ? '重试引导' : '安装 Agent'}
+        {activeDeviceId ? (
+          activeDevice ? (
+            <Alert
+              style={{ marginTop: 16 }}
+              type={activeDevice.is_busy ? 'info' : isDispatchable(activeDevice) ? 'success' : 'warning'}
+              showIcon
+              message={readinessTitle(activeDevice)}
+              description={`${deviceName(activeDevice)}：${readinessReason(activeDevice)}`}
+              action={
+                <Space size={6}>
+                  {bootstrapNeedsAction(activeDevice) ? (
+                    <Button
+                      size="small"
+                      loading={bootstrapMutation.isPending}
+                      onClick={() => bootstrapMutation.mutate(activeDevice)}
+                    >
+                      {bootstrapStatus(activeDevice) === 'FAILED' ? '重试引导' : '安装 Agent'}
+                    </Button>
+                  ) : null}
+                  <Button size="small" onClick={() => setDetailDevice(activeDevice)}>
+                    查看设备
                   </Button>
-                ) : null}
-                <Button size="small" onClick={() => setDetailDevice(activeDevice)}>
-                  查看设备
-                </Button>
-              </Space>
-            }
-          />
+                </Space>
+              }
+            />
+          ) : (
+            <Alert
+              style={{ marginTop: 16 }}
+              type="info"
+              showIcon
+              message="当前设备不在本页"
+              description={`当前设备为 ${activeDeviceId}，可切换分页或使用搜索查看。`}
+            />
+          )
         ) : (
           <Alert
             style={{ marginTop: 16 }}
@@ -1144,7 +1200,7 @@ export default function EdgeDevicesPanel() {
         footer={
           detailDevice ? (
             <Space wrap>
-              {detailDevice.id !== activeDevice?.id ? (
+              {detailDevice.id !== activeDeviceId ? (
                 <Button
                   disabled={detailDevice.is_busy === true}
                   title={detailDevice.is_busy ? '设备正在执行边端任务，任务结束后再操作' : undefined}
@@ -1239,6 +1295,9 @@ export default function EdgeDevicesPanel() {
               <Descriptions.Item label="设备地址">
                 {usesDeviceProgram(detailDevice) ? '不适用' : detailDevice.host || '-'}
               </Descriptions.Item>
+              <Descriptions.Item label="SSH 端口">
+                {usesDeviceProgram(detailDevice) ? '不适用' : detailDevice.port || 22}
+              </Descriptions.Item>
               <Descriptions.Item label="SSH 账号">
                 {usesDeviceProgram(detailDevice) ? '不适用' : detailDevice.user || '-'}
               </Descriptions.Item>
@@ -1277,8 +1336,15 @@ export default function EdgeDevicesPanel() {
                 {detailDevice.edge_root || canonicalEdgeRoot || '由服务端配置'}
               </Descriptions.Item>
               <Descriptions.Item label="运行容器">{detailDevice.docker_container || '宿主机'}</Descriptions.Item>
+              <Descriptions.Item label="启用状态">{detailDevice.enabled === false ? '已停用' : '已启用'}</Descriptions.Item>
               <Descriptions.Item label="导出后自动检查">
                 {detailDevice.auto_after_export ? '开启' : '关闭'}
+              </Descriptions.Item>
+              <Descriptions.Item label="执行标准精度评估">
+                {detailDevice.run_coco_eval ? '开启' : '关闭'}
+              </Descriptions.Item>
+              <Descriptions.Item label="容器命令使用管理员权限">
+                {detailDevice.docker_use_sudo === false ? '关闭' : '开启'}
               </Descriptions.Item>
               <Descriptions.Item label="连接超时">{detailDevice.connect_timeout_sec || 30} 秒</Descriptions.Item>
               <Descriptions.Item label="检查超时">{detailDevice.validation_timeout_sec || 7200} 秒</Descriptions.Item>
@@ -1437,7 +1503,9 @@ export default function EdgeDevicesPanel() {
         onCancel={() => !deleteMutation.isPending && setDeleteDevice(null)}
         onOk={() => deleteDevice && deleteMutation.mutate(deleteDevice)}
       >
-        <p>确认删除“{deleteDevice ? deviceName(deleteDevice) : ''}”？正在执行任务或当前使用中的设备不能删除。</p>
+        <p>
+          确认删除“{deleteDevice ? deviceName(deleteDevice) : ''}”？正在执行任务的设备不能删除；当前使用中的设备需先切换到其他设备（唯一设备除外）。
+        </p>
       </Modal>
     </>
   );

@@ -151,6 +151,10 @@ class YoloTrainJob(Base):
     auto_training_round_id = Column(
         Integer, ForeignKey("auto_training_round.id"), nullable=True, unique=True
     )
+    # 单作业自动迭代链（按 AI 报告参数续训）的血缘与终态；历史数据为空。
+    auto_iteration_root_id = Column(Integer, nullable=True, index=True)
+    auto_iteration_round_no = Column(Integer, nullable=True)
+    auto_iteration_stop_reason = Column(String(32), nullable=True)
     queue_priority = Column(Integer, nullable=True, index=True)
     queue_source = Column(String(16), nullable=True, index=True)
     queue_lease_owner = Column(String(128), nullable=True)

@@ -31,7 +31,9 @@ def test_edge_device_registry_crud_and_active_config():
     store = load_device_store()
     assert store["active_device_id"] == rec1["id"]
     assert len(store["devices"]) == 2
-    assert all(item["password_source_type"] == "mysql:encrypted" for item in store["devices"])
+    assert all(
+        item["password_source_type"] == "mysql:encrypted" for item in store["devices"]
+    )
 
     set_active_device_id(rec2["id"])
     update_device_record(rec2["id"], remote_base="/data/edge-box-02")
@@ -52,7 +54,10 @@ def test_edge_device_registry_crud_and_active_config():
 
 
 def test_edge_device_registry_does_not_import_legacy_json_or_environment():
-    from labelu.internal.common.edge_device_registry import load_active_device_config, load_device_store
+    from labelu.internal.common.edge_device_registry import (
+        load_active_device_config,
+        load_device_store,
+    )
 
     store = load_device_store()
     assert store == {"version": 1, "active_device_id": "", "devices": []}
@@ -168,8 +173,14 @@ def test_board_agent_bootstrap_transition_keeps_ssh_secret_until_ready(monkeypat
 
 def test_existing_ciphertext_is_preserved_and_legacy_env_fields_are_removed():
     from labelu.internal.common.crypto import encrypt_value
-    from labelu.internal.common.edge_device_registry import load_active_device_config, load_device_store
-    from labelu.internal.common.system_config_provider import read_group_values, write_group_values
+    from labelu.internal.common.edge_device_registry import (
+        load_active_device_config,
+        load_device_store,
+    )
+    from labelu.internal.common.system_config_provider import (
+        read_group_values,
+        write_group_values,
+    )
 
     ciphertext = encrypt_value("existing-secret")
     raw_store = {
@@ -204,7 +215,10 @@ def test_existing_ciphertext_is_preserved_and_legacy_env_fields_are_removed():
 
 
 def test_delete_active_device_is_rejected_when_multiple_devices_exist():
-    from labelu.internal.common.edge_device_registry import create_device_record, delete_device_record
+    from labelu.internal.common.edge_device_registry import (
+        create_device_record,
+        delete_device_record,
+    )
 
     active = create_device_record(
         name="edge-box-01",
@@ -262,6 +276,21 @@ def test_edge_device_registry_supports_private_key_only_and_redacts_path(tmp_pat
     assert active["private_key_path"] == str(key_path)
     assert active["private_key_path_runtime_available"] is True
 
+    # SSH 通道不允许清除唯一凭据：私钥是唯一凭据时必须拒绝，避免保存成功
+    # 但设备之后再也连不上。
+    with pytest.raises(ValueError, match="不能同时清除全部凭据"):
+        update_device_record(
+            record["id"],
+            private_key_path_secret_action="clear",
+        )
+    assert load_active_device_config()["private_key_path"] == str(key_path)
+
+    # 先补一条密码凭据后，再清除私钥是允许的。
+    update_device_record(
+        record["id"],
+        password_secret_action="set",
+        password="pw-keep-1",
+    )
     cleared = update_device_record(
         record["id"],
         private_key_path_secret_action="clear",

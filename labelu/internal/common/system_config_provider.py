@@ -27,6 +27,9 @@ _TABLE_NAMES = (
     "system_config_history",
 )
 _MISSING = object()
+# Public alias so callers can implement precedence checks without reaching into
+# private state (e.g. distinguishing "runtime override present" from absent).
+MISSING = _MISSING
 _RUNTIME_OVERRIDES: dict[str, dict[str, Any]] = {}
 
 
@@ -54,6 +57,10 @@ def set_runtime_override(group_key: str, item_key: str, value: Any) -> None:
 
 def get_runtime_override(group_key: str, item_key: str) -> Any:
     return _RUNTIME_OVERRIDES.get(group_key, {}).get(item_key, _MISSING)
+
+
+def has_runtime_override(group_key: str, item_key: str) -> bool:
+    return get_runtime_override(group_key, item_key) is not _MISSING
 
 
 def clear_runtime_override(group_key: str, item_key: str | None = None) -> None:

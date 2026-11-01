@@ -238,7 +238,7 @@ def _gate_item_from_assessment(
     )
 
 
-def build_training_quality_assessment(
+def _legacy_build_training_quality_assessment(
     *,
     training_val_metrics: Optional[YoloTrainingValMetrics],
     total_sample_count: Optional[int],
@@ -280,9 +280,11 @@ def build_training_quality_assessment(
             recall_pass_line = float(
                 policy.get(
                     "overall_recall_pass",
-                    training_val_metrics.overall_recall_threshold
-                    if training_val_metrics.overall_recall_threshold is not None
-                    else 0.95,
+                    (
+                        training_val_metrics.overall_recall_threshold
+                        if training_val_metrics.overall_recall_threshold is not None
+                        else 0.95
+                    ),
                 )
             )
         except (TypeError, ValueError):
@@ -297,7 +299,11 @@ def build_training_quality_assessment(
         recall_warn_line = min(max(recall_warn_line, 0.0), recall_pass_line)
         score = overall_recall
         if float(overall_recall) >= recall_pass_line:
-            status = "达标" if not reasons else "条件达标" if allow_conditional_pass else "不达标"
+            status = (
+                "达标"
+                if not reasons
+                else "条件达标" if allow_conditional_pass else "不达标"
+            )
         elif float(overall_recall) >= recall_warn_line:
             reasons.append(
                 f"overall_recall={float(overall_recall):.4f} 低于达标线 {recall_pass_line:.2f}"
@@ -305,9 +311,7 @@ def build_training_quality_assessment(
             status = "条件达标" if allow_conditional_pass else "不达标"
         else:
             status = "不达标"
-            reasons.append(
-                f"overall_recall={float(overall_recall):.4f} 低于预期"
-            )
+            reasons.append(f"overall_recall={float(overall_recall):.4f} 低于预期")
         summary = training_val_metrics.summary_line or "基于自动训练评估整体召回率"
         return YoloQualityGateItem(
             key="training_quality",
@@ -356,6 +360,157 @@ def build_training_quality_assessment(
     )
 
 
+def _policy_number(policy: dict[str, Any], key: str, default: float) -> float:
+    try:
+        return float(policy.get(key, default))
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _apply_precision_floor(
+    *,
+    policy: dict[str, Any],
+    training_val_metrics: YoloTrainingValMetrics,
+    status: str,
+    reasons: list[str],
+) -> str:
+    """守护项：precision 低于下限时强制判不达标（避免靠多出框刷召回）。"""
+    if not bool(policy.get("precision_floor_enabled")):
+        return status
+    floor = _policy_number(policy, "precision_floor", 0.7)
+    precision = training_val_metrics.precision
+    if precision is None:
+        reasons.append("缺少 precision 指标，无法校验 precision 下限（按不达标处理）")
+        return "不达标"
+    if float(precision) < floor:
+        reasons.append(
+            f"precision={float(precision):.4f} 低于下限 {floor:.2f}（防止多出框刷召回）"
+        )
+        return "不达标"
+    return status
+
+
+def _build_training_quality_with_overrides(
+    *,
+    training_val_metrics: Optional[YoloTrainingValMetrics],
+    total_sample_count: Optional[int],
+    rect_preset_slug: Optional[str],
+    policy_overrides: dict[str, Any],
+) -> YoloQualityGateItem:
+    """按页面配置的自动迭代策略做训练质量判定。
+
+    与 legacy 实现的区别：支持 ``metric_basis`` 选择判定指标（验证集召回率 /
+    自动评估加权召回 / mAP50-95），阈值来自页面配置的 ``pass_threshold`` /
+    ``warn_threshold``，并可选叠加 precision 下限守护。
+    """
+    policy = _policy_for_preset(rect_preset_slug).get("training_quality") or {}
+    merged = dict(policy)
+    for key, value in (policy_overrides or {}).items():
+        if value is not None:
+            merged[key] = value
+    policy = merged
+
+    metric_basis = str(policy.get("metric_basis") or "").strip() or "map50_95"
+    if metric_basis not in {"val_recall", "overall_recall", "map50_95"}:
+        metric_basis = "map50_95"
+    if metric_basis == "map50_95":
+        # 保持历史 mAP 判定逻辑完全不变，避免影响现有页面与发布门禁。
+        return _legacy_build_training_quality_assessment(
+            training_val_metrics=training_val_metrics,
+            total_sample_count=total_sample_count,
+            rect_preset_slug=rect_preset_slug,
+        )
+
+    if training_val_metrics is None:
+        return YoloQualityGateItem(
+            key="training_quality",
+            label="训练质量",
+            status="待验证",
+            score=None,
+            summary="缺少训练验证指标",
+            reasons=["未读取到 val 指标"],
+        )
+
+    if metric_basis == "val_recall":
+        basis_label = "验证集召回率"
+        basis_value = training_val_metrics.recall
+    else:
+        basis_label = "整体加权召回率"
+        basis_value = training_val_metrics.overall_recall
+    if basis_value is None:
+        return YoloQualityGateItem(
+            key="training_quality",
+            label="训练质量",
+            status="待验证",
+            score=None,
+            summary=f"缺少{basis_label}",
+            reasons=[f"未读取到{basis_label}，无法按当前口径判定"],
+        )
+
+    pass_line = _policy_number(policy, "pass_threshold", 0.6)
+    warn_line = _policy_number(policy, "warn_threshold", pass_line)
+    warn_line = min(max(warn_line, 0.0), pass_line)
+    min_total_samples = int(_policy_number(policy, "min_total_samples", 20))
+    allow_conditional_pass = bool(policy.get("allow_conditional_pass", True))
+
+    reasons: list[str] = []
+    if total_sample_count is not None and int(total_sample_count) < min_total_samples:
+        reasons.append(f"训练样本总数较少({total_sample_count})")
+    score = float(basis_value)
+    if score >= pass_line:
+        status = "达标" if not reasons else "条件达标"
+    elif score >= warn_line:
+        reasons.append(f"{basis_label}={score:.4f} 低于达标线 {pass_line:.2f}")
+        status = "条件达标"
+    else:
+        status = "不达标"
+        reasons.append(f"{basis_label}={score:.4f} 低于达标线 {pass_line:.2f}")
+    if status == "条件达标" and not allow_conditional_pass:
+        status = "不达标"
+        reasons.append("当前策略不允许条件达标")
+    status = _apply_precision_floor(
+        policy=policy,
+        training_val_metrics=training_val_metrics,
+        status=status,
+        reasons=reasons,
+    )
+    summary = f"{basis_label}={score:.4f}（达标线 {pass_line:.2f}）"
+    return YoloQualityGateItem(
+        key="training_quality",
+        label="训练质量",
+        status=status,
+        score=_round_score(score),
+        summary=summary,
+        reasons=reasons,
+    )
+
+
+def build_training_quality_assessment(
+    *,
+    training_val_metrics: Optional[YoloTrainingValMetrics],
+    total_sample_count: Optional[int],
+    rect_preset_slug: Optional[str] = None,
+    policy_overrides: Optional[dict[str, Any]] = None,
+) -> YoloQualityGateItem:
+    """训练质量判定入口。
+
+    不传 ``policy_overrides`` 时严格保持历史行为；传入时按自动迭代策略
+    （页面可配置的判定口径/阈值/守护项）判定。
+    """
+    if policy_overrides:
+        return _build_training_quality_with_overrides(
+            training_val_metrics=training_val_metrics,
+            total_sample_count=total_sample_count,
+            rect_preset_slug=rect_preset_slug,
+            policy_overrides=policy_overrides,
+        )
+    return _legacy_build_training_quality_assessment(
+        training_val_metrics=training_val_metrics,
+        total_sample_count=total_sample_count,
+        rect_preset_slug=rect_preset_slug,
+    )
+
+
 def build_training_assessment(
     *,
     training_val_metrics: Optional[YoloTrainingValMetrics],
@@ -391,9 +546,11 @@ def build_training_assessment(
                 recall_pass_line = float(
                     policy.get(
                         "overall_recall_pass",
-                        training_val_metrics.overall_recall_threshold
-                        if training_val_metrics.overall_recall_threshold is not None
-                        else 0.95,
+                        (
+                            training_val_metrics.overall_recall_threshold
+                            if training_val_metrics.overall_recall_threshold is not None
+                            else 0.95
+                        ),
                     )
                 )
             except (TypeError, ValueError):
@@ -440,11 +597,7 @@ def build_training_assessment(
         else (
             training_val_metrics.map50
             if training_val_metrics and training_val_metrics.map50 is not None
-            else (
-                training_val_metrics.overall_recall
-                if training_val_metrics
-                else None
-            )
+            else (training_val_metrics.overall_recall if training_val_metrics else None)
         )
     )
     return TrainingAssessmentResponse(
@@ -642,7 +795,9 @@ def build_edge_usability_assessment(
             (effective_comparison or {}).get("detail")
             or "BModel 与 PT 存在精度差异，请关注掉点提示"
         )
-        assessment_summary = f"边端检查完成，存在精度提示（不阻断发布）：{comparison_detail}"
+        assessment_summary = (
+            f"边端检查完成，存在精度提示（不阻断发布）：{comparison_detail}"
+        )
 
     return YoloQualityGateItem(
         key="edge_usability",

@@ -30,6 +30,7 @@ class ErrorCode(Enum):
     """
     business error code
     """
+
     UNEXPECTED_ERROR = (
         UNEXPECTED_ERROR_CODE,
         "服务器内部错误，请稍后重试",
@@ -321,15 +322,24 @@ class ErrorCode(Enum):
     CODE_57110_AUTO_TRAIN_INVALID_TRANSITION = (57110, "自动训练状态迁移非法")
     CODE_57111_AUTO_TRAIN_QUALITY_EVIDENCE_INSUFFICIENT = (57111, "质量证据不足")
     CODE_57112_AUTO_TRAIN_STAGE_GATE_BLOCKED = (57112, "自动阶段质量门未通过")
-    CODE_57113_AUTO_TRAIN_HUMAN_PUBLISH_REQUIRED = (57113, "正式发布必须由管理员人工确认")
+    CODE_57113_AUTO_TRAIN_HUMAN_PUBLISH_REQUIRED = (
+        57113,
+        "正式发布必须由管理员人工确认",
+    )
     CODE_57114_AUTO_TRAIN_REVIEW_HASH_CONFLICT = (57114, "审核标注哈希与当前标注不一致")
     CODE_57115_AUTO_TRAIN_DATA_GRANT_REQUIRED = (57115, "训练数据授权缺失或失效")
     CODE_57116_AUTO_TRAIN_SCAN_JOB_NOT_FOUND = (57116, "自动训练扫描任务不存在")
     CODE_57117_AUTO_TRAIN_STAGE_BUSY = (57117, "自动训练阶段正在执行")
-    CODE_57118_AUTO_TRAIN_QUALITY_REACHED_ACK_REQUIRED = (57118, "恢复已达标计划前必须明确确认")
+    CODE_57118_AUTO_TRAIN_QUALITY_REACHED_ACK_REQUIRED = (
+        57118,
+        "恢复已达标计划前必须明确确认",
+    )
     CODE_57119_AUTO_TRAIN_FEATURE_STAGE_DISABLED = (57119, "自动训练技术阶段未启用")
     CODE_57120_AUTO_TRAIN_EVALUATION_RUN_NOT_FOUND = (57120, "自动训练评估任务不存在")
-    CODE_57121_AUTO_TRAIN_EVALUATION_RUN_CONFLICT = (57121, "自动训练评估任务租约或状态冲突")
+    CODE_57121_AUTO_TRAIN_EVALUATION_RUN_CONFLICT = (
+        57121,
+        "自动训练评估任务租约或状态冲突",
+    )
     CODE_57122_AUTO_TRAIN_PLAN_NOT_OPEN = (
         57122,
         "自动训练计划一期暂未开放，历史记录仅供查看",
@@ -350,8 +360,6 @@ class ErrorCode(Enum):
         EXPORT_INIT_CODE + 2002,
         "连接 S3 存储服务失败",
     )
-
-
 
 
 def _public_error_message(default_message: str, exc: Exception) -> str:
@@ -506,11 +514,107 @@ def _json_safe_validation_errors(exc: RequestValidationError) -> list:
     return safe
 
 
+# 常用业务字段的中文名：仅对显式登记过的字段做本地化，未登记字段保持
+# pydantic 原始消息，避免影响其它模块既有提示与测试契约。
+_VALIDATION_FIELD_LABELS = {
+    "host": "设备地址",
+    "port": "SSH 端口",
+    "user": "SSH 账号",
+    "name": "设备名称",
+    "password": "SSH 密码",
+    "private_key_path": "SSH 私钥路径",
+    "validation_channel": "连接方式",
+    "connect_timeout_sec": "连接超时",
+    "validation_timeout_sec": "检查超时",
+    "device_id": "设备 ID",
+    "docker_container": "运行容器名称",
+    "edge_root": "边端工作目录",
+    "reason": "操作原因",
+}
+
+
+def _humanize_validation_error(
+    err: dict,
+    *,
+    field_labels: dict[str, str] | None = None,
+) -> str:
+    """把 pydantic 校验错误转成可读中文提示（未登记字段保持原消息）。"""
+    raw_msg = str(err.get("msg") or "")
+    err_type = str(err.get("type") or "")
+    # root validator 抛出的中文 ValueError 会带 pydantic 的英文前缀。
+    if err_type == "value_error":
+        return (
+            raw_msg[len("Value error, ") :]
+            if raw_msg.startswith("Value error, ")
+            else raw_msg
+        )
+    loc = [str(part) for part in (err.get("loc") or ()) if str(part) != "body"]
+    field = loc[-1] if loc else ""
+    labels = field_labels if field_labels is not None else _VALIDATION_FIELD_LABELS
+    label = labels.get(field)
+    if not label:
+        return raw_msg
+    ctx = err.get("ctx") if isinstance(err.get("ctx"), dict) else {}
+    if err_type == "missing":
+        return f"{label}不能为空"
+    if err_type == "string_too_long":
+        max_length = ctx.get("max_length")
+        return (
+            f"{label}长度超出限制（最多 {max_length} 个字符）"
+            if max_length is not None
+            else f"{label}长度超出限制"
+        )
+    if err_type == "string_too_short":
+        min_length = ctx.get("min_length")
+        try:
+            needs_more = min_length is not None and int(min_length) > 1
+        except (TypeError, ValueError):
+            needs_more = False
+        return (
+            f"{label}至少需要 {min_length} 个字符" if needs_more else f"{label}不能为空"
+        )
+    if err_type == "greater_than_equal":
+        return f"{label}不能小于 {ctx.get('ge')}"
+    if err_type == "less_than_equal":
+        return f"{label}不能大于 {ctx.get('le')}"
+    if err_type == "greater_than":
+        return f"{label}必须大于 {ctx.get('gt')}"
+    if err_type == "less_than":
+        return f"{label}必须小于 {ctx.get('lt')}"
+    if err_type in {
+        "int_parsing",
+        "int_type",
+        "float_parsing",
+        "float_type",
+        "number_parsing",
+        "decimal_parsing",
+    }:
+        return f"{label}必须是数字"
+    if err_type in {"bool_parsing", "bool_type"}:
+        return f"{label}必须是布尔值"
+    if err_type in {"literal_error", "enum"}:
+        expected = str(ctx.get("expected") or "").strip()
+        return (
+            f"{label}取值不合法（允许：{expected}）"
+            if expected
+            else f"{label}取值不合法"
+        )
+    return raw_msg
+
+
 # for http request
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = _json_safe_validation_errors(exc)
     logger.warning("{} - validation error: {}", _request_context(request), errors)
-    first_msg = errors[0].get("msg") if errors else None
+    # 边端设备管理是本次重点回归的中文界面，字段级提示做中文映射；其它模块
+    # 维持原有消息，除非消息本身已经是中文（value_error 去掉英文前缀）。
+    path = str(getattr(request.url, "path", "") or "")
+    field_labels = _VALIDATION_FIELD_LABELS if "/edge-devices" in path else {}
+    first_msg = (
+        _humanize_validation_error(errors[0], field_labels=field_labels)
+        if errors
+        else None
+    )
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
@@ -520,8 +624,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         },
     )
 
+
 async def unexpected_exception_handler(request: Request, exc: Exception):
-    logger.opt(exception=exc).error("{} - unexpected exception", _request_context(request))
+    logger.opt(exception=exc).error(
+        "{} - unexpected exception", _request_context(request)
+    )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
@@ -529,6 +636,7 @@ async def unexpected_exception_handler(request: Request, exc: Exception):
             "err_code": ErrorCode.UNEXPECTED_ERROR.value[0],
         },
     )
+
 
 def add_exception_handler(app: FastAPI):
     app.add_exception_handler(RequestValidationError, validation_exception_handler)
