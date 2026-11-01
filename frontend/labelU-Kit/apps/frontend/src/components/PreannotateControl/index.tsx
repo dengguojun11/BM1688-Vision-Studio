@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Checkbox, InputNumber, Modal, Progress, Select, Typography } from 'antd';
+import { Button, Checkbox, InputNumber, Modal, Popover, Progress, Select, Typography } from 'antd';
 
 import type { PreannotateJobResponse } from '@/api/types';
 import type { PreannotationCapabilityItem } from '@/api/types';
@@ -253,19 +253,55 @@ export default function PreannotateControl({
     return null;
   }
 
+  const actionButton = (
+    <Button
+      type={buttonType}
+      className={`labelu-preannotate-control labelu-preannotate-control-${type}`}
+      data-labelu-preannotate-action={type}
+      onClick={isAiSingleImage ? () => void handleRun() : handleOpen}
+      loading={isRunning}
+      disabled={disabled || isRunning}
+    >
+      {actionText}
+    </Button>
+  );
+
   return (
     <>
-      <Button
-        type={buttonType}
-        className={`labelu-preannotate-control labelu-preannotate-control-${type}`}
-        data-labelu-preannotate-action={type}
-        onClick={handleOpen}
-        loading={isRunning}
-        disabled={disabled || isRunning}
-      >
-        {actionText}
-      </Button>
-      <Modal
+      {isAiSingleImage ? (
+        <Popover
+          open={Boolean(completion)}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setCompletion(null);
+          }}
+          trigger="click"
+          placement="bottomLeft"
+          content={
+            <div data-testid="ai-detection-completed" style={{ maxWidth: 320 }}>
+              <Typography.Text>
+                AI目标检测完成，生成 {completion?.boxCount ?? '若干'} 个框
+              </Typography.Text>
+              <div style={{ marginTop: 8 }}>
+                <Button
+                  type="link"
+                  style={{ padding: 0 }}
+                  onClick={() => {
+                    setDetailOpen(true);
+                    setCompletion(null);
+                  }}
+                >
+                  点击详细查看
+                </Button>
+              </div>
+            </div>
+          }
+        >
+          {actionButton}
+        </Popover>
+      ) : (
+        actionButton
+      )}
+      {!isAiSingleImage && <Modal
         title={modalTitle}
         open={open}
         okText={isRunning ? '执行中...' : '开始执行'}
@@ -345,26 +381,8 @@ export default function PreannotateControl({
               </Typography.Text>
             </div>
           )}
-
-          {isAiSingleImage && completion && (
-            <div
-              data-testid="ai-detection-completed"
-              style={{ padding: '10px 12px', border: '1px solid #b7eb8f', borderRadius: 6, background: '#f6ffed' }}
-            >
-              <Typography.Text>
-                AI目标检测完成，生成 {completion.boxCount ?? '若干'} 个框
-              </Typography.Text>
-              <Button
-                type="link"
-                style={{ padding: 0, marginLeft: 8 }}
-                onClick={() => setDetailOpen(true)}
-              >
-                点击详细查看
-              </Button>
-            </div>
-          )}
         </div>
-      </Modal>
+      </Modal>}
       {isAiSingleImage && (
         <AiDetectionProcessModal
           open={detailOpen}

@@ -209,7 +209,6 @@ export function usePreannotateJob({ type, mode }: PreannotateJobOptions) {
       const selected = selectedModel;
       if (
         (MODEL_SELECTION_TYPES.has(type) && !selected)
-        || (type === 'ai_detection' && (!modelsResolved || loadingModels))
         || isRunning
       ) {
         return;
@@ -241,7 +240,7 @@ export function usePreannotateJob({ type, mode }: PreannotateJobOptions) {
           }
           if (response.data.warning_message) {
             message.warning(response.data.warning_message);
-          } else {
+          } else if (!(type === 'ai_detection' && mode === 'sample')) {
             message.success('AI目标检测完成');
           }
           await onCompleted?.({

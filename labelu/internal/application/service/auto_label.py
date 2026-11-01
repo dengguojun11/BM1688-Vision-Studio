@@ -1362,15 +1362,48 @@ def _normalize_results(
     repaired_items: list[dict[str, Any]] = []
 
     def record_geometry_warning(index: int, tool_name: Any, exc: Exception) -> None:
-        message = (
-            f"Skipped invalid {tool_name or 'geometry'} result at index {index}: {exc}"
-        )
+        tool_labels = {
+            "rectTool": "矩形框",
+            "pointTool": "点",
+            "polygonTool": "多边形",
+            "lineTool": "线",
+        }
+        tool_label = tool_labels.get(str(tool_name or ""), "几何")
+        raw_reason = str(exc)
+        translated_reasons = {
+            "annotation result must be an object": "标注结果必须是对象",
+            "rectTool extends beyond image width": "矩形框超出图片宽度",
+            "rectTool extends beyond image height": "矩形框超出图片高度",
+            "rectTool result must be an object": "矩形框结果必须是对象",
+            "geometry x must be a number": "横坐标 x 必须是数字",
+            "geometry y must be a number": "纵坐标 y 必须是数字",
+            "geometry width must be a number": "框宽度必须是数字",
+            "geometry height must be a number": "框高度必须是数字",
+            "rectTool x/y must be non-negative": "矩形框坐标不能为负数",
+        }
+        reason = translated_reasons.get(raw_reason)
+        if reason is None:
+            if "points must be a list" in raw_reason:
+                reason = "点坐标必须是数组"
+            elif "point must be an object" in raw_reason:
+                reason = "点坐标必须是对象"
+            elif "point coordinates must be non-negative" in raw_reason:
+                reason = "点坐标不能为负数"
+            elif "point is outside image width" in raw_reason:
+                reason = "点坐标超出图片宽度"
+            elif "point is outside image height" in raw_reason:
+                reason = "点坐标超出图片高度"
+            elif "result must be an object" in raw_reason:
+                reason = "结果必须是对象"
+            else:
+                reason = raw_reason
+        message = f"第 {index + 1} 个{tool_label}结果无效，已跳过：{reason}"
         geometry_warnings.append(message)
         dropped_items.append(
             {
                 "index": int(index),
                 "tool": str(tool_name or ""),
-                "reason": str(exc),
+                "reason": reason,
             }
         )
         logger.warning(
@@ -1378,7 +1411,7 @@ def _normalize_results(
             sample_name,
             index,
             tool_name,
-            exc,
+            raw_reason,
         )
 
     flattened: list[tuple[str, dict[str, Any]]] = []
@@ -1666,7 +1699,7 @@ def _normalize_results(
         warning_messages = [str(warning_message)] if warning_message else []
         if repaired_items:
             warning_messages.append(
-                f"Recovered {len(repaired_items)} malformed geometry result(s)"
+                f"已修复 {len(repaired_items)} 个异常几何结果"
             )
         warning_messages.extend(geometry_warnings)
         warning_message = "; ".join(warning_messages)

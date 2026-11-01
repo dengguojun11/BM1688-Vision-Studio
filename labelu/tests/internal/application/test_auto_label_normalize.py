@@ -381,8 +381,8 @@ def test_normalize_bbox_skips_invalid_geometry_and_keeps_valid_results():
     items = out["annotations"]["rectTool"]["result"]
     assert len(items) == 1
     assert items[0]["x"] == 10
-    assert "Skipped invalid rectTool result" in out["meta"]["warning_message"]
-    assert "geometry y must be a number" in out["meta"]["warning_message"]
+    assert "第 1 个矩形框结果无效" in out["meta"]["warning_message"]
+    assert "纵坐标 y 必须是数字" in out["meta"]["warning_message"]
 
 
 def test_normalize_bbox_returns_empty_annotations_when_all_geometry_is_invalid():
@@ -418,8 +418,8 @@ def test_normalize_bbox_returns_empty_annotations_when_all_geometry_is_invalid()
     assert out["annotations"] == {}
     warning_message = out["meta"]["warning_message"]
     assert warning_message
-    assert "geometry y must be a number" in warning_message
-    assert "rectTool x/y must be non-negative" in warning_message
+    assert "纵坐标 y 必须是数字" in warning_message
+    assert "矩形框坐标不能为负数" in warning_message
 
 
 def test_normalize_root_tag_values_as_tagtool_result():

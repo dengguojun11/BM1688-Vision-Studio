@@ -143,7 +143,7 @@ def test_malformed_y_key_is_recovered_instead_of_dropped():
     assert out["meta"]["dropped_items"] == []
     assert len(out["meta"]["repaired_items"]) == 1
     assert "128" in out["meta"]["repaired_items"][0]["reason"]
-    assert "Recovered 1 malformed geometry result" in out["meta"]["warning_message"]
+    assert "已修复 1 个异常几何结果" in out["meta"]["warning_message"]
 
 
 def test_ai_process_meta_captures_prompt_and_raw_response():

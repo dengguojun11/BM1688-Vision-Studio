@@ -24,10 +24,12 @@ vi.mock('antd', () => {
     ? createElement('section', null, children, createElement('button', { ...okButtonProps, loading: undefined, onClick: onOk }, '开始执行'))
     : null;
   const Alert = ({ message, description }: any) => createElement('div', { role: 'alert' }, message, description);
+  const Popover = ({ children, content, open }: any) => createElement('div', null, children, open ? content : null);
   const parts = {
     Button,
     Modal,
     Alert,
+    Popover,
     Checkbox: Text,
     InputNumber: Text,
     Progress: Text,
@@ -79,35 +81,23 @@ describe('AI detection service summary', () => {
     await act(async () => action?.click());
   }
 
-  it('shows the configured Ark detector without loading a YOLO model', async () => {
-    state.selectedModel = {
-      kind: 'imported', id: 4, title: '道路专用检测模型', imgsz: 640,
-      matched_labels: ['car', 'person'], missing_task_labels: ['person_motorbike', 'person_tricycle'],
-    };
+  it('starts current-image AI detection immediately without a second confirmation click', async () => {
+    state.start = vi.fn();
     await open();
-    expect(container.textContent).toContain('火山方舟');
-    expect(container.textContent).toContain('doubao-seed-2-1-pro-260915');
-    expect(container.textContent).toContain('置信度阈值 0.15');
-    expect(container.textContent).not.toContain('道路专用检测模型');
+    expect(state.start).toHaveBeenCalledTimes(1);
+    expect(container.textContent).not.toContain('开始执行');
   });
 
-  it('looks up the ai_bbox_detection capability to show the actual Ark model when no detector is compatible', async () => {
-    await open();
-    expect(container.textContent).toContain('火山方舟');
-    expect(container.textContent).toContain('doubao-seed-2-1-pro-260915');
-    expect(container.textContent).toContain('ark.cn-beijing.volces.com');
-  });
-
-  it('does not block execution on a YOLO model list', async () => {
+  it('does not block current-image AI detection on a YOLO model list', async () => {
     state.loadingModels = true;
     state.modelsResolved = false;
+    state.start = vi.fn();
     await open();
-    const run = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === '开始执行');
-    expect(run?.disabled).toBe(false);
+    expect(state.start).toHaveBeenCalledTimes(1);
     expect(container.textContent).not.toContain('正在选择兼容的目标检测模型');
   });
 
-  it('keeps the current-image AI dialog open after completion and offers the process detail', async () => {
+  it('keeps the completion bubble open and offers the process detail', async () => {
     const onCompleted = vi.fn();
     vi.mocked(getAiProcess).mockResolvedValue({ data: { sample_id: 10, process: { box_count: 13 } } } as never);
     state.start = vi.fn(async (options: any) => {
@@ -134,17 +124,13 @@ describe('AI detection service summary', () => {
       ),
     );
     const action = container.querySelector('button');
-    await act(async () => action?.click());
-
-    const run = Array.from(container.querySelectorAll('button')).find((item) => item.textContent === '开始执行');
     await act(async () => {
-      run?.click();
+      action?.click();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
 
     expect(onCompleted).toHaveBeenCalledTimes(1);
     expect(getAiProcess).toHaveBeenCalledWith(1, 10);
-    // 主弹窗保持打开，并展示完成提示与「点击详细查看」入口。
     expect(container.textContent).toContain('AI目标检测完成，生成 13 个框');
     const detailButton = Array.from(container.querySelectorAll('button')).find(
       (item) => item.textContent === '点击详细查看',
