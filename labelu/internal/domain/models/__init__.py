@@ -104,6 +104,12 @@ from .media_upload import MediaUploadSession
 from .ingestion import IngestionJob, MediaAsset
 from .scheduler_lease import SchedulerLease
 from .model_optimization import ModelOptimizationJob
+from .third_party_optimization import (
+    IntegrationPublishDecision,
+    OptimizationCycle,
+    OptimizationRequest,
+    ThirdPartyEventImage,
+)
 from labelu.internal.domain.models.rule import (
     RuleBinding,
     RuleBindingAudit,

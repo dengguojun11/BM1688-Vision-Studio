@@ -138,8 +138,8 @@ export const MODULE_COPY: Record<PlatformModule, { title: string; description: s
   },
   evolution: {
     title: '进化中心',
-    description: '查看第三方问题样本的自动对齐、导入、去重、分流和训练触发。',
-    next: '正常数据包由系统自动推进，管理人员只处理异常、规则和少量抽查。',
+    description: '统一管理第三方模型优化请求、数据回流、阈值实验、场景训练、人工审核和发布决策。',
+    next: '数据包自动累计、自动标注和自动训练；人工只审核标注质量，并在候选模型不优于上一版本时决定是否发布。',
   },
   admin: {
     title: '系统管理',

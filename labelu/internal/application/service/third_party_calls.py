@@ -34,6 +34,7 @@ _BUSINESS_TYPE_LABELS = {
 
 _OPERATION_BUSINESS_TYPES = {
     "experiment_dataset_import": "dataset_creation",
+    "integration_request": "model_optimization",
     "model_capability": "model_optimization",
     "threshold_experiment": "threshold_experiment",
     "strategy_evolution_task": "strategy_task",
@@ -567,9 +568,6 @@ def summary(db: Session, *, project_id: int | None = None) -> dict[str, Any]:
     today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     calls = db.query(ThirdPartyCallAudit).filter(
         ThirdPartyCallAudit.received_at >= today,
-        # NULL-tenant calls are counted by the ownership audit, not by the
-        # normal operational dashboard.
-        ThirdPartyCallAudit.project_id.is_not(None),
     )
     if project_id is not None:
         calls = calls.filter(ThirdPartyCallAudit.project_id == project_id)

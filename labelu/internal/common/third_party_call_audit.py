@@ -20,6 +20,11 @@ class ThirdPartyAuditTarget:
 
 _PATH_RULES: tuple[tuple[str, str, str], ...] = (
     (
+        "/api/v2/integrations",
+        "integration_request",
+        "third_party",
+    ),
+    (
         "/internal/v1/experiment-datasets",
         "experiment_dataset_import",
         "strategy_evolution",
@@ -102,6 +107,7 @@ def extract_third_party_identifiers(
     )
     external_task_id = str(
         payload.get("external_task_id")
+        or payload.get("external_request_id")
         or payload.get("task_id")
         or payload.get("taskId")
         or ""

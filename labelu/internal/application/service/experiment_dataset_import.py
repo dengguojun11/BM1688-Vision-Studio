@@ -696,6 +696,18 @@ def _status_flags(status: str) -> tuple[bool, bool | None]:
     return completed, success
 
 
+def _accumulation_min_sample_count(db: Session) -> int:
+    try:
+        from labelu.internal.application.service.integration_accumulation_config import (
+            get_min_sample_count,
+        )
+
+        return int(get_min_sample_count(db))
+    except Exception:
+        logger.exception("load third-party accumulation config failed")
+        return int(settings.EXPERIMENT_DATASET_MIN_SAMPLE_COUNT)
+
+
 def _status_snapshot(
     row: ExperimentDatasetImport,
     group: ExperimentDatasetGroup | None = None,
@@ -720,7 +732,11 @@ def _status_snapshot(
     required_samples = int(
         group.min_sample_count
         if group is not None
-        else settings.EXPERIMENT_DATASET_MIN_SAMPLE_COUNT
+        else (
+            _accumulation_min_sample_count(db)
+            if db is not None
+            else settings.EXPERIMENT_DATASET_MIN_SAMPLE_COUNT
+        )
     )
     imported_samples = formal_samples + draft_samples
     stage_by_status = {
@@ -2961,6 +2977,18 @@ def _process_import_group(
             },
         )
 
+    # A package/group reaching a new terminal or waiting state can change the
+    # coverage/stage of third-party optimization requests that reference it.
+    # Keep the integration request projection in sync without creating a second
+    # package pipeline.
+    try:
+        from labelu.internal.application.service import integration_requests
+
+        for package_id in {row.package_id for row in rows if row.package_id}:
+            integration_requests.refresh_requests_for_package(db, package_id)
+    except Exception:
+        logger.exception("refresh optimization requests after import group failed")
+
 
 def _mark_group_failed(
     db: Session, *, trigger_row: ExperimentDatasetImport, error: str
@@ -3005,6 +3033,15 @@ def _mark_group_failed(
                     ExperimentDatasetImport.finished_at.key: datetime.now(),
                 },
             )
+
+    try:
+        from labelu.internal.application.service import integration_requests
+
+        for row in rows:
+            if row.package_id:
+                integration_requests.refresh_requests_for_package(db, row.package_id)
+    except Exception:
+        logger.exception("refresh optimization requests after failed import group failed")
 
 
 def _process_import_row(
@@ -3774,6 +3811,11 @@ async def accept(
         )
         if group is None:
             try:
+                from labelu.internal.application.service.integration_accumulation_config import (
+                    get_min_sample_count,
+                )
+
+                configured_min_sample_count = get_min_sample_count(db)
                 with db.begin_nested():
                     group = crud_experiment_dataset_group.create(
                         db,
@@ -3788,7 +3830,7 @@ async def accept(
                             model_id=cmd.target.model_id,
                             dataset_category_id=dataset_category_id,
                             identity_json=identity_json,
-                            min_sample_count=settings.EXPERIMENT_DATASET_MIN_SAMPLE_COUNT,
+                            min_sample_count=configured_min_sample_count,
                             declared_sample_count=0,
                             status=GROUP_STATUS_COLLECTING,
                         ),

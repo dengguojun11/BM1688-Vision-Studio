@@ -294,6 +294,17 @@ async def lifespan(app):
                 await asyncio.sleep(settings.EXPERIMENT_DATASET_WORKER_INTERVAL_SECONDS)
 
         local_experiment_worker_task = asyncio.create_task(_run_local_experiment_worker())
+    optimization_request_worker_task = None
+    if not disable_background_watchdogs:
+        from labelu.internal.application.service.optimization_request_worker import (
+            run_optimization_request_worker,
+            worker_enabled as optimization_request_worker_enabled,
+        )
+
+        if optimization_request_worker_enabled():
+            optimization_request_worker_task = asyncio.create_task(
+                run_optimization_request_worker()
+            )
     if not disable_background_watchdogs:
         from labelu.internal.application.service.auto_training_watchdog import (
             schedule_auto_training_watchdog,
@@ -311,6 +322,9 @@ async def lifespan(app):
         if local_experiment_worker_task is not None:
             local_experiment_worker_task.cancel()
             await asyncio.gather(local_experiment_worker_task, return_exceptions=True)
+        if optimization_request_worker_task is not None:
+            optimization_request_worker_task.cancel()
+            await asyncio.gather(optimization_request_worker_task, return_exceptions=True)
 
 
 app = FastAPI(

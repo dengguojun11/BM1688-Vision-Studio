@@ -34,6 +34,14 @@ CHINESE_TAGS: dict[str, tuple[str, str]] = {
     "tagtool_preannotate": ("分类预标注", "TagTool 分类模型和任务预标注。"),
     "event_review": ("事件复核", "外部事件数据接入、复核和结果回传。"),
     "experiment_dataset_import": ("实验数据集导入", "实验数据集、样本和标注结果导入。"),
+    "integration_requests": (
+        "模型优化协同",
+        "第三方模型优化请求、数据覆盖度、阈值实验、场景训练和发布决策。",
+    ),
+    "integration_settings": (
+        "第三方累计配置",
+        "第三方数据包进入任务前的最小累计图片数配置。",
+    ),
     "strategy_task_integration": FLEXIBLE_WORKFLOW_TAG,
     "strategy_tasks": (
         "进化中心",

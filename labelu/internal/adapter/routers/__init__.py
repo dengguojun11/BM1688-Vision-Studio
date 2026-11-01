@@ -25,6 +25,8 @@ from labelu.internal.adapter.routers import strategy_evolution
 from labelu.internal.adapter.routers import local_dev
 from labelu.internal.adapter.routers import auto_training
 from labelu.internal.adapter.routers import third_party_calls
+from labelu.internal.adapter.routers import integration_requests
+from labelu.internal.adapter.routers import integration_accumulation_config
 from labelu.internal.adapter.routers import published_model_catalog
 from labelu.internal.adapter.routers import health
 from labelu.internal.adapter.routers import project
@@ -136,5 +138,7 @@ def add_router(app: FastAPI):
     _include(app, auto_training.evaluation_jobs_router)
     _include(app, auto_training.settings_router)
     _include(app, third_party_calls.router)
+    _include(app, integration_requests.router, prefix="")
+    _include(app, integration_accumulation_config.router)
     _include(app, published_model_catalog.router)
     _include(app, published_model_catalog.public_router)
