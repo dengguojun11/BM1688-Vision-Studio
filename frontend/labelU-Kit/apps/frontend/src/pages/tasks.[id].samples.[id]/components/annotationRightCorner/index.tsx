@@ -86,6 +86,7 @@ const COPY_TASK_PAGE_SIZE = 20;
 
 export const SAMPLE_CHANGED = 'sampleChanged';
 export const SAMPLE_NAVIGATION_PENDING = 'sampleNavigationPending';
+export const SAMPLE_NAVIGATION_DONE = 'sampleNavigationDone';
 
 type ImageAnnotatorRefWithSnapshot = {
   /** Added by the local image annotator build; older package declarations omit it. */
@@ -674,10 +675,21 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
       return await saveCurrentSample();
     } catch (error: any) {
       const backendMsg = error?.response?.data?.msg;
-      commonController.notificationErrorMessage({ message: backendMsg || '保存当前样本失败' }, 2);
+      const editorName =
+        currentEditingUser && currentEditingUser.user_id !== me.data?.id
+          ? (currentEditingUser.username || `用户 #${currentEditingUser.user_id}`)
+          : '';
+      if (editorName) {
+        commonController.notificationErrorMessage(
+          { message: `${editorName} 正在标注这张图片，保存失败；请等待或选择其他图片` },
+          2,
+        );
+      } else {
+        commonController.notificationErrorMessage({ message: backendMsg || '保存当前样本失败' }, 2);
+      }
       return false;
     }
-  }, [noSave, saveCurrentImageSampleInBackground, saveCurrentSample, task?.media_type]);
+  }, [currentEditingUser, me.data?.id, noSave, saveCurrentImageSampleInBackground, saveCurrentSample, task?.media_type]);
 
   const handleBackToTask = useCallback(async () => {
     if (!taskId) {
@@ -881,16 +893,19 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
       // 跳过状态已经由“跳过”操作持久化，不需要再次保存画布。
       // 之前这里仍调用保存函数，而保存函数对 SKIPPED 返回 false，导致
       // 直接打开一个已跳过样本时点击“下一个”没有任何导航反应。
-      if (
-        shouldSaveBeforeSampleNavigation({
-          sampleState: currentSample?.state,
-          noSave,
-          isCompareAccessMode,
-          isCurrentUser: !!isMeTheCurrentUser,
-        })
-      ) {
-        void saveCurrentSampleInBackground().catch(() => undefined);
-      }
+        if (
+          shouldSaveBeforeSampleNavigation({
+            sampleState: currentSample?.state,
+            noSave,
+            isCompareAccessMode,
+            isCurrentUser: !!isMeTheCurrentUser,
+          })
+        ) {
+          const saved = await saveCurrentSampleInBackground();
+          if (!saved) {
+            return;
+          }
+        }
 
       // 窗口内有下一张 → 直接导航
       if (isCurrentSampleLoaded && sampleIndex < samples.length - 1) {
@@ -933,6 +948,11 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
     } catch {
       setIsNavigatingSample(false);
       message.error('下一张加载失败，请重试');
+    } finally {
+      // 保存失败或没有下一张时也必须释放导航遮罩，否则右侧工具栏会一直
+      // 被 loading 覆盖，用户会误以为全局工具和标签菜单消失了。
+      setIsNavigatingSample(false);
+      document.dispatchEvent(new CustomEvent(SAMPLE_NAVIGATION_DONE));
     }
   }, [
     isCompareAccessMode,
@@ -1358,7 +1378,10 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
               {currentEditingUser.user_id !== me.data?.id && (
                 <>
                   <UserAvatar key={currentEditingUser.user_id} user={currentEditingUser} />
-                  {t('isAnnotating')}
+                  <span>
+                    {currentEditingUser.username || `用户 #${currentEditingUser.user_id}`}{' '}
+                    {t('isAnnotating')}
+                  </span>
                   <Tooltip title={t('collaboratorTips')} placement="bottom">
                     <QuestionCircleOutlined />
                   </Tooltip>

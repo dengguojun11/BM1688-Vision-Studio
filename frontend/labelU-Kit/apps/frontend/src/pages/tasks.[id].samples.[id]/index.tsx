@@ -45,7 +45,11 @@ import { TOOL_NAME } from '@/constants/toolName';
 import useMe from '@/hooks/useMe';
 
 import SlideLoader from './components/slideLoader';
-import AnnotationRightCorner, { SAMPLE_CHANGED, SAMPLE_NAVIGATION_PENDING } from './components/annotationRightCorner';
+import AnnotationRightCorner, {
+  SAMPLE_CHANGED,
+  SAMPLE_NAVIGATION_DONE,
+  SAMPLE_NAVIGATION_PENDING,
+} from './components/annotationRightCorner';
 import AnnotationContext from './annotation.context';
 import { LoadingWrapper, Wrapper } from './style';
 import { getVisiblePreAnnotations, preAnnotationsHasGeometry } from './preAnnotationVisibility';
@@ -60,6 +64,7 @@ import {
 } from './selectCanvasPreAnnotation';
 import {
   createCurrentFirstSampleWindow,
+  createSampleWindow,
   getNextSampleCursor,
   getPreviousSampleCursor,
   prependSampleWindow,
@@ -397,62 +402,80 @@ const AnnotationPage = () => {
   const [loadingPrevious, setLoadingPrevious] = useState(false);
 
   const fetchInitialSamples = useCallback(async () => {
-    if (!routeParams.taskId || !sample?.data.id) {
+    const routeSampleId = Number(routeParams.sampleId);
+    if (!routeParams.taskId || !Number.isFinite(routeSampleId)) {
       return [];
+    }
+
+    let currentSample =
+      sample?.data?.id === routeSampleId
+        ? sample.data
+        : samplesRef.current.find((item) => item.id === routeSampleId);
+    if (!currentSample) {
+      try {
+        const response = await getSample({
+          task_id: +routeParams.taskId!,
+          sample_id: routeSampleId,
+        });
+        currentSample = response.data;
+      } catch {
+        return [];
+      }
     }
 
     if (isCompareAccessMode) {
       setTotalCount(1);
-      nextCursorRef.current = sample.data.id;
-      previousCursorRef.current = sample.data.id;
+      nextCursorRef.current = currentSample.id;
+      previousCursorRef.current = currentSample.id;
       hasNextSamplesRef.current = false;
       hasPreviousSamplesRef.current = false;
-      return [sample.data];
+      return [currentSample];
     }
 
     const [previousResponse, nextResponse] = await Promise.all([
       getSamples({
         task_id: +routeParams.taskId!,
-        before: sample.data.id,
+        before: currentSample.id,
         size: PREVIOUS_LIMIT + 1,
       }),
       getSamples({
         task_id: +routeParams.taskId!,
-        after: sample.data.id,
+        after: currentSample.id,
         size: PAGE_SIZE + 1,
       }),
     ]);
 
     const previousSamples = previousResponse.data.slice(0, PREVIOUS_LIMIT);
     const nextSamples = nextResponse.data.slice(0, PAGE_SIZE);
-    nextCursorRef.current = getNextSampleCursor(nextSamples) ?? sample.data.id;
-    previousCursorRef.current = getPreviousSampleCursor(previousSamples) ?? sample.data.id;
+    nextCursorRef.current = getNextSampleCursor(nextSamples) ?? currentSample.id;
+    previousCursorRef.current = getPreviousSampleCursor(previousSamples) ?? currentSample.id;
     hasNextSamplesRef.current = nextResponse.data.length > PAGE_SIZE;
     hasPreviousSamplesRef.current = previousResponse.data.length > 0;
     setTotalCount(nextResponse.meta_data?.total ?? previousResponse.meta_data?.total ?? 0);
-    return [...previousSamples, sample.data, ...nextSamples];
-  }, [isCompareAccessMode, routeParams.taskId, sample?.data]);
+    return createSampleWindow(previousSamples, currentSample, nextSamples);
+  }, [isCompareAccessMode, routeParams.taskId, routeParams.sampleId, sample?.data]);
 
   const fetchSamples = useCallback(
     async (isReset?: boolean) => {
-      if (!routeParams.taskId || !sample?.data.id) {
+      const routeSampleId = Number(routeParams.sampleId);
+      if (!routeParams.taskId || !Number.isFinite(routeSampleId)) {
         return [] as SampleResponse[];
       }
 
-      if (isReset || initializedSampleIdRef.current !== sample.data.id) {
+      if (isReset || initializedSampleIdRef.current !== routeSampleId) {
         if (
           shouldPreserveSampleWindowForNavigation(
             navigationSourceRef.current,
-            sample.data.id,
+            routeSampleId,
             initializedSampleIdRef.current,
           )
         ) {
-          initializedSampleIdRef.current = sample.data.id;
+          initializedSampleIdRef.current = routeSampleId;
           navigationSourceRef.current = undefined;
           return samplesRef.current;
         }
 
-        initializedSampleIdRef.current = sample.data.id;
+        initializedSampleIdRef.current = routeSampleId;
         navigationSourceRef.current = undefined;
         fetchingPreviousRef.current = false;
         setLoadingPrevious(false);
@@ -480,7 +503,7 @@ const AnnotationPage = () => {
       setTotalCount(meta_data?.total ?? 0);
       return nextSamples;
     },
-    [fetchInitialSamples, isCompareAccessMode, routeParams.taskId, sample?.data.id],
+    [fetchInitialSamples, isCompareAccessMode, routeParams.taskId, routeParams.sampleId],
   );
 
   const [samples = [] as SampleResponse[], loading, setSamples, svc] = useScrollFetch(
@@ -491,7 +514,7 @@ const AnnotationPage = () => {
       document.querySelector('.labelu-video__sidebar div'),
     {
       isEnd: () => !hasNextSamplesRef.current,
-      watch: sample?.data.id,
+      watch: routeParams.sampleId,
     },
   );
 
@@ -504,20 +527,21 @@ const AnnotationPage = () => {
       return;
     }
 
-    const currentIndex = samples.findIndex((item) => item.id === sample.data.id);
+    const routeSampleId = Number(routeParams.sampleId);
+    const currentIndex = samples.findIndex((item) => item.id === routeSampleId);
 
     if (currentIndex < 0) {
       return;
     }
 
-    const prewarmKey = `${sample.data.id}:${samples[0]?.id ?? ''}:${samples[samples.length - 1]?.id ?? ''}`;
+    const prewarmKey = `${routeSampleId}:${samples[0]?.id ?? ''}:${samples[samples.length - 1]?.id ?? ''}`;
     if (lastPrewarmKeyRef.current === prewarmKey) {
       return;
     }
 
     const prefetch = () => {
       lastPrewarmKeyRef.current = prewarmKey;
-      prewarmAdjacentSamples(+routeParams.taskId!, samples, sample.data.id);
+      prewarmAdjacentSamples(+routeParams.taskId!, samples, routeSampleId);
     };
 
     if ('requestIdleCallback' in window) {
@@ -527,7 +551,7 @@ const AnnotationPage = () => {
 
     const id = window.setTimeout(prefetch, 30);
     return () => window.clearTimeout(id);
-  }, [isCompareAccessMode, routeParams.taskId, sample.data.id, samples, task?.media_type]);
+  }, [isCompareAccessMode, routeParams.taskId, routeParams.sampleId, samples, task?.media_type]);
 
   useEffect(() => {
     const handleSampleChanged = (event: Event) => {
@@ -547,8 +571,13 @@ const AnnotationPage = () => {
 
   useEffect(() => {
     const handleNavigationPending = () => setIsNavigationPending(true);
+    const handleNavigationDone = () => setIsNavigationPending(false);
     document.addEventListener(SAMPLE_NAVIGATION_PENDING, handleNavigationPending);
-    return () => document.removeEventListener(SAMPLE_NAVIGATION_PENDING, handleNavigationPending);
+    document.addEventListener(SAMPLE_NAVIGATION_DONE, handleNavigationDone);
+    return () => {
+      document.removeEventListener(SAMPLE_NAVIGATION_PENDING, handleNavigationPending);
+      document.removeEventListener(SAMPLE_NAVIGATION_DONE, handleNavigationDone);
+    };
   }, []);
 
   const fetchPreviousSamples = useCallback(
@@ -556,7 +585,7 @@ const AnnotationPage = () => {
       if (
         isCompareAccessMode ||
         !routeParams.taskId ||
-        !sample?.data.id ||
+        !Number.isFinite(Number(routeParams.sampleId)) ||
         !hasPreviousSamplesRef.current ||
         fetchingPreviousRef.current
       ) {
@@ -601,7 +630,7 @@ const AnnotationPage = () => {
         setLoadingPrevious(false);
       }
     },
-    [isCompareAccessMode, routeParams.taskId, sample?.data.id, setSamples],
+    [isCompareAccessMode, routeParams.sampleId, routeParams.taskId, setSamples],
   );
 
   const leftSiderContent = useMemo(() => <SlideLoader />, []);
@@ -749,7 +778,7 @@ const AnnotationPage = () => {
 
   useEffect(() => {
     setIsNavigationPending(false);
-  }, [sample.data.id]);
+  }, [routeParams.sampleId]);
 
   const config = useMemo(() => {
     return configFromParent || editorConfig;
@@ -769,9 +798,11 @@ const AnnotationPage = () => {
   );
 
   useEffect(() => {
-    if (me.data && currentSampleConns?.[0] && !isMeTheCurrentEditingUser) {
+    const editor = currentSampleConns?.[0];
+    if (me.data && editor && !isMeTheCurrentEditingUser) {
       message.destroy();
-      message.error(t('currentSampleIsAnnotating'));
+      const editorName = editor.username || `用户 #${editor.user_id}`;
+      message.warning(`${editorName} 正在标注这张图片，请等待或选择其他图片`);
     }
   }, [currentSampleConns, isMeTheCurrentEditingUser, me.data, t]);
 
