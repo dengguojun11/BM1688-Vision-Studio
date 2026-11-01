@@ -62,7 +62,7 @@ describe('PlatformLayout role navigation', () => {
     expect(getComputedStyle(header as HTMLElement).position).toBe('sticky');
     expect(getComputedStyle(header as HTMLElement).top).toBe('0px');
     expect(screen.queryByRole('combobox', { name: '当前项目' })).toBeNull();
-    expect(screen.getByText('数据集管理')).toBeTruthy();
+    expect(screen.getAllByText('数据集管理').length).toBeGreaterThan(0);
     expect(screen.queryByText(/可访问项目/)).toBeNull();
   });
 
@@ -104,7 +104,7 @@ describe('PlatformLayout role navigation', () => {
 
     expect(screen.getByText('运行工作台内容')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: '主导航' })).toBeTruthy();
-    expect(screen.getByText('运行工作台')).toBeTruthy();
+    expect(screen.getByRole('link', { name: '运行工作台' })).toBeTruthy();
   });
 
   it('allows the explicitly isolated visual preview without an auth token', () => {
@@ -141,5 +141,33 @@ describe('PlatformLayout role navigation', () => {
     expect(screen.getByText('annotator@example.com')).toBeTruthy();
     expect(screen.getByText('标注人员')).toBeTruthy();
     expect(screen.getByRole('button', { name: '当前账号：annotator@example.com' })).toBeTruthy();
+  });
+
+  it('shows the active second-level item in the navigation tree', () => {
+    render(
+      <MemoryRouter initialEntries={['/training?view=reports']}>
+        <PlatformLayout>
+          <div>训练报告内容</div>
+        </PlatformLayout>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: '训练中心' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: '训练报告' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: '收起训练中心菜单' }).getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('expands the administration tree for manager accounts only', () => {
+    render(
+      <MemoryRouter initialEntries={['/admin?view=edge-devices']}>
+        <PlatformLayout>
+          <div>边端设备内容</div>
+        </PlatformLayout>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: '边端设备管理' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: '模型接入配置' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '数据集管理' })).toBeTruthy();
   });
 });

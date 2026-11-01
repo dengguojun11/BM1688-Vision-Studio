@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { ADVANCED_PLATFORM_MODULES, getActiveModule, INTERNAL_PLATFORM_MODULES, MODULE_COPY, PLATFORM_MODULES } from './modules';
+import {
+  ADVANCED_PLATFORM_MODULES,
+  getActiveModule,
+  getActiveNavigation,
+  INTERNAL_PLATFORM_MODULES,
+  MODULE_COPY,
+  PLATFORM_MODULES,
+  PLATFORM_NAVIGATION,
+} from './modules';
 
 describe('7GAI platform navigation', () => {
   it('exposes training as a first-class module', () => {
@@ -56,5 +64,48 @@ describe('7GAI platform navigation', () => {
     expect(nextCopy.join('\n')).not.toMatch(/(?:API|接口|摘要接口)接入后/);
     expect(nextCopy).toContain('数据集供任务和训练复用；标签契约与版本治理仅在系统管理中维护。');
     expect(nextCopy.join('\n')).not.toMatch(/灰度发布|回滚/);
+  });
+
+  it('keeps a two-level tree with one active working surface', () => {
+    expect(PLATFORM_NAVIGATION.map((group) => group.key)).toEqual([
+      'workspace',
+      'tasks',
+      'training',
+      'models',
+      'evolution',
+      'admin',
+    ]);
+    expect(PLATFORM_NAVIGATION.every((group) => group.children.length > 0)).toBe(true);
+    expect(PLATFORM_NAVIGATION.every((group) => group.children.every((child) => child.to.startsWith('/')))).toBe(true);
+  });
+
+  it('resolves page view deep links to their second-level navigation item', () => {
+    expect(getActiveNavigation('/training', '?view=reports')).toEqual({
+      parentKey: 'training',
+      childKey: 'training-reports',
+    });
+    expect(getActiveNavigation('/models', '?view=compile')).toEqual({
+      parentKey: 'models',
+      childKey: 'models-compile',
+    });
+    expect(getActiveNavigation('/evolution', '?tab=third-party')).toEqual({
+      parentKey: 'evolution',
+      childKey: 'evolution-imports',
+    });
+    expect(getActiveNavigation('/admin', '?view=governance')).toEqual({
+      parentKey: 'admin',
+      childKey: 'admin-labels',
+    });
+    expect(getActiveNavigation('/admin', '')).toEqual({
+      parentKey: 'admin',
+      childKey: 'admin-accounts',
+    });
+  });
+
+  it('keeps dataset compatibility routes under system management', () => {
+    expect(getActiveNavigation('/datasets', '')).toEqual({
+      parentKey: 'admin',
+      childKey: 'admin-datasets',
+    });
   });
 });

@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { message } from 'antd';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import request from '@/api/request';
@@ -33,7 +34,7 @@ afterEach(() => {
 
 function renderPage() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(<QueryClientProvider client={queryClient}><EvolutionPage /></QueryClientProvider>);
+  return render(<MemoryRouter><QueryClientProvider client={queryClient}><EvolutionPage /></QueryClientProvider></MemoryRouter>);
 }
 
 describe('EvolutionPage terminal reviews', () => {

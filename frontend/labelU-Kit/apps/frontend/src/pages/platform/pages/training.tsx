@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Checkbox, Descriptions, Divider, Empty, Form, Grid, Input, InputNumber, Modal, Pagination, Popconfirm, Progress, Radio, Select as AntSelect, Space as AntSpace, Spin, Steps, Table, Tabs, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentProps } from 'react';
+import { useLocation } from 'react-router-dom';
 
 import { createIdempotencyKey } from '@/api/idempotency';
 import request from '@/api/request';
@@ -4441,9 +4442,22 @@ export default function TrainingPage() {
   const { isTaskSuperuser, isFetched: isTaskSuperuserFetched = true } = useTaskSuperuser();
   const screens = Grid.useBreakpoint();
   const compactActions = !screens.sm;
+  const location = useLocation();
   const [activeView, setActiveView] = useState<TrainingView>(trainingViewFromLocation);
   const [actionError, setActionError] = useState<string | null>(null);
   const [jobSearch, setJobSearch] = useState('');
+
+  // The shell tree links to `/training?view=...`; React Router can update the
+  // search string without remounting this page, so keep the visible tab in
+  // sync with the address bar (deep links also land on the requested tab).
+  useEffect(() => {
+    const requested = trainingViewFromLocation();
+    const next =
+      requested === 'auto-plan' && isTaskSuperuserFetched && !isTaskSuperuser
+        ? 'jobs'
+        : requested;
+    setActiveView((current) => (current === next ? current : next));
+  }, [location.search, isTaskSuperuser, isTaskSuperuserFetched]);
   const action = useMutation({
     mutationFn: async ({ row, kind }: { row: Row; kind: 'pause' | 'restart' }) => {
       const path = `/v1/training/jobs/${row.id}/${kind}`;

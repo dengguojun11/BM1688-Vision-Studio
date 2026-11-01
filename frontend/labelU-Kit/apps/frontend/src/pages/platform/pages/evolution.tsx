@@ -3,6 +3,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { Alert, Button, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useState, type Key } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import request from '@/api/request';
 import ServerSearchInput from '@/components/ServerSearchInput';
@@ -511,6 +512,14 @@ export function summarizeImportGroups(rows: Row[]) {
 }
 
 export default function EvolutionPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') === 'third-party' ? 'third-party' : 'integration';
+  const changeTab = (key: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (key === 'integration') next.delete('tab');
+    else next.set('tab', key);
+    setSearchParams(next);
+  };
   const importsQuery = useQuery({
     queryKey: ['evolution-third-party-import-count'],
     queryFn: async () => {
@@ -534,7 +543,7 @@ export default function EvolutionPage() {
        * 两者均不属于第三方优化请求链路，已从本页面移除；对应后端能力保留，
        * 供其原有内部流程使用。
        */}
-      <Tabs defaultActiveKey="integration" items={[{
+      <Tabs activeKey={activeTab} onChange={changeTab} items={[{
         key: 'integration',
         label: '模型优化请求',
         children: <IntegrationRequestsPanel />,

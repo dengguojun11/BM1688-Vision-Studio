@@ -51,6 +51,158 @@ export const PLATFORM_MODULES: ReadonlyArray<{
   { key: 'admin', label: '系统管理', description: '管理成员、权限、标签与集成', icon: SettingOutlined },
 ];
 
+export interface PlatformNavigationChild {
+  key: string;
+  label: string;
+  to: string;
+  /** Only managers can see and open this destination. */
+  managerOnly?: boolean;
+}
+
+export interface PlatformNavigationGroup {
+  key: PlatformModule;
+  label: string;
+  icon: typeof AppstoreOutlined;
+  to: string;
+  children: ReadonlyArray<PlatformNavigationChild>;
+}
+
+/**
+ * Two-level information architecture for the shell navigation.
+ *
+ * The first level is the operator-facing module (work / data / training /
+ * models / evolution / administration); the second level is the concrete
+ * working surface.  Keeping the destinations as URLs (including the existing
+ * `?view=` and `?tab=` contracts) means browser back/forward, deep links and
+ * the page-local tabs all stay in sync.
+ */
+export const PLATFORM_NAVIGATION: ReadonlyArray<PlatformNavigationGroup> = [
+  {
+    key: 'workspace',
+    label: '工作台',
+    icon: AppstoreOutlined,
+    to: '/workspace/workbench',
+    children: [
+      { key: 'workspace-workbench', label: '运行工作台', to: '/workspace/workbench' },
+      { key: 'workspace-screen', label: '数据大屏', to: '/workspace' },
+      { key: 'workspace-evolution-screen', label: '模型进化大屏', to: '/workspace/evolution-screen' },
+    ],
+  },
+  {
+    key: 'tasks',
+    label: '任务与标注',
+    icon: TagsOutlined,
+    to: '/tasks',
+    children: [
+      { key: 'tasks-list', label: '任务列表', to: '/tasks' },
+    ],
+  },
+  {
+    key: 'training',
+    label: '训练中心',
+    icon: ExperimentOutlined,
+    to: '/training',
+    children: [
+      { key: 'training-jobs', label: '训练作业', to: '/training' },
+      { key: 'training-reports', label: '训练报告', to: '/training?view=reports' },
+      { key: 'training-auto-plan', label: '历史自动训练计划', to: '/training?view=auto-plan', managerOnly: true },
+      { key: 'training-iteration', label: '自动迭代设置', to: '/training?view=iteration-settings' },
+    ],
+  },
+  {
+    key: 'models',
+    label: '模型中心',
+    icon: BranchesOutlined,
+    to: '/models',
+    children: [
+      { key: 'models-pt', label: 'PT 模型', to: '/models' },
+      { key: 'models-compile', label: 'BM1688 编译', to: '/models?view=compile' },
+      { key: 'models-bmodel', label: 'BModel 模型', to: '/models?view=bmodel' },
+      { key: 'models-published', label: '已发布模型', to: '/models?view=published' },
+      { key: 'models-external', label: '外部模型', to: '/models?view=external' },
+      { key: 'models-quality-gates', label: '质量门禁', to: '/models?view=quality-gates' },
+      { key: 'models-edge-tasks', label: '边端任务中心', to: '/edge-task-center' },
+    ],
+  },
+  {
+    key: 'evolution',
+    label: '进化中心',
+    icon: CheckCircleOutlined,
+    to: '/evolution',
+    children: [
+      { key: 'evolution-requests', label: '模型优化请求', to: '/evolution' },
+      { key: 'evolution-imports', label: '专家回流任务', to: '/evolution?tab=third-party' },
+    ],
+  },
+  {
+    key: 'admin',
+    label: '系统管理',
+    icon: SettingOutlined,
+    to: '/admin',
+    children: [
+      { key: 'admin-accounts', label: '账号与角色', to: '/admin' },
+      { key: 'admin-labels', label: '标签库', to: '/admin?view=governance&tab=labels' },
+      { key: 'admin-governance-datasets', label: '数据集治理', to: '/admin?view=governance&tab=datasets' },
+      { key: 'admin-global-tools', label: '全局工具标签', to: '/admin?view=governance&tab=global-tools' },
+      { key: 'admin-datasets', label: '数据集管理', to: '/datasets', managerOnly: true },
+      { key: 'admin-ingestion', label: '高级数据导入', to: '/ingestion', managerOnly: true },
+      { key: 'admin-edge-devices', label: '边端设备管理', to: '/admin?view=edge-devices' },
+      { key: 'admin-publish-config', label: '发布配置', to: '/admin?view=publish-config' },
+      { key: 'admin-expert-s3', label: '专家 S3 回流配置', to: '/admin?view=expert-s3-config' },
+      { key: 'admin-model-access', label: '模型接入配置', to: '/admin?view=model-access-config' },
+      { key: 'admin-image-cleaning', label: '图片清洗配置', to: '/admin?view=image-cleaning' },
+      { key: 'admin-annotation-settings', label: '标签与标注设置', to: '/annotation-settings' },
+    ],
+  },
+];
+
+/** Resolve the active first/second level item for a URL. */
+export function getActiveNavigation(pathname: string, search = ''): {
+  parentKey: PlatformModule;
+  childKey?: string;
+} {
+  const current = new URLSearchParams(search);
+  let parentKey: PlatformModule = getActiveModule(pathname);
+  let childKey: string | undefined;
+
+  for (const group of PLATFORM_NAVIGATION) {
+    for (const child of group.children) {
+      const destination = new URL(child.to, 'http://labelu.local');
+      if (destination.pathname !== pathname) {
+        continue;
+      }
+
+      // `/admin` and `/admin?view=governance` have different children.  A
+      // child matches when every query parameter it declares is present with
+      // the same value; the first matching child wins.
+      const declared = [...destination.searchParams.entries()];
+      if (declared.some(([key, value]) => current.get(key) !== value)) {
+        continue;
+      }
+
+      // Prefer a more specific tab/view match over the bare module URL.
+      if (!childKey || declared.length > 0) {
+        parentKey = group.key;
+        childKey = child.key;
+      }
+    }
+  }
+
+  // The governance surface opens the label library tab by default. Without a
+  // tab query parameter the bare `/admin` child would otherwise win.
+  if (
+    pathname === '/admin' &&
+    current.get('view') === 'governance' &&
+    !current.get('tab')
+  ) {
+    parentKey = 'admin';
+    childKey = 'admin-labels';
+  }
+
+  return { parentKey, childKey };
+}
+
+
 /** Technical surfaces retained for administrators and compatibility links. */
 export const INTERNAL_PLATFORM_MODULES: ReadonlyArray<{
   key: Extract<PlatformModule, 'datasets' | 'ingestion' | 'annotation-review'>;

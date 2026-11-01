@@ -1,4 +1,11 @@
-import { ArrowLeftOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PoweroffOutlined } from '@ant-design/icons';
+import {
+  ArrowLeftOutlined,
+  DownOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  PoweroffOutlined,
+  RightOutlined,
+} from '@ant-design/icons';
 import { Button, Dropdown, Layout, Space, Tag, Tooltip, Typography } from 'antd';
 import type React from 'react';
 import { useEffect, useState } from 'react';
@@ -8,7 +15,7 @@ import styled from 'styled-components';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
 import { isInAppIframe } from '@/utils/inAppIframe';
 import { PRODUCT_LOGO_SRC } from '@/utils/product';
-import { getActiveModule, MODULE_COPY, PLATFORM_MODULES, PRODUCT_NAME } from './modules';
+import { getActiveModule, getActiveNavigation, MODULE_COPY, PLATFORM_NAVIGATION, PRODUCT_NAME } from './modules';
 import { isEvolutionScreenPath, isWorkspaceRootPath, isWorkspaceWorkbenchPath } from './routing';
 import { UserAvatar } from '@/components/UserAvatar';
 
@@ -99,6 +106,7 @@ const Nav = styled.nav`
   flex-direction: column;
   gap: 4px;
   padding: 12px 10px;
+  overflow-y: auto;
 `;
 
 const NavItem = styled(Link)<{ $active: boolean }>`
@@ -129,6 +137,82 @@ const NavItem = styled(Link)<{ $active: boolean }>`
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+`;
+
+const NavGroup = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
+const NavParentRow = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 2px;
+
+  > a {
+    flex: 1;
+    min-width: 0;
+  }
+`;
+
+const NavToggle = styled.button.attrs({ type: 'button' })`
+  display: inline-flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.58);
+  cursor: pointer;
+
+  &:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+  }
+`;
+
+const NavChildren = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px 20px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(255, 255, 255, 0.14);
+`;
+
+const NavChild = styled(Link)<{ $active: boolean }>`
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  overflow: hidden;
+  border-radius: 5px;
+  color: ${({ $active }) => ($active ? '#fff' : 'rgba(255, 255, 255, 0.58)')};
+  background: ${({ $active }) => ($active ? 'rgba(65, 123, 255, 0.72)' : 'transparent')};
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+
+  &:hover {
+    color: #fff;
+    background: ${({ $active }) => ($active ? 'rgba(65, 123, 255, 0.72)' : 'rgba(255, 255, 255, 0.08)')};
+  }
+
+  &:focus-visible {
+    outline: 2px solid #93c5fd;
+    outline-offset: 1px;
   }
 `;
 
@@ -219,6 +303,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const params = new URLSearchParams(location.search);
   // `embedded=1` is also used by direct compatibility links. Only suppress the
   // platform shell when the legacy content is actually hosted in an iframe.
@@ -226,22 +311,28 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const isLegacyFullscreen = isEvolutionScreenPath(location.pathname) && params.get('fullscreen') === '1';
   const hideChrome = params.has('noSave') || isDefaultDataScreen || isLegacyFullscreen || isInAppIframe();
   const active = getActiveModule(location.pathname);
+  const activeNavigation = getActiveNavigation(location.pathname, location.search);
   // The task list is the working surface for annotation; its own title block is
   // intentionally removed, so collapse the shell header and top padding too.
   const isTaskListPage = location.pathname === '/tasks' || location.pathname === '/tasks/';
   const isTaskDetailPage = /^\/tasks\/[^/]+\/?$/.test(location.pathname);
-  // Algorithms, rules and providers are advanced surfaces under the
-  // training center. Keep their direct URLs working while
-  // presenting one primary navigation entry to operators.
-  const navigationActive = active === 'algorithms' || active === 'rules' || active === 'providers'
-    ? 'training'
-    : active === 'datasets' || active === 'ingestion' || active === 'annotation-review'
-    ? 'admin'
-    : active;
+  // The tree always opens the branch that contains the current working surface.
+  const isGroupExpanded = (key: string) => expandedGroups.includes(key);
+  const isGroupActive = (key: string) => activeNavigation.parentKey === key;
+  const toggleGroup = (key: string) => {
+    setExpandedGroups((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
+    );
+  };
   const userQuery = useTaskSuperuser();
-  const visibleModules = userQuery.isTaskSuperuser
-    ? PLATFORM_MODULES
-    : PLATFORM_MODULES.filter(({ key }) => key !== 'admin');
+  const visibleGroups = PLATFORM_NAVIGATION.filter(
+    (group) => userQuery.isTaskSuperuser || group.key !== 'admin',
+  ).map((group) => ({
+    ...group,
+    children: group.children.filter(
+      (child) => !child.managerOnly || userQuery.isTaskSuperuser,
+    ),
+  }));
   const isEvolutionScreen = isEvolutionScreenPath(location.pathname);
   const pageCopy = isDefaultDataScreen
     ? { title: '数据大屏', description: '查看模型谱系、训练进度、质量门禁与自动化决策证据。' }
@@ -250,6 +341,14 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
     : isEvolutionScreen
     ? { title: '模型进化大屏', description: '查看模型谱系、质量门禁与自动化决策证据。' }
     : MODULE_COPY[active];
+
+  useEffect(() => {
+    setExpandedGroups((current) =>
+      current.includes(activeNavigation.parentKey)
+        ? current
+        : [...current, activeNavigation.parentKey],
+    );
+  }, [activeNavigation.parentKey]);
 
   useEffect(() => {
     const visualPreview = params.get('preview') === '1' && isEvolutionScreen;
@@ -285,19 +384,54 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           {!collapsed && <span>{PRODUCT_NAME}</span>}
         </Brand>
         <Nav aria-label="主导航">
-          {visibleModules.map(({ key, label, icon: Icon }) => (
-            <Tooltip key={key} title={collapsed ? label : undefined} placement="right">
-              <NavItem
-                to={`/${key}`}
-                $active={navigationActive === key}
-                aria-current={navigationActive === key ? 'page' : undefined}
-                aria-label={collapsed ? label : undefined}
-              >
-                <Icon aria-hidden="true" />
-                {!collapsed && <span className="nav-label">{label}</span>}
-              </NavItem>
-            </Tooltip>
-          ))}
+          {visibleGroups.map((group) => {
+            const Icon = group.icon;
+            const parentActive = isGroupActive(group.key);
+            const expanded = isGroupExpanded(group.key);
+            return (
+              <NavGroup key={group.key}>
+                <NavParentRow>
+                  <Tooltip title={collapsed ? group.label : undefined} placement="right">
+                    <NavItem
+                      to={group.to}
+                      $active={parentActive}
+                      aria-current={parentActive ? 'page' : undefined}
+                      aria-label={collapsed ? group.label : undefined}
+                    >
+                      <Icon aria-hidden="true" />
+                      {!collapsed && <span className="nav-label">{group.label}</span>}
+                    </NavItem>
+                  </Tooltip>
+                  {!collapsed && group.children.length > 0 && (
+                    <NavToggle
+                      aria-label={`${expanded ? '收起' : '展开'}${group.label}菜单`}
+                      aria-expanded={expanded}
+                      onClick={() => toggleGroup(group.key)}
+                    >
+                      {expanded ? <DownOutlined /> : <RightOutlined />}
+                    </NavToggle>
+                  )}
+                </NavParentRow>
+                {!collapsed && expanded && group.children.length > 0 && (
+                  <NavChildren aria-label={`${group.label}子菜单`}>
+                    {group.children.map((child) => {
+                      const childActive = activeNavigation.childKey === child.key;
+                      return (
+                        <NavChild
+                          key={child.key}
+                          to={child.to}
+                          $active={childActive}
+                          aria-current={childActive ? 'page' : undefined}
+                        >
+                          {child.label}
+                        </NavChild>
+                      );
+                    })}
+                  </NavChildren>
+                )}
+              </NavGroup>
+            );
+          })}
         </Nav>
         {!collapsed && <Footer>{PRODUCT_NAME}</Footer>}
       </Side>
