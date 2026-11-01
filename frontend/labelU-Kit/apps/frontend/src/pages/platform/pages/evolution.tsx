@@ -1,6 +1,6 @@
 import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { Alert, Button, Modal, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
+import { Alert, Button, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useState, type Key } from 'react';
 
@@ -178,6 +178,10 @@ function ThirdPartyImportsPanel() {
   const [pageSize, setPageSize] = useState(20);
   const [retryTarget, setRetryTarget] = useState<Row | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<Row | null>(null);
+  const [categoryTarget, setCategoryTarget] = useState<Row | null>(null);
+  const [categoryOptions, setCategoryOptions] = useState<Row[]>([]);
+  const [categoryId, setCategoryId] = useState<number | undefined>();
+  const [categorySaving, setCategorySaving] = useState(false);
   const { isTaskSuperuser } = useTaskSuperuser();
   const query = useQuery({
     queryKey: ['evolution-third-party-imports', search, page, pageSize],
@@ -231,6 +235,45 @@ function ThirdPartyImportsPanel() {
   });
   const rows = (query.data?.rows || []) as Row[];
   const total = query.data?.total ?? 0;
+  const openCategory = async (row: Row) => {
+    if (!row.draft_task_id) {
+      message.warning('该数据包还没有草稿任务，暂不能设置分类');
+      return;
+    }
+    setCategoryTarget(row);
+    setCategoryId(undefined);
+    try {
+      const response = await request.get('/v1/annotation-taxonomy/dataset-categories', {
+        params: { page: 0, size: 200, include_disabled: false },
+      });
+      setCategoryOptions(listData(response) as Row[]);
+    } catch {
+      setCategoryOptions([]);
+      message.error('数据集分类加载失败，请先在标注设置中创建分类');
+    }
+  };
+  const saveCategory = async () => {
+    const taskId = Number(categoryTarget?.draft_task_id || 0);
+    if (!taskId || !categoryId) {
+      message.warning('请选择数据集分类');
+      return;
+    }
+    setCategorySaving(true);
+    try {
+      await request.patch('/v1/tasks/batch-dataset-category', {
+        task_ids: [taskId],
+        dataset_category_id: categoryId,
+      });
+      message.success('草稿任务已设置数据集分类');
+      setCategoryTarget(null);
+      setCategoryId(undefined);
+      void query.refetch();
+    } catch (error: any) {
+      message.error(error?.message || '设置分类失败');
+    } finally {
+      setCategorySaving(false);
+    }
+  };
   const applySearch = (value: string) => {
     const normalized = value.trim();
     setSearchDraft(value);
@@ -277,33 +320,49 @@ function ThirdPartyImportsPanel() {
       key: 'actions',
       width: 240,
       render: (_, row) => {
-        if (!isTaskSuperuser || !isImportFailure(row)) return <Typography.Text type="secondary">-</Typography.Text>;
+        if (!isTaskSuperuser) return <Typography.Text type="secondary">-</Typography.Text>;
         const importJobId = importRetryJobId(row);
+        const draftTaskId = Number(row.draft_task_id || 0);
+        const failure = isImportFailure(row);
         return (
           <Space size={0} wrap>
-            <Button
-              type="link"
-              size="small"
-              icon={<ReloadOutlined />}
-              loading={retryMutation.isPending && retryMutation.variables === importJobId}
-              disabled={retryMutation.isPending || archiveMutation.isPending || importJobId === null}
-              title={importJobId === null ? '失败记录缺少任务编号，无法重新执行' : '重新执行此失败的数据包'}
-              onClick={() => setRetryTarget(row)}
-            >
-              重新执行
-            </Button>
-            <Button
-              type="link"
-              danger
-              size="small"
-              icon={<DeleteOutlined />}
-              loading={archiveMutation.isPending && archiveMutation.variables === importJobId}
-              disabled={retryMutation.isPending || archiveMutation.isPending || importJobId === null}
-              title={importJobId === null ? '失败记录缺少任务编号，无法归档' : '删除失败记录（仅软删除，保留历史审计）'}
-              onClick={() => setArchiveTarget(row)}
-            >
-              删除失败记录
-            </Button>
+            {failure ? (
+              <>
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  loading={retryMutation.isPending && retryMutation.variables === importJobId}
+                  disabled={retryMutation.isPending || archiveMutation.isPending || importJobId === null}
+                  title={importJobId === null ? '失败记录缺少任务编号，无法重新执行' : '重新执行此失败的数据包'}
+                  onClick={() => setRetryTarget(row)}
+                >
+                  重新执行
+                </Button>
+                <Button
+                  type="link"
+                  danger
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  loading={archiveMutation.isPending && archiveMutation.variables === importJobId}
+                  disabled={retryMutation.isPending || archiveMutation.isPending || importJobId === null}
+                  title={importJobId === null ? '失败记录缺少任务编号，无法归档' : '删除失败记录（仅软删除，保留历史审计）'}
+                  onClick={() => setArchiveTarget(row)}
+                >
+                  删除失败记录
+                </Button>
+              </>
+            ) : null}
+            {draftTaskId ? (
+              <Button
+                type="link"
+                size="small"
+                onClick={() => void openCategory(row)}
+              >
+                设置分类
+              </Button>
+            ) : null}
+            {!failure && !draftTaskId ? <Typography.Text type="secondary">-</Typography.Text> : null}
           </Space>
         );
       },
@@ -399,6 +458,33 @@ function ThirdPartyImportsPanel() {
       <p>此操作只会从当前列表隐藏失败记录，数据库仍保留原始失败原因和审计记录。</p>
       <p>如需再次创建，请使用新的数据包编号，不能复用原来的 package_id。</p>
       {archiveTarget?.package_id ? <p>原数据包：{String(archiveTarget.package_id)}</p> : null}
+    </Modal>
+    <Modal
+      title="设置数据集分类"
+      open={Boolean(categoryTarget)}
+      okText="保存分类"
+      cancelText="取消"
+      confirmLoading={categorySaving}
+      onCancel={() => {
+        if (!categorySaving) setCategoryTarget(null);
+      }}
+      onOk={() => void saveCategory()}
+    >
+      <p>草稿任务：#{categoryTarget?.draft_task_id || '-'}</p>
+      <p>数据集分类用于确定标签契约和后续训练数据范围；没有分类时可先在“标注设置 → 数据集分类”中创建。</p>
+      <Select
+        showSearch
+        optionFilterProp="label"
+        style={{ width: '100%' }}
+        placeholder="请选择数据集分类"
+        value={categoryId}
+        onChange={(value) => setCategoryId(Number(value))}
+        options={categoryOptions.map((item) => ({
+          value: Number(item.id),
+          label: `${item.name || item.category_key || item.id}（${item.category_key || '-'}）`,
+        }))}
+        notFoundContent="暂无可用数据集分类"
+      />
     </Modal>
   </TablePanel>;
 }
