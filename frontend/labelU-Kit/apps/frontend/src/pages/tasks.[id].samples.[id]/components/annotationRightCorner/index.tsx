@@ -1455,6 +1455,23 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
         )}
         </DynamicToolbarSlot>
         <ToolbarRightActions>
+        {canDeleteCurrentSample && (
+          <Tooltip title="删除当前图片">
+            <Popconfirm
+              title={t('deleteConfirm')}
+              okText={t('delete')}
+              cancelText={t('cancel')}
+              onConfirm={() => void handleDeleteCurrentSample()}
+            >
+              <Button
+                aria-label="delete-current-sample-toolbar"
+                type="text"
+                danger
+                icon={<CloseOutlined />}
+              />
+            </Popconfirm>
+          </Tooltip>
+        )}
         {isSampleSkipped ? (
           <Button
             type="text"
