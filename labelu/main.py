@@ -263,6 +263,22 @@ async def lifespan(app):
         )
 
         schedule_edge_remote_maintenance_watchdog()
+    # The 18001 production profile disables the legacy in-process watchdogs
+    # because queue workers run under supervisor.  The third-party optimization
+    # bridge still needs its request worker and the strategy auto-advance loop;
+    # start only those two when the dedicated optimization worker is enabled.
+    if disable_background_watchdogs:
+        from labelu.internal.application.service.optimization_request_worker import (
+            worker_enabled as optimization_request_worker_enabled,
+        )
+
+        if optimization_request_worker_enabled():
+            if settings.STRATEGY_EVOLUTION_AUTO_ADVANCE_ENABLED:
+                from labelu.internal.application.service.strategy_evolution import (
+                    schedule_strategy_evolution_watchdog,
+                )
+
+                schedule_strategy_evolution_watchdog()
     local_experiment_worker_task = None
     if (
         settings.EXPERIMENT_DATASET_DEDICATED_WORKER_ENABLED
@@ -295,16 +311,15 @@ async def lifespan(app):
 
         local_experiment_worker_task = asyncio.create_task(_run_local_experiment_worker())
     optimization_request_worker_task = None
-    if not disable_background_watchdogs:
-        from labelu.internal.application.service.optimization_request_worker import (
-            run_optimization_request_worker,
-            worker_enabled as optimization_request_worker_enabled,
-        )
+    from labelu.internal.application.service.optimization_request_worker import (
+        run_optimization_request_worker,
+        worker_enabled as optimization_request_worker_enabled,
+    )
 
-        if optimization_request_worker_enabled():
-            optimization_request_worker_task = asyncio.create_task(
-                run_optimization_request_worker()
-            )
+    if optimization_request_worker_enabled():
+        optimization_request_worker_task = asyncio.create_task(
+            run_optimization_request_worker()
+        )
     if not disable_background_watchdogs:
         from labelu.internal.application.service.auto_training_watchdog import (
             schedule_auto_training_watchdog,
