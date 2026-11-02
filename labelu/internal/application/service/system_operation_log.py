@@ -29,6 +29,7 @@ _SKIP_PATH_FRAGMENTS = (
     "/users/password",
     "/system-logs",
     "/local-dev/",
+    "/user-activity/",
 )
 _RESOURCE_LABELS = {
     "tasks": "任务",

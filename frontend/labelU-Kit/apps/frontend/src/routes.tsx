@@ -39,6 +39,8 @@ const EdgeTaskCenterPage = lazy(platformPageLoaders.edgeTaskCenter);
 const TrainingPage = lazy(platformPageLoaders.training);
 const AdminPage = lazy(platformPageLoaders.admin);
 const SystemLogsPage = lazy(platformPageLoaders.systemLogs);
+const PersonnelStatisticsPage = lazy(platformPageLoaders.personnelStatistics);
+const ActivityStatisticsPage = lazy(platformPageLoaders.activityStatistics);
 
 /**
  * Keep the legacy iframe wrapper for embedded and panel-specific links while
@@ -223,6 +225,24 @@ const routes: RouteObject[] = [
           </RequireManager>
         ),
         handle: { crumb: () => '系统日志' },
+      },
+      {
+        path: 'statistics/personnel',
+        element: (
+          <RequireManager>
+            <PersonnelStatisticsPage />
+          </RequireManager>
+        ),
+        handle: { crumb: () => '人员标注审核统计' },
+      },
+      {
+        path: 'statistics/activity',
+        element: (
+          <RequireManager>
+            <ActivityStatisticsPage />
+          </RequireManager>
+        ),
+        handle: { crumb: () => '在线活跃状态' },
       },
       {
         path: 'datasources',

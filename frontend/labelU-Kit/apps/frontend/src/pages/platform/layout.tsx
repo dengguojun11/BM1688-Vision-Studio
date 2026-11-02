@@ -13,6 +13,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
+import { useUserActivityHeartbeat } from '@/hooks/useUserActivityHeartbeat';
 import { isInAppIframe } from '@/utils/inAppIframe';
 import { PRODUCT_LOGO_SRC } from '@/utils/product';
 import { getActiveModule, getActiveNavigation, MODULE_COPY, PLATFORM_NAVIGATION, PRODUCT_NAME } from './modules';
@@ -389,6 +390,7 @@ const Footer = styled.div`
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
+  useUserActivityHeartbeat();
   const [collapsed, setCollapsed] = useState(false);
   // Accordion navigation: only one first-level branch is expanded at a time.
   const [expandedGroup, setExpandedGroup] = useState<string | null>(null);

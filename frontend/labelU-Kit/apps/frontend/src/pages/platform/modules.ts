@@ -2,6 +2,7 @@ import {
   ApiOutlined,
   AppstoreOutlined,
   AuditOutlined,
+  BarChartOutlined,
   BranchesOutlined,
   CheckCircleOutlined,
   CloudUploadOutlined,
@@ -27,7 +28,8 @@ export type PlatformModule =
   | 'models'
   | 'evolution'
   | 'admin'
-  | 'system-logs';
+  | 'system-logs'
+  | 'statistics';
 
 export const PLATFORM_MODULES: ReadonlyArray<{
   key: PlatformModule;
@@ -56,6 +58,12 @@ export const PLATFORM_MODULES: ReadonlyArray<{
     label: '系统日志',
     description: '查看用户操作日志和系统操作日志',
     icon: FileSearchOutlined,
+  },
+  {
+    key: 'statistics',
+    label: '统计分析',
+    description: '查看人员标注审核工作量和在线活跃状态',
+    icon: BarChartOutlined,
   },
 ];
 
@@ -171,6 +179,17 @@ export const PLATFORM_NAVIGATION: ReadonlyArray<PlatformNavigationGroup> = [
     children: [
       { key: 'system-logs-user', label: '用户操作日志', to: '/system-logs?category=user' },
       { key: 'system-logs-system', label: '系统操作日志', to: '/system-logs?category=system' },
+    ],
+  },
+  {
+    key: 'statistics',
+    label: '统计分析',
+    icon: BarChartOutlined,
+    to: '/statistics/personnel',
+    managerOnly: true,
+    children: [
+      { key: 'statistics-personnel', label: '人员标注审核统计', to: '/statistics/personnel' },
+      { key: 'statistics-activity', label: '在线活跃状态', to: '/statistics/activity' },
     ],
   },
 ];
@@ -330,6 +349,11 @@ export const MODULE_COPY: Record<PlatformModule, { title: string; description: s
     title: '系统日志',
     description: '查看用户操作日志和系统操作日志，快速定位谁在什么时间做了什么。',
     next: '列表只展示简短操作动作，点击详细查看请求路径、状态、耗时和请求内容。',
+  },
+  statistics: {
+    title: '统计分析',
+    description: '查看人员标注审核工作量、有效操作和在线活跃状态。',
+    next: '标注按实际内容变更统计，审核按状态流转统计，在线状态按心跳会话统计。',
   },
 };
 

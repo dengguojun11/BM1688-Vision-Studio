@@ -17,4 +17,6 @@ export const platformPageLoaders = {
   edgeTaskCenter: () => import('./pages/edgeTaskCenter'),
   admin: () => import('./pages/admin'),
   systemLogs: () => import('./pages/systemLogs'),
+  personnelStatistics: () => import('./pages/personnelStatistics'),
+  activityStatistics: () => import('./pages/activityStatistics'),
 } as Record<string, RoutePageLoader>;

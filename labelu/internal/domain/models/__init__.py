@@ -119,3 +119,5 @@ from labelu.internal.domain.models.rule import (
     RuleVersionAudit,
 )
 from .system_operation_log import SystemOperationLog
+from .user_activity_session import UserActivitySession
+from .annotation_review_event import AnnotationReviewEvent

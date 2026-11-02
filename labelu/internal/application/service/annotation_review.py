@@ -22,6 +22,7 @@ from labelu.internal.common.label_contract import (
     annotation_sha256 as canonical_annotation_sha256,
 )
 from labelu.internal.domain.models.annotation_review import AnnotationReview
+from labelu.internal.domain.models.annotation_review_event import AnnotationReviewEvent
 from labelu.internal.domain.models.sample import TaskSample
 from labelu.internal.domain.models.task import Task
 from labelu.internal.domain.models.user import User
@@ -211,6 +212,19 @@ async def transition(
             row.invalidated_by = user.id
             row.invalidated_at = now
             row.invalidation_reason = cmd.reason
+        db.add(
+            AnnotationReviewEvent(
+                review_id=int(row.id),
+                task_id=int(row.task_id),
+                sample_id=int(row.sample_id),
+                user_id=int(user.id),
+                from_status=current,
+                to_status=target,
+                action=target,
+                reason=cmd.reason,
+                created_at=now,
+            )
+        )
         db.flush()
         db.refresh(row)
     return _response(row)
