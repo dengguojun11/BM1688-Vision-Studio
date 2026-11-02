@@ -315,12 +315,15 @@ export default function DataAnalysisPage() {
             allowClear
             style={{ width: 340 }}
             placeholder="选择标签契约"
-            value={contractId}
-            onChange={(value) => setContractId(value)}
-            options={(query.data?.contract_options ?? []).map((option) => ({
-              value: Number(option.contract_id),
-              label: `${option.contract_label}（${option.label_count} 个标签）`,
-            }))}
+            value={contractId ?? 0}
+            onChange={(value) => setContractId(value ? Number(value) : undefined)}
+            options={[
+              { value: 0, label: '全部标签契约' },
+              ...(query.data?.contract_options ?? []).map((option) => ({
+                value: Number(option.contract_id),
+                label: `${option.contract_label}（${option.label_count} 个标签）`,
+              })),
+            ]}
           />
           <Tag style={{ color: risk.color, background: risk.bg, border: 0, padding: '4px 10px' }}>
             {risk.label} · 目标策略：自动均衡
