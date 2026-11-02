@@ -104,7 +104,7 @@ describe('PlatformLayout role navigation', () => {
 
     expect(screen.getByText('运行工作台内容')).toBeTruthy();
     expect(screen.getByRole('navigation', { name: '主导航' })).toBeTruthy();
-    expect(screen.getByRole('link', { name: '运行工作台' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: '工作台' }).getAttribute('aria-current')).toBe('page');
   });
 
   it('allows the explicitly isolated visual preview without an auth token', () => {

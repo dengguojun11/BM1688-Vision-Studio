@@ -101,7 +101,6 @@ export const PLATFORM_NAVIGATION: ReadonlyArray<PlatformNavigationGroup> = [
     icon: AppstoreOutlined,
     to: '/workspace/workbench',
     children: [
-      { key: 'workspace-workbench', label: '运行工作台', to: '/workspace/workbench' },
       { key: 'workspace-screen', label: '数据大屏', to: '/workspace' },
       { key: 'workspace-evolution-screen', label: '模型进化大屏', to: '/workspace/evolution-screen' },
     ],
