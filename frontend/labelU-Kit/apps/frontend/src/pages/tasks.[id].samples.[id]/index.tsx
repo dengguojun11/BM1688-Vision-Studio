@@ -310,30 +310,46 @@ const AnnotationPage = () => {
 
   // Fit the annotation workspace into the visible viewport so the toolbar,
   // sample list and attribute panel stay reachable without page scrolling.
+  // A body-level lock also protects against a transiently stale measurement
+  // during route changes or browser zoom changes.
+  useEffect(() => {
+    document.documentElement.classList.add('labelu-annotation-viewport');
+    return () => {
+      document.documentElement.classList.remove('labelu-annotation-viewport');
+    };
+  }, []);
+
   useEffect(() => {
     const measure = () => {
-      const element = annotationPageRef.current;
-      if (!element) {
-        return;
-      }
-      const rect = element.getBoundingClientRect();
-      const main = element.closest('main');
-      const bottomPadding = main
-        ? Number.parseFloat(window.getComputedStyle(main).paddingBottom || '0') || 0
-        : 0;
-      const nextHeight = Math.max(320, Math.floor(window.innerHeight - rect.top - bottomPadding));
-      setAnnotationViewportHeight((previous) => (previous === nextHeight ? previous : nextHeight));
+      requestAnimationFrame(() => {
+        const element = annotationPageRef.current;
+        if (!element) {
+          return;
+        }
+        const rect = element.getBoundingClientRect();
+        const main = element.closest('main');
+        const bottomPadding = main
+          ? Number.parseFloat(window.getComputedStyle(main).paddingBottom || '0') || 0
+          : 0;
+        const visibleHeight = window.visualViewport?.height ?? window.innerHeight;
+        const nextHeight = Math.max(320, Math.floor(visibleHeight - rect.top - bottomPadding));
+        setAnnotationViewportHeight((previous) => (previous === nextHeight ? previous : nextHeight));
+      });
     };
 
     measure();
+    const delayedMeasure = window.setTimeout(measure, 120);
     window.addEventListener('resize', measure);
+    window.visualViewport?.addEventListener('resize', measure);
     const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
     if (observer && document.body) {
       observer.observe(document.body);
     }
 
     return () => {
+      window.clearTimeout(delayedMeasure);
       window.removeEventListener('resize', measure);
+      window.visualViewport?.removeEventListener('resize', measure);
       observer?.disconnect();
     };
   }, [task?.media_type]);
@@ -962,6 +978,18 @@ const AnnotationPage = () => {
 
   return (
     <AnnotationContext.Provider value={annotationContextValue}>
+      <style>{`
+        html.labelu-annotation-viewport,
+        html.labelu-annotation-viewport body,
+        html.labelu-annotation-viewport #root {
+          height: 100%;
+          overflow: hidden !important;
+          overscroll-behavior: none;
+        }
+        html.labelu-annotation-viewport .ant-layout-content {
+          overflow: hidden !important;
+        }
+      `}</style>
       {isLoading && (
         <LoadingWrapper items="center" justify="center" flex>
           <Spin spinning />
