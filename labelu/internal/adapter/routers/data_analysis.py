@@ -20,6 +20,9 @@ class DataAnalysisResponse(BaseModel):
     state_counts: List[Dict[str, Any]] = Field(default_factory=list)
     label_distribution: List[Dict[str, Any]] = Field(default_factory=list)
     contracts: List[Dict[str, Any]] = Field(default_factory=list)
+    contract_health: List[Dict[str, Any]] = Field(default_factory=list)
+    dimensions: List[Dict[str, Any]] = Field(default_factory=list)
+    recommendations: List[Dict[str, Any]] = Field(default_factory=list)
     gaps: List[Dict[str, Any]] = Field(default_factory=list)
     global_tools: List[Dict[str, Any]] = Field(default_factory=list)
 
@@ -30,7 +33,7 @@ class DataAnalysisResponse(BaseModel):
     status_code=status.HTTP_200_OK,
 )
 def data_analysis_overview(
-    target_per_label: int = Query(100, ge=1, le=100000),
+    target_per_label: int = Query(0, ge=0, le=100000),
     authorization: HTTPAuthorizationCredentials = Security(security),
     db: Session = Depends(db_module.get_db),
     current_user: User = Depends(get_current_user),

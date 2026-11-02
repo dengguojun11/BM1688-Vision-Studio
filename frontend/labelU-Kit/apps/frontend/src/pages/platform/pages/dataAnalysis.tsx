@@ -1,173 +1,299 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Empty, InputNumber, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Empty, Progress, Space, Statistic, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 
 import {
   getDataAnalysisOverview,
-  type DataAnalysisGap,
-  type DataAnalysisGlobalTool,
+  type DataAnalysisContractHealth,
+  type DataAnalysisDimension,
   type DataAnalysisLabel,
-  type DataAnalysisState,
+  type DataAnalysisRecommendation,
 } from '@/api/services/dataAnalysis';
 import { ModuleHeader, QueueHint, QueueToolbar, TablePanel } from '../shared';
 
-const STATE_LABELS: Record<string, string> = {
-  DONE: '已完成',
-  NEW: '未标注',
-  INCOMPLETE: '未完成',
-  SKIPPED: '已跳过',
-  ABNORMAL: '异常',
+const RISK_META: Record<string, { label: string; color: string; bg: string }> = {
+  SEVERE: { label: '严重不足', color: '#b42318', bg: '#fef3f2' },
+  WARNING: { label: '需要补数', color: '#b54708', bg: '#fffaeb' },
+  HEALTHY: { label: '基本健康', color: '#027a48', bg: '#ecfdf3' },
 };
-const STATE_COLORS = ['#1677ff', '#94a3b8', '#f59e0b', '#a855f7', '#ef4444'];
 
-function BarList({
-  items,
-  emptyText,
+function percent(value: number) {
+  return `${Math.round(Math.max(0, value) * 100)}%`;
+}
+
+function cellStyle(coverage: number) {
+  if (coverage >= 0.8) return { background: '#ecfdf3', color: '#027a48' };
+  if (coverage >= 0.5) return { background: '#fffaeb', color: '#b54708' };
+  if (coverage > 0) return { background: '#fef3f2', color: '#b42318' };
+  return { background: '#f2f4f7', color: '#98a2b3' };
+}
+
+function ContractCard({ contract }: { contract: DataAnalysisContractHealth }) {
+  const meta = RISK_META[contract.risk_level] || RISK_META.WARNING;
+  return (
+    <div
+      style={{
+        border: `1px solid ${meta.bg === '#fef3f2' ? '#fecdca' : '#e4e7ec'}`,
+        borderRadius: 10,
+        padding: 14,
+        background: '#fff',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+        <Typography.Text strong ellipsis style={{ maxWidth: '72%' }}>
+          {contract.contract_label}
+        </Typography.Text>
+        <Tag style={{ color: meta.color, background: meta.bg, border: 0 }}>
+          {meta.label}
+        </Tag>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, margin: '8px 0' }}>
+        <Typography.Title level={3} style={{ margin: 0, color: meta.color }}>
+          {contract.health_score}
+        </Typography.Title>
+        <Typography.Text type="secondary">健康度</Typography.Text>
+        <Typography.Text type="secondary" style={{ marginLeft: 'auto' }}>
+          {contract.image_count} 张
+        </Typography.Text>
+      </div>
+      <Progress
+        percent={contract.health_score}
+        showInfo={false}
+        strokeColor={meta.color}
+        trailColor="#f2f4f7"
+        size="small"
+      />
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginTop: 10 }}>
+        <div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>标签覆盖</Typography.Text>
+          <div>{percent(contract.label_coverage)}</div>
+        </div>
+        <div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>组合覆盖</Typography.Text>
+          <div>{percent(contract.combo_coverage)}</div>
+        </div>
+        <div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>缺口项</Typography.Text>
+          <div style={{ color: contract.severe_gap_count ? '#b42318' : undefined }}>
+            {contract.gap_count}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Heatmap({
+  dimensions,
+  current,
+  active,
+  onChange,
 }: {
-  items: Array<{ label: string; value: number; color?: string }>;
-  emptyText: string;
+  dimensions: DataAnalysisDimension[];
+  current?: DataAnalysisDimension;
+  active: string;
+  onChange: (key: string) => void;
 }) {
-  const max = Math.max(1, ...items.map((item) => item.value));
-  if (!items.length) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={emptyText} />;
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      {items.map((item, index) => (
-        <div key={`${item.label}-${index}`}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, marginBottom: 4 }}>
-            <Typography.Text ellipsis style={{ maxWidth: '72%' }}>{item.label}</Typography.Text>
-            <Typography.Text type="secondary">{item.value}</Typography.Text>
-          </div>
-          <div style={{ height: 8, borderRadius: 999, background: '#eef2f7', overflow: 'hidden' }}>
-            <div
-              style={{
-                width: `${Math.max(2, (item.value / max) * 100)}%`,
-                height: '100%',
-                borderRadius: 999,
-                background: item.color || '#1677ff',
-              }}
-            />
-          </div>
+    <section style={{ border: '1px solid #e4e7ec', borderRadius: 10, padding: 16, marginBottom: 18 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <Typography.Title level={4} style={{ margin: 0 }}>标签 × 全局工具覆盖热力图</Typography.Title>
+          <Typography.Text type="secondary">
+            单元格为实际图片数；目标 = 标签目标 ÷ 该维度取值数量。颜色越红缺口越大。
+          </Typography.Text>
         </div>
-      ))}
-    </div>
+        <Space wrap>
+          {dimensions.map((item) => (
+            <Tag.CheckableTag
+              key={item.field_key}
+              checked={active === item.field_key}
+              onChange={() => onChange(item.field_key)}
+            >
+              {item.name_cn}
+            </Tag.CheckableTag>
+          ))}
+        </Space>
+      </div>
+      {!current ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无标签 × 全局工具交叉数据" style={{ marginTop: 20 }} />
+      ) : (
+        <div style={{ overflowX: 'auto', marginTop: 14 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: 'left', padding: '8px 10px', minWidth: 150, color: '#667085' }}>标签</th>
+                {current.values.map((value) => (
+                  <th key={value.value} style={{ padding: '8px 6px', color: '#667085', fontWeight: 500, minWidth: 70 }}>
+                    {value.name_cn}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {current.rows.map((row) => (
+                <tr key={`${row.contract_id}-${row.label_id}`}>
+                  <td style={{ padding: '7px 10px', borderTop: '1px solid #f2f4f7' }}>
+                    <Typography.Text style={{ fontSize: 12 }}>{row.contract_label}</Typography.Text>
+                    <br />
+                    <Typography.Text type="secondary" style={{ fontSize: 11 }}>{row.label_key}</Typography.Text>
+                  </td>
+                  {current.values.map((value) => {
+                    const cell = row.cells[value.value] || { actual: 0, target: 0, coverage: 0, gap: 0 };
+                    return (
+                      <td key={value.value} style={{ padding: 3, borderTop: '1px solid #f2f4f7' }}>
+                        <div
+                          title={`${row.label_key} × ${value.name_cn}\n当前 ${cell.actual} / 目标 ${cell.target}\n缺口 ${cell.gap}`}
+                          style={{
+                            borderRadius: 5,
+                            padding: '7px 4px',
+                            textAlign: 'center',
+                            fontWeight: cell.gap ? 600 : 400,
+                            ...cellStyle(cell.coverage),
+                          }}
+                        >
+                          {cell.actual}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }
 
-function Donut({ items }: { items: DataAnalysisState[] }) {
-  const total = items.reduce((sum, item) => sum + item.count, 0);
-  if (!total) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无图片状态数据" />;
-  let cursor = 0;
-  const segments = items.map((item, index) => {
-    const share = item.count / total;
-    const start = cursor;
-    cursor += share;
-    return {
-      ...item,
-      color: STATE_COLORS[index % STATE_COLORS.length],
-      start,
-      end: cursor,
-    };
-  });
-  const gradient = segments
-    .map((segment) => `${segment.color} ${segment.start * 100}% ${segment.end * 100}%`)
-    .join(', ');
+function LabelCoverage({ labels }: { labels: DataAnalysisLabel[] }) {
+  const rows = labels.slice(0, 12);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 22, flexWrap: 'wrap' }}>
-      <div
-        style={{
-          width: 150,
-          height: 150,
-          borderRadius: '50%',
-          background: `conic-gradient(${gradient})`,
-          display: 'grid',
-          placeItems: 'center',
-          flex: '0 0 auto',
-        }}
-      >
-        <div
-          style={{
-            width: 92,
-            height: 92,
-            borderRadius: '50%',
-            background: '#fff',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>图片总数</Typography.Text>
-          <Typography.Text strong style={{ fontSize: 22 }}>{total}</Typography.Text>
+    <section style={{ border: '1px solid #e4e7ec', borderRadius: 10, padding: 16, marginBottom: 18 }}>
+      <Typography.Title level={4} style={{ marginTop: 0 }}>标签覆盖：实际 vs 目标</Typography.Title>
+      {!rows.length ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无标签覆盖数据" />
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+          {rows.map((label) => (
+            <div key={`${label.label_id}-${label.label_value}`}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                <Typography.Text ellipsis style={{ maxWidth: '58%' }}>{label.label_key}</Typography.Text>
+                <Typography.Text type="secondary">
+                  {label.count} / {label.target}（{percent(label.coverage)}）
+                </Typography.Text>
+              </div>
+              <div style={{ height: 8, marginTop: 4, borderRadius: 999, background: '#f2f4f7', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${Math.min(100, label.coverage * 100)}%`,
+                    height: '100%',
+                    borderRadius: 999,
+                    background: label.gap ? '#f79009' : '#12b76a',
+                  }}
+                />
+              </div>
+            </div>
+          ))}
         </div>
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {segments.map((segment) => (
-          <Space key={segment.state} size={8}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: segment.color }} />
-            <Typography.Text>{STATE_LABELS[segment.state] || segment.state}</Typography.Text>
-            <Typography.Text type="secondary">{segment.count} 张</Typography.Text>
-          </Space>
-        ))}
-      </div>
-    </div>
+      )}
+    </section>
   );
 }
 
-function GlobalToolChart({ tool }: { tool: DataAnalysisGlobalTool }) {
+function GlobalTools({ tools }: { tools: Array<{ field_key: string; name_cn: string; values: Array<{ value: string; name_cn: string; count: number }> }> }) {
   return (
-    <div style={{ marginBottom: 18 }}>
-      <Typography.Text strong>{tool.name_cn}</Typography.Text>
-      <div style={{ marginTop: 8 }}>
-        <BarList
-          items={tool.values.map((item) => ({ label: item.name_cn, value: item.count }))}
-          emptyText="暂无全局工具数据"
-        />
-      </div>
-    </div>
+    <section style={{ border: '1px solid #e4e7ec', borderRadius: 10, padding: 16, marginBottom: 18 }}>
+      <Typography.Title level={4} style={{ marginTop: 0 }}>全局工具数据分布</Typography.Title>
+      {!tools.length ? (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无全局工具数据" />
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 18 }}>
+          {tools.map((tool) => {
+            const max = Math.max(1, ...tool.values.map((item) => item.count));
+            return (
+              <div key={tool.field_key}>
+                <Typography.Text strong>{tool.name_cn}</Typography.Text>
+                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                  {tool.values.map((item) => (
+                    <div key={item.value}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+                        <Typography.Text style={{ fontSize: 12 }}>{item.name_cn}</Typography.Text>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>{item.count}</Typography.Text>
+                      </div>
+                      <div style={{ height: 5, background: '#f2f4f7', borderRadius: 999, marginTop: 2 }}>
+                        <div style={{ width: `${Math.max(2, (item.count / max) * 100)}%`, height: '100%', background: '#667085', borderRadius: 999 }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }
 
 export default function DataAnalysisPage() {
-  const [targetPerLabel, setTargetPerLabel] = useState(100);
   const query = useQuery({
-    queryKey: ['data-analysis-overview', targetPerLabel],
+    queryKey: ['data-analysis-overview'],
     queryFn: async () => {
-      const response = await getDataAnalysisOverview(targetPerLabel);
+      const response = await getDataAnalysisOverview(0);
       return response.data;
     },
-    staleTime: 30_000,
+    staleTime: 60_000,
   });
-
-  const labels = useMemo(
-    () =>
-      (query.data?.label_distribution ?? []).slice(0, 12).map((item: DataAnalysisLabel) => ({
-        label: item.label_key || item.label_value,
-        value: item.count,
-        color: item.color,
-      })),
-    [query.data?.label_distribution],
+  const [activeDimension, setActiveDimension] = useState('');
+  const dimensions = query.data?.dimensions ?? [];
+  const currentDimension = useMemo(
+    () => dimensions.find((item) => item.field_key === activeDimension) || dimensions[0],
+    [activeDimension, dimensions],
   );
+  const summary = query.data?.summary;
+  const risk = RISK_META[summary?.risk_level || 'WARNING'] || RISK_META.WARNING;
+  const recommendations = query.data?.recommendations ?? [];
+  const topActions = recommendations.slice(0, 3);
 
-  const contracts = useMemo(
-    () =>
-      (query.data?.contracts ?? [])
-        .filter((contract) => contract.labels.length > 0)
-        .slice(0, 12),
-    [query.data?.contracts],
-  );
-
-  const gapColumns: ColumnsType<DataAnalysisGap> = [
-    { title: '任务', dataIndex: 'task_name', key: 'task_name', width: 220, ellipsis: true },
-    { title: '标签', key: 'label', width: 180, render: (_, row) => row.label_key || row.label_value },
-    { title: '当前图片', dataIndex: 'count', key: 'count', width: 100 },
-    { title: '目标图片', dataIndex: 'target', key: 'target', width: 100 },
+  const recommendationColumns: ColumnsType<DataAnalysisRecommendation> = [
+    {
+      title: '优先级',
+      dataIndex: 'priority',
+      key: 'priority',
+      width: 80,
+      render: (value) => <Tag color={value === 'P0' ? 'red' : value === 'P1' ? 'orange' : 'default'}>{value}</Tag>,
+    },
+    { title: '标签契约', dataIndex: 'contract_label', key: 'contract_label', width: 230, ellipsis: true },
+    {
+      title: '标签',
+      key: 'label',
+      width: 170,
+      render: (_, row) => row.label_key || row.label_value,
+    },
+    {
+      title: '缺口条件',
+      key: 'condition',
+      width: 190,
+      render: (_, row) => `${row.dimension_name}：${row.value_name}`,
+    },
+    { title: '当前', dataIndex: 'actual', key: 'actual', width: 70 },
+    { title: '目标', dataIndex: 'target', key: 'target', width: 70 },
     {
       title: '缺口',
       dataIndex: 'gap',
       key: 'gap',
+      width: 70,
+      render: (value) => <Typography.Text type="danger" strong>{value}</Typography.Text>,
+    },
+    {
+      title: '建议补图',
+      dataIndex: 'gap',
+      key: 'batch',
       width: 100,
-      render: (value) => <Tag color={value > 0 ? 'orange' : 'green'}>{value}</Tag>,
+      render: (value) => `${value} 张`,
     },
   ];
 
@@ -177,82 +303,82 @@ export default function DataAnalysisPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div>
           <Typography.Title level={2} style={{ margin: 0, fontSize: 20 }}>
-            数据覆盖与补数建议
+            数据健康与补数分析
           </Typography.Title>
           <Typography.Text type="secondary">
-            按标签契约、标签和全局工具分析图片数据，定位每个契约需要补充的图片。
+            从契约目标出发，定位标签与场景/光照/角度组合的缺口，直接生成补数优先级。
           </Typography.Text>
         </div>
-        <Space>
-          <Typography.Text type="secondary">每个标签目标图片数</Typography.Text>
-          <InputNumber
-            min={1}
-            max={100000}
-            value={targetPerLabel}
-            onChange={(value) => setTargetPerLabel(Number(value || 100))}
-            style={{ width: 110 }}
-          />
-        </Space>
+        <Tag style={{ color: risk.color, background: risk.bg, border: 0, padding: '4px 10px' }}>
+          {risk.label} · 目标策略：自动均衡
+        </Tag>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, margin: '18px 0' }}>
-        <Statistic title="图片总数" value={query.data?.summary.total_images ?? 0} suffix="张" />
-        <Statistic title="已标注图片" value={query.data?.summary.labeled_images ?? 0} suffix="张" />
-        <Statistic title="标签契约" value={query.data?.summary.contract_count ?? 0} suffix="个" />
-        <Statistic title="涉及标签" value={query.data?.summary.label_count ?? 0} suffix="个" />
-        <Statistic title="待补充标签" value={query.data?.summary.gap_count ?? 0} suffix="项" />
+        <Statistic title="图片总数" value={summary?.total_images ?? 0} suffix="张" />
+        <Statistic title="已标注图片" value={summary?.labeled_images ?? 0} suffix="张" />
+        <Statistic title="标注覆盖率" value={percent(summary?.labeled_rate ?? 0)} />
+        <Statistic title="严重标签缺口" value={summary?.severe_gap_count ?? 0} suffix="项" valueStyle={{ color: '#b42318' }} />
+        <Statistic title="组合缺口" value={summary?.combo_gap_count ?? 0} suffix="项" />
+        <Statistic title="建议补图" value={summary?.recommended_images ?? 0} suffix="张" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) minmax(320px, 1.4fr)', gap: 18, marginBottom: 18 }}>
-        <section style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 16 }}>
-          <Typography.Title level={4} style={{ marginTop: 0 }}>图片状态</Typography.Title>
-          <Donut items={query.data?.state_counts ?? []} />
-        </section>
-        <section style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 16 }}>
-          <Typography.Title level={4} style={{ marginTop: 0 }}>标签图片分布</Typography.Title>
-          <BarList items={labels} emptyText="暂无标签图片数据" />
-        </section>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(320px, 1fr) minmax(320px, 1fr)', gap: 18, marginBottom: 18 }}>
-        <section style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 16 }}>
-          <Typography.Title level={4} style={{ marginTop: 0 }}>标签契约覆盖</Typography.Title>
-          <Space direction="vertical" style={{ width: '100%' }} size={12}>
-            {contracts.length ? contracts.map((contract) => (
-              <div key={`${contract.contract_id}-${contract.task_id}`}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                  <Typography.Text ellipsis style={{ maxWidth: '72%' }}>{contract.task_name}</Typography.Text>
-                  <Typography.Text type="secondary">{Math.round(contract.coverage * 100)}%</Typography.Text>
+      {topActions.length > 0 && (
+        <div style={{ background: '#fffaeb', border: '1px solid #fedf89', borderRadius: 10, padding: 14, marginBottom: 18 }}>
+          <Typography.Text strong>最该补的 3 项</Typography.Text>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 10, marginTop: 10 }}>
+            {topActions.map((item) => (
+              <div key={`${item.contract_label}-${item.label_id}-${item.dimension_key}-${item.value}`} style={{ background: '#fff', borderRadius: 8, padding: 10 }}>
+                <Tag color={item.priority === 'P0' ? 'red' : 'orange'}>{item.priority}</Tag>
+                <Typography.Text strong>{item.label_key}</Typography.Text>
+                <div style={{ marginTop: 4 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    {item.dimension_name}：{item.value_name} · 当前 {item.actual} / 目标 {item.target}
+                  </Typography.Text>
                 </div>
-                <div style={{ height: 8, marginTop: 4, borderRadius: 999, background: '#eef2f7', overflow: 'hidden' }}>
-                  <div style={{ width: `${Math.max(2, contract.coverage * 100)}%`, height: '100%', background: contract.gap_count ? '#f59e0b' : '#1677ff' }} />
-                </div>
+                <div style={{ marginTop: 4 }}>建议补 <Typography.Text type="danger" strong>{item.gap} 张</Typography.Text></div>
               </div>
-            )) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无标签契约数据" />}
-          </Space>
-        </section>
-        <section style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 16, maxHeight: 420, overflow: 'auto' }}>
-          <Typography.Title level={4} style={{ marginTop: 0 }}>全局工具分布</Typography.Title>
-          {(query.data?.global_tools ?? []).length
-            ? (query.data?.global_tools ?? []).map((tool) => <GlobalToolChart key={tool.field_key} tool={tool} />)
-            : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无全局工具数据" />}
-        </section>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Typography.Title level={4} style={{ marginTop: 0 }}>契约健康度</Typography.Title>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12, marginBottom: 18 }}>
+        {(query.data?.contract_health ?? []).map((contract) => (
+          <ContractCard key={`${contract.contract_id}-${contract.contract_label}`} contract={contract} />
+        ))}
+        {!query.data?.contract_health?.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无标签契约" />}
       </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(420px, 1.35fr) minmax(320px, 1fr)', gap: 18 }}>
+        <Heatmap
+          dimensions={dimensions}
+          current={currentDimension}
+          active={currentDimension?.field_key ?? ''}
+          onChange={setActiveDimension}
+        />
+        <LabelCoverage labels={query.data?.label_distribution ?? []} />
+      </div>
+
+      <GlobalTools tools={query.data?.global_tools ?? []} />
 
       <QueueToolbar>
         <Space>
-          <QueueHint>以下为需要补充数据的标签契约明细，按缺口从大到小排序。</QueueHint>
+          <QueueHint>
+            按优先级和缺口排序；目标自动取契约图片均值的一半，最低 30 张、最高 200 张。
+          </QueueHint>
         </Space>
       </QueueToolbar>
-      <Table<DataAnalysisGap>
-        rowKey={(row) => `${row.contract_id}-${row.task_id}-${row.label_id}`}
+      <Table<DataAnalysisRecommendation>
+        rowKey={(row) => `${row.contract_label}-${row.label_id}-${row.dimension_key}-${row.value}`}
         size="middle"
         loading={query.isLoading || query.isFetching}
-        columns={gapColumns}
-        dataSource={query.data?.gaps ?? []}
+        columns={recommendationColumns}
+        dataSource={recommendations}
         pagination={{ pageSize: 20, showSizeChanger: false }}
-        scroll={{ x: 760 }}
-        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前所有标签均已达到目标图片数" /> }}
+        scroll={{ x: 1100 }}
+        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前所有标签和组合均达到目标" /> }}
       />
     </TablePanel>
   );
