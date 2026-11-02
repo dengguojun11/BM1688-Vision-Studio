@@ -29,7 +29,8 @@ export type PlatformModule =
   | 'evolution'
   | 'admin'
   | 'system-logs'
-  | 'statistics';
+  | 'statistics'
+  | 'data-analysis';
 
 export const PLATFORM_MODULES: ReadonlyArray<{
   key: PlatformModule;
@@ -103,6 +104,7 @@ export const PLATFORM_NAVIGATION: ReadonlyArray<PlatformNavigationGroup> = [
     children: [
       { key: 'workspace-screen', label: '数据大屏', to: '/workspace' },
       { key: 'workspace-evolution-screen', label: '模型进化大屏', to: '/workspace/evolution-screen' },
+      { key: 'workspace-data-analysis', label: '数据分析', to: '/data-analysis', managerOnly: true },
     ],
   },
   {
@@ -354,10 +356,16 @@ export const MODULE_COPY: Record<PlatformModule, { title: string; description: s
     description: '查看人员标注审核工作量、有效操作和在线活跃状态。',
     next: '标注按实际内容变更统计，审核按状态流转统计，在线状态按心跳会话统计。',
   },
+  'data-analysis': {
+    title: '数据分析',
+    description: '按标签契约、标签和全局工具分析图片数据，定位需要补充的图片。',
+    next: '根据标签覆盖和全局工具分布，查看每个标签契约的缺口并安排补数。',
+  },
 };
 
 export function getActiveModule(pathname: string): PlatformModule {
   if (pathname.startsWith('/training')) return 'training';
+  if (pathname.startsWith('/data-analysis')) return 'data-analysis';
   // The edge queue is an operational surface attached to model validation.
   // Keep it as a direct route without adding another top-level navigation item.
   if (pathname.startsWith('/edge-task-center') || pathname.startsWith('/edge-tasks')) return 'models';

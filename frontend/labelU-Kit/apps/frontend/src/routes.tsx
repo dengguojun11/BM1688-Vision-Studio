@@ -41,6 +41,7 @@ const AdminPage = lazy(platformPageLoaders.admin);
 const SystemLogsPage = lazy(platformPageLoaders.systemLogs);
 const PersonnelStatisticsPage = lazy(platformPageLoaders.personnelStatistics);
 const ActivityStatisticsPage = lazy(platformPageLoaders.activityStatistics);
+const DataAnalysisPage = lazy(platformPageLoaders.dataAnalysis);
 
 /**
  * Keep the legacy iframe wrapper for embedded and panel-specific links while
@@ -243,6 +244,15 @@ const routes: RouteObject[] = [
           </RequireManager>
         ),
         handle: { crumb: () => '在线活跃状态' },
+      },
+      {
+        path: 'data-analysis',
+        element: (
+          <RequireManager>
+            <DataAnalysisPage />
+          </RequireManager>
+        ),
+        handle: { crumb: () => '数据分析' },
       },
       {
         path: 'datasources',

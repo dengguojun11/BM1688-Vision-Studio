@@ -130,6 +130,10 @@ describe('7GAI platform navigation', () => {
       parentKey: 'statistics',
       childKey: 'statistics-activity',
     });
+    expect(getActiveNavigation('/data-analysis', '')).toEqual({
+      parentKey: 'workspace',
+      childKey: 'workspace-data-analysis',
+    });
   });
 
   it('keeps dataset compatibility routes under system management', () => {

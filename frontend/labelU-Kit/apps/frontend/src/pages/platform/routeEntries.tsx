@@ -19,4 +19,5 @@ export const platformPageLoaders = {
   systemLogs: () => import('./pages/systemLogs'),
   personnelStatistics: () => import('./pages/personnelStatistics'),
   activityStatistics: () => import('./pages/activityStatistics'),
+  dataAnalysis: () => import('./pages/dataAnalysis'),
 } as Record<string, RoutePageLoader>;
