@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -169,5 +169,20 @@ describe('PlatformLayout role navigation', () => {
     expect(screen.getByRole('link', { name: '边端设备管理' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('link', { name: '模型接入配置' })).toBeTruthy();
     expect(screen.getByRole('link', { name: '数据集管理' })).toBeTruthy();
+  });
+
+  it('collapses the previous branch when another first-level directory is opened', () => {
+    render(
+      <MemoryRouter initialEntries={['/training?view=reports']}>
+        <PlatformLayout>
+          <div>训练报告内容</div>
+        </PlatformLayout>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('button', { name: '收起训练中心菜单' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('link', { name: '模型中心' }));
+    expect(screen.getByRole('button', { name: '展开训练中心菜单' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: '收起模型中心菜单' })).toBeTruthy();
   });
 });

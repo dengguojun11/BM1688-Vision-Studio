@@ -35,8 +35,11 @@ const Side = styled(Layout.Sider)`
   max-height: 100vh;
   overflow-y: auto;
   flex: 0 0 auto;
-  background: #101a2b !important;
-  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(59, 130, 246, 0.18), transparent 34%),
+    linear-gradient(180deg, #0b1424 0%, #0d1a2e 58%, #0b1627 100%) !important;
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+  box-shadow: 8px 0 28px rgba(2, 8, 23, 0.14);
   transition: width 180ms ease;
 
   .ant-layout-sider-children {
@@ -50,7 +53,7 @@ const Side = styled(Layout.Sider)`
       z-index: 40;
       left: 0;
       top: 0;
-      box-shadow: 10px 0 24px rgba(15, 23, 42, 0.18);
+      box-shadow: 16px 0 36px rgba(2, 8, 23, 0.34);
     }
   }
 `;
@@ -62,7 +65,7 @@ const MobileNavBackdrop = styled.button.attrs({ type: 'button' })`
     display: block;
     position: fixed;
     z-index: 30;
-    inset: 0 0 0 224px;
+    inset: 0 0 0 256px;
     padding: 0;
     border: 0;
     background: var(--workspace-scrim);
@@ -73,25 +76,27 @@ const MobileNavBackdrop = styled.button.attrs({ type: 'button' })`
 const Brand = styled(Link)`
   display: flex;
   align-items: center;
-  min-height: 64px;
-  padding: 0 20px;
-  color: #fff;
+  min-height: 68px;
+  padding: 0 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  color: #f8fbff;
   font-size: 15px;
   font-weight: 650;
-  letter-spacing: 0;
+  letter-spacing: 0.01em;
   white-space: nowrap;
   text-decoration: none;
 
   .ant-layout-sider-collapsed & {
-    padding: 0 15px;
+    justify-content: center;
+    padding: 0;
   }
 `;
 
 const BrandMark = styled.img.attrs({ src: PRODUCT_LOGO_SRC, alt: '7G 标志' })`
   display: block;
   flex-shrink: 0;
-  width: 34px;
-  height: 28px;
+  width: 32px;
+  height: 26px;
   margin-right: 10px;
   object-fit: contain;
 
@@ -104,27 +109,69 @@ const Nav = styled.nav`
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 4px;
-  padding: 12px 10px;
+  gap: 3px;
+  padding: 14px 12px 18px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.35) transparent;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.3);
+  }
+`;
+
+const NavHeading = styled.div`
+  padding: 2px 10px 8px;
+  color: rgba(148, 163, 184, 0.82);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+`;
+
+const NavIcon = styled.span<{ $active?: boolean }>`
+  display: inline-flex;
+  flex: 0 0 26px;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  color: ${({ $active }) => ($active ? '#bfdbfe' : 'rgba(203, 213, 225, 0.72)')};
+  background: ${({ $active }) => ($active ? 'rgba(96, 165, 250, 0.18)' : 'rgba(255, 255, 255, 0.04)')};
+  font-size: 15px;
+  transition: background 140ms ease, color 140ms ease;
 `;
 
 const NavItem = styled(Link)<{ $active: boolean }>`
   display: flex;
   align-items: center;
-  min-height: 40px;
-  padding: 0 11px;
+  min-height: 42px;
+  padding: 0 9px;
   overflow: hidden;
-  border-radius: 6px;
-  color: ${({ $active }) => ($active ? '#fff' : 'rgba(255, 255, 255, 0.68)')};
-  background: ${({ $active }) => ($active ? 'rgba(65, 123, 255, 0.92)' : 'transparent')};
+  border-radius: 9px;
+  color: ${({ $active }) => ($active ? '#ffffff' : 'rgba(226, 232, 240, 0.72)')};
+  background: ${({ $active }) =>
+    $active
+      ? 'linear-gradient(90deg, rgba(59, 130, 246, 0.26), rgba(59, 130, 246, 0.06))'
+      : 'transparent'};
+  box-shadow: ${({ $active }) => ($active ? 'inset 3px 0 0 #60a5fa' : 'none')};
   font-size: 13px;
+  font-weight: ${({ $active }) => ($active ? 600 : 400)};
   text-decoration: none;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
 
   &:hover {
     color: #fff;
-    background: ${({ $active }) => ($active ? 'rgba(65, 123, 255, 0.92)' : 'rgba(255, 255, 255, 0.08)')};
+    background: ${({ $active }) =>
+      $active
+        ? 'linear-gradient(90deg, rgba(59, 130, 246, 0.3), rgba(59, 130, 246, 0.08))'
+        : 'rgba(255, 255, 255, 0.06)'};
   }
 
   &:focus-visible {
@@ -133,10 +180,16 @@ const NavItem = styled(Link)<{ $active: boolean }>`
   }
 
   .nav-label {
-    margin-left: 10px;
+    margin-left: 9px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .ant-layout-sider-collapsed & {
+    justify-content: center;
+    padding: 0;
+    box-shadow: none;
   }
 `;
 
@@ -159,21 +212,26 @@ const NavParentRow = styled.div`
 
 const NavToggle = styled.button.attrs({ type: 'button' })`
   display: inline-flex;
-  flex: 0 0 28px;
+  flex: 0 0 26px;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 40px;
+  width: 26px;
+  height: 38px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 7px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.58);
+  color: rgba(148, 163, 184, 0.9);
   cursor: pointer;
+  transition: background 140ms ease, color 140ms ease;
+
+  .anticon {
+    font-size: 10px;
+  }
 
   &:hover {
     color: #fff;
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.07);
   }
 
   &:focus-visible {
@@ -185,29 +243,55 @@ const NavToggle = styled.button.attrs({ type: 'button' })`
 const NavChildren = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  margin: 2px 0 4px 20px;
-  padding-left: 10px;
-  border-left: 1px solid rgba(255, 255, 255, 0.14);
+  gap: 1px;
+  margin: 2px 0 6px 21px;
+  padding-left: 13px;
+  border-left: 1px solid rgba(148, 163, 184, 0.18);
+  animation: treeReveal 160ms ease both;
+
+  @keyframes treeReveal {
+    from {
+      opacity: 0;
+      transform: translateY(-3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 `;
 
 const NavChild = styled(Link)<{ $active: boolean }>`
+  position: relative;
   display: flex;
   align-items: center;
-  min-height: 32px;
-  padding: 0 10px;
+  min-height: 31px;
+  padding: 0 10px 0 9px;
   overflow: hidden;
-  border-radius: 5px;
-  color: ${({ $active }) => ($active ? '#fff' : 'rgba(255, 255, 255, 0.58)')};
-  background: ${({ $active }) => ($active ? 'rgba(65, 123, 255, 0.72)' : 'transparent')};
+  border-radius: 6px;
+  color: ${({ $active }) => ($active ? '#ffffff' : 'rgba(148, 163, 184, 0.82)')};
+  background: ${({ $active }) => ($active ? 'rgba(59, 130, 246, 0.2)' : 'transparent')};
+  box-shadow: ${({ $active }) => ($active ? 'inset 2px 0 0 #60a5fa' : 'none')};
   font-size: 12px;
+  font-weight: ${({ $active }) => ($active ? 500 : 400)};
   text-decoration: none;
   white-space: nowrap;
   text-overflow: ellipsis;
+  transition: background 140ms ease, color 140ms ease;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: -14px;
+    top: 50%;
+    width: 11px;
+    height: 1px;
+    background: rgba(148, 163, 184, 0.22);
+  }
 
   &:hover {
     color: #fff;
-    background: ${({ $active }) => ($active ? 'rgba(65, 123, 255, 0.72)' : 'rgba(255, 255, 255, 0.08)')};
+    background: ${({ $active }) => ($active ? 'rgba(59, 130, 246, 0.26)' : 'rgba(255, 255, 255, 0.055)')};
   }
 
   &:focus-visible {
@@ -303,7 +387,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
-  const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
+  // Accordion navigation: only one first-level branch is expanded at a time.
+  const [expandedGroup, setExpandedGroup] = useState<string | null>(null);
   const params = new URLSearchParams(location.search);
   // `embedded=1` is also used by direct compatibility links. Only suppress the
   // platform shell when the legacy content is actually hosted in an iframe.
@@ -316,13 +401,11 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   // intentionally removed, so collapse the shell header and top padding too.
   const isTaskListPage = location.pathname === '/tasks' || location.pathname === '/tasks/';
   const isTaskDetailPage = /^\/tasks\/[^/]+\/?$/.test(location.pathname);
-  // The tree always opens the branch that contains the current working surface.
-  const isGroupExpanded = (key: string) => expandedGroups.includes(key);
+  // The tree always opens exactly one branch: the current working surface.
+  const isGroupExpanded = (key: string) => expandedGroup === key;
   const isGroupActive = (key: string) => activeNavigation.parentKey === key;
   const toggleGroup = (key: string) => {
-    setExpandedGroups((current) =>
-      current.includes(key) ? current.filter((item) => item !== key) : [...current, key],
-    );
+    setExpandedGroup((current) => (current === key ? null : key));
   };
   const userQuery = useTaskSuperuser();
   const visibleGroups = PLATFORM_NAVIGATION.filter(
@@ -343,11 +426,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
     : MODULE_COPY[active];
 
   useEffect(() => {
-    setExpandedGroups((current) =>
-      current.includes(activeNavigation.parentKey)
-        ? current
-        : [...current, activeNavigation.parentKey],
-    );
+    setExpandedGroup(activeNavigation.parentKey);
   }, [activeNavigation.parentKey]);
 
   useEffect(() => {
@@ -372,8 +451,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   return (
     <Shell className="platform-shell">
       <Side
-        width={224}
-        collapsedWidth={64}
+        width={256}
+        collapsedWidth={72}
         collapsed={collapsed}
         trigger={null}
         breakpoint="md"
@@ -384,6 +463,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           {!collapsed && <span>{PRODUCT_NAME}</span>}
         </Brand>
         <Nav aria-label="主导航">
+          {!collapsed && <NavHeading>功能导航</NavHeading>}
           {visibleGroups.map((group) => {
             const Icon = group.icon;
             const parentActive = isGroupActive(group.key);
@@ -398,7 +478,9 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
                       aria-current={parentActive ? 'page' : undefined}
                       aria-label={collapsed ? group.label : undefined}
                     >
-                      <Icon aria-hidden="true" />
+                      <NavIcon $active={parentActive}>
+                        <Icon aria-hidden="true" />
+                      </NavIcon>
                       {!collapsed && <span className="nav-label">{group.label}</span>}
                     </NavItem>
                   </Tooltip>
