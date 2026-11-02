@@ -16,4 +16,5 @@ export const platformPageLoaders = {
   evolution: () => import('./pages/evolution'),
   edgeTaskCenter: () => import('./pages/edgeTaskCenter'),
   admin: () => import('./pages/admin'),
+  systemLogs: () => import('./pages/systemLogs'),
 } as Record<string, RoutePageLoader>;

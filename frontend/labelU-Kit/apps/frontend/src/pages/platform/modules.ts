@@ -7,6 +7,7 @@ import {
   CloudUploadOutlined,
   DatabaseOutlined,
   ExperimentOutlined,
+  FileSearchOutlined,
   SettingOutlined,
   TagsOutlined,
 } from '@ant-design/icons';
@@ -25,7 +26,8 @@ export type PlatformModule =
   | 'training'
   | 'models'
   | 'evolution'
-  | 'admin';
+  | 'admin'
+  | 'system-logs';
 
 export const PLATFORM_MODULES: ReadonlyArray<{
   key: PlatformModule;
@@ -49,6 +51,12 @@ export const PLATFORM_MODULES: ReadonlyArray<{
     icon: CheckCircleOutlined,
   },
   { key: 'admin', label: '系统管理', description: '管理成员、权限、标签与集成', icon: SettingOutlined },
+  {
+    key: 'system-logs',
+    label: '系统日志',
+    description: '查看用户操作日志和系统操作日志',
+    icon: FileSearchOutlined,
+  },
 ];
 
 export interface PlatformNavigationChild {
@@ -64,6 +72,8 @@ export interface PlatformNavigationGroup {
   label: string;
   icon: typeof AppstoreOutlined;
   to: string;
+  /** Only managers can see this entire first-level branch. */
+  managerOnly?: boolean;
   children: ReadonlyArray<PlatformNavigationChild>;
 }
 
@@ -150,6 +160,17 @@ export const PLATFORM_NAVIGATION: ReadonlyArray<PlatformNavigationGroup> = [
       { key: 'admin-model-access', label: '模型接入配置', to: '/admin?view=model-access-config' },
       { key: 'admin-image-cleaning', label: '图片清洗配置', to: '/admin?view=image-cleaning' },
       { key: 'admin-annotation-settings', label: '标签与标注设置', to: '/annotation-settings' },
+    ],
+  },
+  {
+    key: 'system-logs',
+    label: '系统日志',
+    icon: FileSearchOutlined,
+    to: '/system-logs?category=user',
+    managerOnly: true,
+    children: [
+      { key: 'system-logs-user', label: '用户操作日志', to: '/system-logs?category=user' },
+      { key: 'system-logs-system', label: '系统操作日志', to: '/system-logs?category=system' },
     ],
   },
 ];
@@ -304,6 +325,11 @@ export const MODULE_COPY: Record<PlatformModule, { title: string; description: s
     title: '系统管理',
     description: '管理成员、权限、标注标签体系和外部服务集成。',
     next: '在标注与数据治理中维护标签库和数据集；数据集标签契约会直接供任务与训练使用。',
+  },
+  'system-logs': {
+    title: '系统日志',
+    description: '查看用户操作日志和系统操作日志，快速定位谁在什么时间做了什么。',
+    next: '列表只展示简短操作动作，点击详细查看请求路径、状态、耗时和请求内容。',
   },
 };
 

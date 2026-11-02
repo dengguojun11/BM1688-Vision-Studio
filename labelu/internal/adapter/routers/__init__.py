@@ -55,6 +55,7 @@ from labelu.internal.adapter.routers import training
 from labelu.internal.adapter.routers import evolution_screen
 from labelu.internal.adapter.routers import model_series
 from labelu.internal.adapter.routers import annotation_prompt
+from labelu.internal.adapter.routers import system_logs
 
 
 def _include(app: FastAPI, router, prefix: str | None = None) -> None:
@@ -144,3 +145,4 @@ def add_router(app: FastAPI):
     _include(app, integration_accumulation_config.router)
     _include(app, published_model_catalog.router)
     _include(app, published_model_catalog.public_router)
+    _include(app, system_logs.router)

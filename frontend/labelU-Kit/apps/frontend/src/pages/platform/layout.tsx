@@ -412,7 +412,9 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   };
   const userQuery = useTaskSuperuser();
   const visibleGroups = PLATFORM_NAVIGATION.filter(
-    (group) => userQuery.isTaskSuperuser || group.key !== 'admin',
+    (group) =>
+      userQuery.isTaskSuperuser ||
+      (!group.managerOnly && group.key !== 'admin'),
   ).map((group) => ({
     ...group,
     children: group.children.filter(

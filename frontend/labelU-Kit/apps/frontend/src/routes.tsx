@@ -38,6 +38,7 @@ const EvolutionPage = lazy(platformPageLoaders.evolution);
 const EdgeTaskCenterPage = lazy(platformPageLoaders.edgeTaskCenter);
 const TrainingPage = lazy(platformPageLoaders.training);
 const AdminPage = lazy(platformPageLoaders.admin);
+const SystemLogsPage = lazy(platformPageLoaders.systemLogs);
 
 /**
  * Keep the legacy iframe wrapper for embedded and panel-specific links while
@@ -213,6 +214,15 @@ const routes: RouteObject[] = [
           </RequireManager>
         ),
         handle: { crumb: () => '系统管理' },
+      },
+      {
+        path: 'system-logs',
+        element: (
+          <RequireManager>
+            <SystemLogsPage />
+          </RequireManager>
+        ),
+        handle: { crumb: () => '系统日志' },
       },
       {
         path: 'datasources',

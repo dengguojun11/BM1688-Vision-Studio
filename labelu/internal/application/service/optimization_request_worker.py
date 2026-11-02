@@ -6,6 +6,9 @@ import os
 from loguru import logger
 
 from labelu.internal.application.service import integration_requests as service
+from labelu.internal.application.service.system_operation_log import (
+    record_system_operation,
+)
 from labelu.internal.common.db import session_scope
 from labelu.internal.domain.models.third_party_optimization import OptimizationRequest
 
@@ -59,6 +62,17 @@ def run_optimization_request_worker_once(limit: int = 5) -> dict[str, int]:
                     "start strategy flow for optimization request failed request_id={}",
                     row.id,
                 )
+    if started:
+        record_system_operation(
+            action="启动第三方优化编排",
+            summary=f"自动启动 {started} 个优化请求的现有训练编排",
+            detail={
+                "started": started,
+                "synced": synced,
+                "scanned": len(rows) if "rows" in locals() else 0,
+            },
+            source="optimization_request_worker",
+        )
     return {"started": started, "synced": synced, "scanned": len(rows) if "rows" in locals() else 0}
 
 

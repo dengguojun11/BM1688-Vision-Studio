@@ -185,4 +185,30 @@ describe('PlatformLayout role navigation', () => {
     expect(screen.getByRole('button', { name: '展开训练中心菜单' })).toBeTruthy();
     expect(screen.getByRole('button', { name: '收起模型中心菜单' })).toBeTruthy();
   });
+
+  it('shows the system log branch only to managers', () => {
+    render(
+      <MemoryRouter initialEntries={['/system-logs?category=user']}>
+        <PlatformLayout>
+          <div>用户操作日志内容</div>
+        </PlatformLayout>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: '系统日志' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: '用户操作日志' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: '收起系统日志菜单' })).toBeTruthy();
+
+    cleanup();
+    isTaskSuperuser = false;
+    currentUser = { username: 'annotator@example.com', is_task_superuser: false };
+    render(
+      <MemoryRouter initialEntries={['/tasks']}>
+        <PlatformLayout>
+          <div>任务内容</div>
+        </PlatformLayout>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByRole('link', { name: '系统日志' })).toBeNull();
+  });
 });

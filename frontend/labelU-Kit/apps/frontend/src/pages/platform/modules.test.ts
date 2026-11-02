@@ -14,10 +14,11 @@ describe('7GAI platform navigation', () => {
   it('exposes training as a first-class module', () => {
     expect(PLATFORM_MODULES.map((module) => module.key)).toContain('training');
     expect(PLATFORM_MODULES.filter((module) => module.key === 'training')).toHaveLength(1);
-    expect(PLATFORM_MODULES).toHaveLength(6);
+    expect(PLATFORM_MODULES).toHaveLength(7);
     expect(PLATFORM_MODULES.find((module) => module.key === 'training')?.label).toBe('训练中心');
     expect(PLATFORM_MODULES.find((module) => module.key === 'models')?.label).toBe('模型中心');
     expect(PLATFORM_MODULES.find((module) => module.key === 'evolution')?.label).toBe('进化中心');
+    expect(PLATFORM_MODULES.find((module) => module.key === 'system-logs')?.label).toBe('系统日志');
     expect(MODULE_COPY.evolution.title).toBe('进化中心');
     expect(PLATFORM_MODULES.map((module) => module.key)).not.toContain('deployments');
     expect(PLATFORM_MODULES.map((module) => module.key)).not.toContain('workflows');
@@ -74,6 +75,7 @@ describe('7GAI platform navigation', () => {
       'models',
       'evolution',
       'admin',
+      'system-logs',
     ]);
     expect(PLATFORM_NAVIGATION.every((group) => group.children.length > 0)).toBe(true);
     expect(PLATFORM_NAVIGATION.every((group) => group.children.every((child) => child.to.startsWith('/')))).toBe(true);
@@ -109,6 +111,14 @@ describe('7GAI platform navigation', () => {
     expect(getActiveNavigation('/admin', '')).toEqual({
       parentKey: 'admin',
       childKey: 'admin-accounts',
+    });
+    expect(getActiveNavigation('/system-logs', '?category=system')).toEqual({
+      parentKey: 'system-logs',
+      childKey: 'system-logs-system',
+    });
+    expect(getActiveNavigation('/system-logs', '?category=user')).toEqual({
+      parentKey: 'system-logs',
+      childKey: 'system-logs-user',
     });
   });
 

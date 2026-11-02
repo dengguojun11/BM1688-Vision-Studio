@@ -19,6 +19,11 @@ from labelu.internal.common.third_party_call_audit import (
     classify_third_party_call,
     persist_third_party_call,
 )
+from labelu.internal.application.service.system_operation_log import (
+    classify_request_operation,
+    describe_request_action,
+    persist_request_operation_log,
+)
 
 QUIET_HTTP_TRACE_PATHS = {"/api/v1/local-dev/session"}
 
@@ -106,27 +111,37 @@ class TracingMiddleWare(BaseHTTPMiddleware):
             method=method,
             authorization=request.headers.get("Authorization", ""),
         )
+        operation_category = classify_request_operation(
+            path=path, method=method, user_id=user_id
+        )
+        operation_query = dict(request.query_params) if operation_category else {}
 
         log_payload = should_log_http_payload(path)
         request_payload_log = ""
+        operation_body_summary = ""
         audit_raw_body = b""
         query_summary = (
             _format_query(request) if settings.LOG_HTTP_DETAIL or log_payload else ""
         )
 
-        if log_payload or audit_target:
+        if log_payload or audit_target or operation_category:
             if method in {"POST", "PUT", "PATCH", "DELETE"}:
                 request, raw_body = await _read_request_body(request)
                 if audit_target:
                     audit_raw_body = raw_body
-                if log_payload:
-                    if len(raw_body) > settings.LOG_HTTP_BODY_MAX_CAPTURE_BYTES:
-                        request_payload_log = f"<body len={len(raw_body)} omitted>"
-                    else:
+                if len(raw_body) <= settings.LOG_HTTP_BODY_MAX_CAPTURE_BYTES:
+                    if log_payload:
                         request_payload_log = summarize_http_payload(
                             raw_body,
                             content_type=request.headers.get("content-type", ""),
                         )
+                    if operation_category:
+                        operation_body_summary = summarize_http_payload(
+                            raw_body,
+                            content_type=request.headers.get("content-type", ""),
+                        )
+                elif log_payload:
+                    request_payload_log = f"<body len={len(raw_body)} omitted>"
             elif log_payload and query_summary:
                 request_payload_log = f"<query> {query_summary}"
 
@@ -211,4 +226,25 @@ class TracingMiddleWare(BaseHTTPMiddleware):
                         client_ip=(request.client.host if request.client else None),
                         user_agent=request.headers.get("user-agent"),
                         error_summary=audit_error or response_payload_log or None,
+                    )
+                if operation_category:
+                    numeric_status = (
+                        int(status_code) if isinstance(status_code, int) else 500
+                    )
+                    await run_in_threadpool(
+                        persist_request_operation_log,
+                        category=operation_category,
+                        action=describe_request_action(path=path, method=method),
+                        user_id=user_id,
+                        source="web" if operation_category == "USER" else "system",
+                        request_id=request_id,
+                        method=method,
+                        path=path,
+                        status_code=numeric_status,
+                        duration_ms=elapsed_ms,
+                        query=operation_query,
+                        body_summary=operation_body_summary or None,
+                        client_ip=(request.client.host if request.client else None),
+                        user_agent=request.headers.get("user-agent"),
+                        error=audit_error or None,
                     )
