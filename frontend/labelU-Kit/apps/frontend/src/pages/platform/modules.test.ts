@@ -80,9 +80,19 @@ describe('7GAI platform navigation', () => {
   });
 
   it('resolves page view deep links to their second-level navigation item', () => {
+    expect(getActiveNavigation('/training', '?view=iteration-settings')).toEqual({
+      parentKey: 'training',
+      childKey: 'training-iteration',
+    });
+    // Legacy phase-one pages stay reachable by direct URL but are not part of
+    // the daily training navigation.
     expect(getActiveNavigation('/training', '?view=reports')).toEqual({
       parentKey: 'training',
-      childKey: 'training-reports',
+      childKey: undefined,
+    });
+    expect(getActiveNavigation('/training', '?view=auto-plan')).toEqual({
+      parentKey: 'training',
+      childKey: undefined,
     });
     expect(getActiveNavigation('/models', '?view=compile')).toEqual({
       parentKey: 'models',

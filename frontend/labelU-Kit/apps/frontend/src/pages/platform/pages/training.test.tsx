@@ -66,17 +66,18 @@ describe('TrainingPage', () => {
     renderPage();
 
     expect(screen.queryByRole('tab', { name: '历史自动训练计划' })).toBeNull();
-    expect(screen.getByRole('tab', { name: '训练作业' }).getAttribute('aria-selected')).toBe('true');
+    await waitFor(() => expect(screen.getByRole('tab', { name: '训练作业' }).getAttribute('aria-selected')).toBe('true'));
     await waitFor(() => expect(window.location.search).toBe(''));
   });
 
-  it('keeps a requested plan view while the current-user permission is loading', () => {
+  it('keeps legacy plan URLs readable while the current-user permission is loading', () => {
     taskSuperuserState.fetched = false;
     window.history.replaceState({}, '', '/training?view=auto-plan');
 
     renderPage();
 
-    expect(screen.getByRole('tab', { name: '历史自动训练计划' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: '历史自动训练计划' })).toBeNull();
+    expect(screen.getByText('历史自动训练计划')).toBeTruthy();
     expect(window.location.search).toBe('?view=auto-plan');
   });
 
@@ -1119,136 +1120,30 @@ describe('TrainingPage', () => {
     }).level).toBe('pass');
   });
 
-  it('exposes native summaries without linking to the legacy workbench', async () => {
-    mockedGet.mockImplementation(async (path: string) => {
-      if (path === '/v1/training/summary') return { data: { data: { auto_training: { plan_count: 1, plans: [{ id: 1, name: '夜间迭代', series_type: 'yolo_detection', status: 'ACTIVE', qualified_task_count: 2, eligible_sample_count: 80, pending_review_count: 3, active_round_no: 2, updated_at: '2026-09-05T10:00:00Z' }], evaluation_reports: [{ id: 3, title: '夜间迭代 / 第 2 轮评估', task_name: '夜间迭代', summary_level: 'AUTO_QUALITY_REACHED', summary_brief: '整体召回率 0.9800', created_at: '2026-09-05T10:00:00Z' }] }, reports: { auto: [{ id: 3, title: '夜间迭代 / 第 2 轮评估', task_name: '夜间迭代', summary_level: 'AUTO_QUALITY_REACHED', summary_brief: '整体召回率 0.9800', created_at: '2026-09-05T10:00:00Z' }], legacy: [{ id: 2, title: '训练报告 #2', task_name: '道路检测', summary_level: 'good', summary_brief: '边端质量达标', created_at: '2026-09-05T10:00:00Z' }], legacy_total: 1 } } } } as never;
-      return { data: { data: [] } } as never;
-    });
-    renderPage();
-    expect(screen.getByRole('tab', { name: '训练作业' })).toBeTruthy();
-    fireEvent.click(screen.getByRole('tab', { name: '历史自动训练计划' }));
-    expect(await screen.findByText('夜间迭代')).toBeTruthy();
-    expect(mockedGet).toHaveBeenCalledWith('/v1/training/summary');
-    expect(screen.queryByRole('link', { name: '新窗口打开' })).toBeNull();
-    fireEvent.click(screen.getByRole('tab', { name: '训练报告' }));
-    expect(await screen.findByText('夜间迭代 / 第 2 轮评估')).toBeTruthy();
-    expect(await screen.findByText('训练报告 #2')).toBeTruthy();
-    expect(screen.getByText('边端质量达标')).toBeTruthy();
-    expect(mockedGet).toHaveBeenCalledWith('/v1/training/summary');
-  });
-
-  it('searches historical training plans on the server and resets on clear', async () => {
-    mockedGet.mockImplementation(async (path: string, config?: any) => {
-      if (path !== '/v1/training/summary') return { data: { data: [] } } as never;
-      const query = config?.params?.q;
-      if (query === '夜间') {
-        return {
-          data: {
-            data: {
-              auto_training: {
-                plans_total: 1,
-                plans: [{ id: 9, name: '夜间迭代', status: 'ACTIVE' }],
-              },
-              reports: { auto: [], legacy: [], legacy_total: 0, total: 0 },
-            },
-          },
-        } as never;
-      }
-      return {
-        data: {
-          data: {
-            auto_training: {
-              plans_total: 2,
-              plans: [
-                { id: 9, name: '夜间迭代', status: 'ACTIVE' },
-                { id: 10, name: '白天迭代', status: 'PAUSED' },
-              ],
-            },
-            reports: { auto: [], legacy: [], legacy_total: 0, total: 0 },
-          },
-        },
-      } as never;
-    });
-    renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: '历史自动训练计划' }));
-    expect(await screen.findByText('白天迭代')).toBeTruthy();
-
-    const input = screen.getByRole('textbox', { name: '搜索历史自动训练计划' });
-    fireEvent.change(input, { target: { value: '夜间' } });
-    fireEvent.keyDown(input, { key: 'Enter', code: 'Enter', charCode: 13 });
-    await waitFor(() => expect(mockedGet).toHaveBeenCalledWith(
-      '/v1/training/summary',
-      { params: { q: '夜间', page: 0, size: 20 } },
-    ));
-    expect(await screen.findByText('夜间迭代')).toBeTruthy();
-    expect(screen.queryByText('白天迭代')).toBeNull();
-
-    fireEvent.change(input, { target: { value: '' } });
-    await waitFor(() => expect(mockedGet).toHaveBeenCalledWith('/v1/training/summary'));
-    expect(await screen.findByText('白天迭代')).toBeTruthy();
-  });
-
-  it('opens a native automatic-plan detail and resolves its associated training job', async () => {
-    mockedGet.mockImplementation(async (path: string) => {
-      if (path === '/v1/training/summary') return { data: { data: { auto_training: { plan_count: 1, plans: [{ id: 1, name: '夜间迭代', status: 'AUTO_QUALITY_REACHED', active_round_id: 8, last_round: { id: 8, round_no: 2, yolo_train_job_id: 42 } }], evaluation_reports: [] }, reports: { auto: [], legacy: [], legacy_total: 0 } } } } as never;
-      if (path === '/v1/auto-training-plans/1') return { data: { data: { id: 1, name: '夜间迭代', status: 'AUTO_QUALITY_REACHED', current_version_no: 3, qualified_task_count: 1, eligible_sample_count: 12, pending_review_count: 0, last_round: { id: 8, round_no: 2, state: 'AUTO_QUALITY_REACHED', yolo_train_job_id: 42 } } } } as never;
-      if (path === '/v1/auto-training-rounds/8') return { data: { data: { id: 8, round_no: 2, state: 'AUTO_QUALITY_REACHED', yolo_train_job_id: 42, stage_statuses: { BM1688: 'PENDING', EDGE_VALIDATION: 'PENDING' } } } } as never;
-      if (path === '/v1/auto-training-rounds/8/quality') return { data: { data: { status: 'COMPLETED', decision_code: 'AUTO_QUALITY_REACHED', blocking_reasons: ['EDGE_VALIDATION_NOT_COMPLETED'] } } } as never;
-      if (path === '/v1/training/jobs/42') return { data: { data: { id: 42, task_id: 7, task_name: '道路检测' } } } as never;
-      return { data: { data: [] } } as never;
-    });
-    renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: '历史自动训练计划' }));
-    expect(await screen.findByText('夜间迭代')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /查看计划/ }));
-    expect(await screen.findByText('质量四层')).toBeTruthy();
-    expect((await screen.findAllByText('训练指标达标，待发布')).length).toBeGreaterThanOrEqual(1);
-    const link = await screen.findByRole('link', { name: /查看关联训练作业/ });
-    expect(link.getAttribute('href')).toBe('/training?view=jobs&job_id=42');
-  });
-
-  it('opens a native report detail and keeps the report-to-job association', async () => {
-    mockedGet.mockImplementation(async (path: string) => {
-      if (path === '/v1/training/summary') return { data: { data: { auto_training: { plan_count: 0, plans: [], evaluation_reports: [] }, reports: { auto: [], legacy: [{ id: 2, yolo_train_job_id: 42, task_id: 7, title: '训练报告 #2', task_name: '道路检测', provider_key: 'qwen_plus', report_kind: 'full_analysis', summary_level: 'good', summary_brief: '边端质量达标' }], legacy_total: 1 } } } } as never;
-      if (path === '/v1/yolo-eval-reports/2') return { data: { data: { id: 2, yolo_train_job_id: 42, task_id: 7, title: '训练报告 #2', task_name: '道路检测', provider_key: 'qwen_plus', report_kind: 'full_analysis', body: '评估正文', training_quality_status: 'PASS', generalization_quality_status: 'PASS', edge_usability_status: 'PASS', release_readiness: 'BLOCKED', quality_gate_reason: '发布前需完成签名' } } } as never;
-      if (path === '/v1/training/jobs/42') return { data: { data: { id: 42, task_id: 7 } } } as never;
-      return { data: { data: [] } } as never;
-    });
-    renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: '训练报告' }));
-    expect(await screen.findByText('训练报告 #2')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /查看报告/ }));
-    expect(await screen.findByText('评估正文')).toBeTruthy();
-    expect(await screen.findByText('质量四层')).toBeTruthy();
-    expect((await screen.findByRole('link', { name: /查看关联训练作业/ })).getAttribute('href')).toBe('/training?view=jobs&job_id=42');
-  });
-
-  it('builds canonical in-platform training links', () => {
-    expect(platformTrainingJobUrl(42)).toBe('/training?view=jobs&job_id=42');
-    expect(platformTrainingReportsUrl(42)).toBe('/training?view=reports&job_id=42');
-  });
-
-  it('renders an empty state for automatic plans', async () => {
+  it('keeps the training surface focused on jobs and auto iteration', async () => {
     mockedGet.mockResolvedValue({ data: { data: [], meta_data: { total: 0 } } } as never);
     renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: '历史自动训练计划' }));
-    expect(await screen.findByText('暂无数据')).toBeTruthy();
+
+    expect(screen.getByRole('tab', { name: '训练作业' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: '自动迭代设置' })).toBeTruthy();
+    expect(screen.queryByRole('tab', { name: '历史自动训练计划' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: '训练报告' })).toBeNull();
   });
 
-  it('renders a loading state while reports are being fetched', async () => {
-    mockedGet.mockImplementation(() => new Promise(() => undefined) as never);
+  it('keeps legacy training report URLs readable for old bookmarks without navigation entries', async () => {
+    window.history.replaceState({}, '', '/training?view=reports');
+    mockedGet.mockImplementation(async (requestPath: string) => {
+      if (requestPath === '/v1/training/summary') {
+        return { data: { data: { auto_training: { plan_count: 0, plans: [], evaluation_reports: [] }, reports: { auto: [], legacy: [], legacy_total: 0 } } } } as never;
+      }
+      return { data: { data: [] } } as never;
+    });
     renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: '训练报告' }));
-    expect(await screen.findByRole('status')).toBeTruthy();
+
+    expect(screen.queryByRole('tab', { name: '训练报告' })).toBeNull();
+    expect(await screen.findByText('训练报告')).toBeTruthy();
   });
 
-  it('renders an error state and retry action for reports', async () => {
-    mockedGet.mockRejectedValue(new Error('network'));
-    renderPage();
-    fireEvent.click(screen.getByRole('tab', { name: '训练报告' }));
-    expect(await screen.findByText('摘要加载失败')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /重.*试/ })).toBeTruthy();
-  });
 
   it('pauses a processing job through the unified endpoint', async () => {
     mockedPost.mockResolvedValue({ data: { status: 'CANCELLED' } } as never);

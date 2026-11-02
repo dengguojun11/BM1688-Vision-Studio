@@ -145,15 +145,15 @@ describe('PlatformLayout role navigation', () => {
 
   it('shows the active second-level item in the navigation tree', () => {
     render(
-      <MemoryRouter initialEntries={['/training?view=reports']}>
+      <MemoryRouter initialEntries={['/training?view=iteration-settings']}>
         <PlatformLayout>
-          <div>训练报告内容</div>
+          <div>自动迭代设置内容</div>
         </PlatformLayout>
       </MemoryRouter>,
     );
 
     expect(screen.getByRole('link', { name: '训练中心' }).getAttribute('aria-current')).toBe('page');
-    expect(screen.getByRole('link', { name: '训练报告' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('link', { name: '自动迭代设置' }).getAttribute('aria-current')).toBe('page');
     expect(screen.getByRole('button', { name: '收起训练中心菜单' }).getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -173,9 +173,9 @@ describe('PlatformLayout role navigation', () => {
 
   it('collapses the previous branch when another first-level directory is opened', () => {
     render(
-      <MemoryRouter initialEntries={['/training?view=reports']}>
+      <MemoryRouter initialEntries={['/training?view=iteration-settings']}>
         <PlatformLayout>
-          <div>训练报告内容</div>
+          <div>自动迭代设置内容</div>
         </PlatformLayout>
       </MemoryRouter>,
     );

@@ -4534,17 +4534,20 @@ export default function TrainingPage() {
       window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
     }
   };
+  // Compatibility only: old bookmarks may still point at the phase-one read-only
+  // plan/report pages. They are no longer exposed in the training navigation or
+  // tab bar, so daily operation stays focused on training jobs and auto iteration.
+  if (activeView === 'auto-plan' || activeView === 'reports') {
+    return <LegacyTrainingPanel view={activeView} />;
+  }
+
   return <>
     <Tabs
-      activeKey={activeView === 'auto-plan' && isTaskSuperuserFetched && !isTaskSuperuser ? 'jobs' : activeView}
+      activeKey={activeView}
       onChange={handleViewChange}
       destroyInactiveTabPane
       items={[
         { key: 'jobs', label: '训练作业', children: jobsPanel },
-        ...(isTaskSuperuser || !isTaskSuperuserFetched
-          ? [{ key: 'auto-plan', label: '历史自动训练计划', children: <LegacyTrainingPanel view="auto-plan" /> }]
-          : []),
-        { key: 'reports', label: '训练报告', children: <LegacyTrainingPanel view="reports" /> },
         { key: 'iteration-settings', label: '自动迭代设置', children: <AutoIterationSettingsPanel /> },
       ]}
     />

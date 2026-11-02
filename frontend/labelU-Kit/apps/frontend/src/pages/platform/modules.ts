@@ -104,8 +104,6 @@ export const PLATFORM_NAVIGATION: ReadonlyArray<PlatformNavigationGroup> = [
     to: '/training',
     children: [
       { key: 'training-jobs', label: '训练作业', to: '/training' },
-      { key: 'training-reports', label: '训练报告', to: '/training?view=reports' },
-      { key: 'training-auto-plan', label: '历史自动训练计划', to: '/training?view=auto-plan', managerOnly: true },
       { key: 'training-iteration', label: '自动迭代设置', to: '/training?view=iteration-settings' },
     ],
   },
@@ -197,6 +195,15 @@ export function getActiveNavigation(pathname: string, search = ''): {
   ) {
     parentKey = 'admin';
     childKey = 'admin-labels';
+  }
+
+  // Legacy phase-one training surfaces remain addressable for old bookmarks,
+  // but they are not part of the daily navigation tree.
+  if (
+    pathname === '/training' &&
+    (current.get('view') === 'reports' || current.get('view') === 'auto-plan')
+  ) {
+    return { parentKey: 'training', childKey: undefined };
   }
 
   return { parentKey, childKey };
