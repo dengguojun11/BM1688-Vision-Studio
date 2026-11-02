@@ -244,7 +244,10 @@ const NavChildren = styled.div`
   display: flex;
   flex-direction: column;
   gap: 1px;
-  margin: 2px 0 6px 21px;
+  /* Keep the child rail exactly under the parent label block: the parent row
+     reserves 26px for its chevron control, so the children must reserve the
+     same right edge instead of extending under it. */
+  margin: 2px 28px 6px 21px;
   padding-left: 13px;
   border-left: 1px solid rgba(148, 163, 184, 0.18);
   animation: treeReveal 160ms ease both;
