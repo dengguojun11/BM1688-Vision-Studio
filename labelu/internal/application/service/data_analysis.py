@@ -78,7 +78,11 @@ def _contract_labels(db, task_ids: list[int]) -> list[dict[str, Any]]:
             SampleAnnotationLabelIndex.label_value,
             func.count(func.distinct(SampleAnnotationLabelIndex.sample_id)),
         )
-        .filter(SampleAnnotationLabelIndex.task_id.in_(task_ids))
+        .join(TaskSample, TaskSample.id == SampleAnnotationLabelIndex.sample_id)
+        .filter(
+            SampleAnnotationLabelIndex.task_id.in_(task_ids),
+            TaskSample.deleted_at.is_(None),
+        )
         .group_by(
             SampleAnnotationLabelIndex.task_id,
             SampleAnnotationLabelIndex.label_value,
@@ -110,7 +114,14 @@ def _contract_labels(db, task_ids: list[int]) -> list[dict[str, Any]]:
     result = []
     for task in tasks:
         contract = contracts.get(int(task.current_annotation_contract_id or 0))
-        task_members = memberships.get(int(task.id), [])
+        if contract is not None:
+            task_members = [
+                member
+                for member in memberships.get(int(task.id), [])
+                if int(member.contract_id) == int(contract.id)
+            ]
+        else:
+            task_members = []
         task_image_count = images_by_task.get(int(task.id), 0)
         label_rows = []
         for member in task_members:
@@ -298,7 +309,11 @@ def get_data_analysis(
     labeled_images = sum(
         1
         for _ in db.query(SampleAnnotationLabelIndex.sample_id)
-        .filter(SampleAnnotationLabelIndex.task_id.in_(task_ids))
+        .join(TaskSample, TaskSample.id == SampleAnnotationLabelIndex.sample_id)
+        .filter(
+            SampleAnnotationLabelIndex.task_id.in_(task_ids),
+            TaskSample.deleted_at.is_(None),
+        )
         .distinct()
         .all()
     )
