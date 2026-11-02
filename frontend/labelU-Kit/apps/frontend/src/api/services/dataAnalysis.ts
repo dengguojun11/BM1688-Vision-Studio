@@ -101,6 +101,12 @@ export interface DataAnalysisRecommendation {
   coverage: number;
 }
 
+export interface DataAnalysisContractOption {
+  contract_id: number | null;
+  contract_label: string;
+  label_count: number;
+}
+
 export interface DataAnalysisGlobalToolValue {
   value: string;
   name_cn: string;
@@ -118,13 +124,14 @@ export interface DataAnalysisOverview {
   state_counts: DataAnalysisState[];
   label_distribution: DataAnalysisLabel[];
   contract_health: DataAnalysisContractHealth[];
+  contract_options: DataAnalysisContractOption[];
   dimensions: DataAnalysisDimension[];
   recommendations: DataAnalysisRecommendation[];
   global_tools: DataAnalysisGlobalTool[];
 }
 
-export async function getDataAnalysisOverview(targetPerLabel = 0) {
+export async function getDataAnalysisOverview(targetPerLabel = 0, contractId?: number) {
   return await request.get('/v1/data-analysis/overview', {
-    params: { target_per_label: targetPerLabel },
+    params: { target_per_label: targetPerLabel, contract_id: contractId || undefined },
   });
 }

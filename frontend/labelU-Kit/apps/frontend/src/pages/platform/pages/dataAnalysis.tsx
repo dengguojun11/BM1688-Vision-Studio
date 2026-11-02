@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Empty, Progress, Space, Statistic, Table, Tag, Typography } from 'antd';
+import { Empty, Progress, Select, Space, Statistic, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 
 import {
@@ -239,10 +239,11 @@ function GlobalTools({ tools }: { tools: Array<{ field_key: string; name_cn: str
 }
 
 export default function DataAnalysisPage() {
+  const [contractId, setContractId] = useState<number | undefined>();
   const query = useQuery({
-    queryKey: ['data-analysis-overview'],
+    queryKey: ['data-analysis-overview', contractId],
     queryFn: async () => {
-      const response = await getDataAnalysisOverview(0);
+      const response = await getDataAnalysisOverview(0, contractId);
       return response.data;
     },
     staleTime: 60_000,
@@ -309,9 +310,22 @@ export default function DataAnalysisPage() {
             从契约目标出发，定位标签与场景/光照/角度组合的缺口，直接生成补数优先级。
           </Typography.Text>
         </div>
-        <Tag style={{ color: risk.color, background: risk.bg, border: 0, padding: '4px 10px' }}>
-          {risk.label} · 目标策略：自动均衡
-        </Tag>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <Select
+            allowClear
+            style={{ width: 340 }}
+            placeholder="选择标签契约"
+            value={contractId}
+            onChange={(value) => setContractId(value)}
+            options={(query.data?.contract_options ?? []).map((option) => ({
+              value: Number(option.contract_id),
+              label: `${option.contract_label}（${option.label_count} 个标签）`,
+            }))}
+          />
+          <Tag style={{ color: risk.color, background: risk.bg, border: 0, padding: '4px 10px' }}>
+            {risk.label} · 目标策略：自动均衡
+          </Tag>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, margin: '18px 0' }}>

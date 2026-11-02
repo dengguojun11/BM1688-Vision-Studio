@@ -1,4 +1,4 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query, Security, status
 from fastapi.security import HTTPAuthorizationCredentials
@@ -21,6 +21,7 @@ class DataAnalysisResponse(BaseModel):
     label_distribution: List[Dict[str, Any]] = Field(default_factory=list)
     contracts: List[Dict[str, Any]] = Field(default_factory=list)
     contract_health: List[Dict[str, Any]] = Field(default_factory=list)
+    contract_options: List[Dict[str, Any]] = Field(default_factory=list)
     dimensions: List[Dict[str, Any]] = Field(default_factory=list)
     recommendations: List[Dict[str, Any]] = Field(default_factory=list)
     gaps: List[Dict[str, Any]] = Field(default_factory=list)
@@ -34,6 +35,7 @@ class DataAnalysisResponse(BaseModel):
 )
 def data_analysis_overview(
     target_per_label: int = Query(0, ge=0, le=100000),
+    contract_id: Optional[int] = Query(None, gt=0),
     authorization: HTTPAuthorizationCredentials = Security(security),
     db: Session = Depends(db_module.get_db),
     current_user: User = Depends(get_current_user),
@@ -43,5 +45,6 @@ def data_analysis_overview(
         db,
         current_user,
         target_per_label=target_per_label,
+        contract_id=contract_id,
     )
     return OkResp[DataAnalysisResponse](data=DataAnalysisResponse(**data))

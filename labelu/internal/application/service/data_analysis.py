@@ -313,6 +313,7 @@ def get_data_analysis(
     current_user: User,
     *,
     target_per_label: int = 0,
+    contract_id: int | None = None,
 ) -> dict[str, Any]:
     if not is_task_superuser(current_user):
         raise LabelUException(
@@ -320,8 +321,29 @@ def get_data_analysis(
             status_code=status.HTTP_403_FORBIDDEN,
             message="仅管理人员可查看数据分析",
         )
-    task_ids = _task_ids(db, current_user)
-    groups = _contract_groups(db, task_ids)
+    all_task_ids = _task_ids(db, current_user)
+    all_groups = _contract_groups(db, all_task_ids)
+    contract_options = [
+        {
+            "contract_id": group["contract_id"],
+            "contract_label": " / ".join(group["task_names"]),
+            "label_count": len(group["labels"]),
+        }
+        for group in all_groups
+        if group["labels"]
+    ]
+    groups = all_groups
+    if contract_id is not None:
+        groups = [
+            group for group in groups if int(group["contract_id"] or 0) == int(contract_id)
+        ]
+    task_ids = sorted(
+        {
+            int(task_id)
+            for group in groups
+            for task_id in group["task_ids"]
+        }
+    )
     fixed_target = max(0, int(target_per_label or 0))
     task_to_group = {
         int(task_id): f"contract:{int(group['contract_id'])}"
@@ -626,6 +648,7 @@ def get_data_analysis(
             )
         ],
         "contract_health": contract_health,
+        "contract_options": contract_options,
         "dimensions": context_for_dimension,
         "recommendations": gaps,
         "gaps": gaps,
