@@ -33,9 +33,6 @@ import {
   MediaBadge,
   MetricGrid,
   MetricItem,
-  ProgressFill,
-  ProgressSummary,
-  ProgressTrack,
   TagRow,
   TaskId,
   TaskName,
@@ -301,18 +298,6 @@ const TaskCard = (props: TaskCardProps) => {
             <span className="metric-value">{total > 0 ? `${progressPercent}%` : '暂无样本'}</span>
           </MetricItem>
         </MetricGrid>
-
-        {status !== TaskStatus.DRAFT && status !== TaskStatus.IMPORTED && total > 0 && (
-          <ProgressSummary>
-            <div className="progress-label">
-              <span>{taskActuallyFinished && samplesFullyProcessed ? '标注已完成' : '标注进度'}</span>
-              <span className="progress-value">{doneSample.toLocaleString()} / {total.toLocaleString()}</span>
-            </div>
-            <ProgressTrack aria-label={`标注完成度 ${progressPercent}%`}>
-              <ProgressFill $percent={progressPercent} $complete={taskActuallyFinished && samplesFullyProcessed} />
-            </ProgressTrack>
-          </ProgressSummary>
-        )}
 
         <CardFooter>
           <FooterMeta>

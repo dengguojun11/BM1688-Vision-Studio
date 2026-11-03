@@ -362,6 +362,8 @@ export interface ListByApiV1TasksGetParams {
   label_ids?: number | number[];
   /** true=可训练 false=未达标 */
   training_ready?: boolean;
+  /** true=达到训练最低样本数 false=未达到 */
+  can_train?: boolean;
   dataset_category_id?: number;
   uncategorized?: boolean;
   dataset_id?: number;

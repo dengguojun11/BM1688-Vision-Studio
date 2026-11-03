@@ -133,6 +133,9 @@ from labelu.internal.application.service.task_cleanup import (
 from labelu.internal.application.service.training_review_gate import (
     filter_trainable_samples,
 )
+from labelu.internal.application.service.training_admission import (
+    get_min_sample_count,
+)
 from labelu.internal.common.task_annotation_completeness import (
     audit_one_sample,
     audit_task_config_and_samples,
@@ -212,7 +215,7 @@ def _training_sample_stats(
         if done_sample_count
         else 0.0
     )
-    minimum_count = max(int(settings.EXPERIMENT_DATASET_MIN_SAMPLE_COUNT or 1), 1)
+    minimum_count = max(int(get_min_sample_count() or 1), 1)
     minimum_threshold_met = trainable_sample_count >= minimum_count
     # ``training_ready`` is the task-level annotation flag.  Keep it separate
     # from ``can_train``: an annotation can be complete while a media asset is
@@ -566,7 +569,7 @@ def _task_response_with_statics(
     )
     # Reuse the existing training admission calculation instead of maintaining
     # a second "can train" rule in the task response.
-    minimum_trainable = max(int(settings.EXPERIMENT_DATASET_MIN_SAMPLE_COUNT or 1), 1)
+    minimum_trainable = max(int(get_min_sample_count() or 1), 1)
     training_sample_stats: dict[str, Any] | None = None
     if (
         task.media_type == MediaType.IMAGE.value
@@ -769,6 +772,7 @@ def list_by(
     rect_preset_slug: str | None = None,
     label_ids: list[int] | None = None,
     training_ready: bool | None = None,
+    can_train: bool | None = None,
     dataset_category_id: int | None = None,
     uncategorized: bool = False,
     project_id: int | None = None,
@@ -781,6 +785,28 @@ def list_by(
     normalized_label_ids = list(
         dict.fromkeys(int(value) for value in (label_ids or []))
     )
+
+    def apply_can_train_filter(query):
+        if can_train is None:
+            return query
+        minimum = max(int(get_min_sample_count() or 1), 1)
+        done_count = (
+            db.query(func.count(TaskSample.id))
+            .filter(
+                TaskSample.task_id == Task.id,
+                TaskSample.deleted_at.is_(None),
+                TaskSample.state == SampleState.DONE.value,
+            )
+            .correlate(Task)
+            .scalar_subquery()
+        )
+        if can_train:
+            return query.filter(
+                Task.training_ready.is_(True), done_count >= minimum
+            )
+        return query.filter(
+            or_(Task.training_ready.is_not(True), done_count < minimum)
+        )
 
     def apply_dataset_filter(query):
         if dataset_id is not None:
@@ -890,6 +916,7 @@ def list_by(
         if project_id is not None:
             query = query.filter(Task.project_id == int(project_id))
         query = apply_dataset_filter(query)
+        query = apply_can_train_filter(query)
         query = query.group_by(Task.id).having(
             func.count(func.distinct(TaskAnnotationLabel.label_id))
             == len(normalized_label_ids)
@@ -920,6 +947,7 @@ def list_by(
         if project_id is not None:
             query = query.filter(Task.project_id == int(project_id))
         query = apply_dataset_filter(query)
+        query = apply_can_train_filter(query)
         # training_ready 在 Python 层过滤，以便「训练筛选一致」池任务仍随预设 Tab 展示
         fetched = query.options(joinedload(Task.owner)).order_by(Task.id.desc()).all()
         if training_ready is True:
@@ -967,6 +995,7 @@ def list_by(
         if project_id is not None:
             query = query.filter(Task.project_id == int(project_id))
         query = apply_dataset_filter(query)
+        query = apply_can_train_filter(query)
         total_task = query.count()
         tasks = (
             query.options(joinedload(Task.owner))

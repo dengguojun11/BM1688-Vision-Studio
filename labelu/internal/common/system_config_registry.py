@@ -460,6 +460,26 @@ SYSTEM_CONFIG_REGISTRY: dict[str, dict[str, Any]] = {
             }
         ],
     },
+    "training_admission": {
+        "group_name_zh": "训练准入配置",
+        "group_comment": "任务进入训练候选前要求的最低合格标注样本数",
+        "scope_type": "global",
+        "sort_order": 85,
+        "items": [
+            {
+                "item_key": "config",
+                "item_name_zh": "训练准入规则",
+                "item_comment": "min_sample_count：每个任务至少需要的合格标注图片数",
+                "value_type": "json",
+                "default_value": {
+                    "version": 1,
+                    "min_sample_count": 50,
+                },
+                "source_mode": "db_primary",
+                "sort_order": 10,
+            }
+        ],
+    },
 }
 
 

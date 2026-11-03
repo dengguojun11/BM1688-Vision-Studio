@@ -217,7 +217,9 @@ def list_labels(
         label_query.with_entities(func.count(AnnotationLabel.id)).scalar() or 0
     )
     rows = (
-        label_query.order_by(AnnotationLabel.sort_order, AnnotationLabel.id)
+        label_query.order_by(
+            AnnotationLabel.created_at.desc(), AnnotationLabel.id.desc()
+        )
         .offset(page * size)
         .limit(size)
         .all()

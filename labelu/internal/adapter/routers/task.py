@@ -119,6 +119,10 @@ async def list_by(
         None,
         description="训练就绪筛选：true=可训练，false=未达标",
     ),
+    can_train: Optional[bool] = Query(
+        None,
+        description="训练准入筛选：true=达到最低样本数，false=未达到",
+    ),
     dataset_category_id: Optional[int] = Query(None, gt=0),
     uncategorized: bool = Query(False),
     project_id: Optional[int] = Query(None, gt=0),
@@ -151,6 +155,7 @@ async def list_by(
         rect_preset_slug=rect_preset_slug,
         label_ids=label_ids,
         training_ready=training_ready,
+        can_train=can_train,
         dataset_category_id=dataset_category_id,
         uncategorized=uncategorized,
         project_id=project_id,

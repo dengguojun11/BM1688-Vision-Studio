@@ -58,6 +58,7 @@ from labelu.internal.adapter.routers import annotation_prompt
 from labelu.internal.adapter.routers import system_logs
 from labelu.internal.adapter.routers import personnel_statistics
 from labelu.internal.adapter.routers import data_analysis
+from labelu.internal.adapter.routers import training_admission
 
 
 def _include(app: FastAPI, router, prefix: str | None = None) -> None:
@@ -150,3 +151,4 @@ def add_router(app: FastAPI):
     _include(app, system_logs.router)
     _include(app, personnel_statistics.router)
     _include(app, data_analysis.router)
+    _include(app, training_admission.router)

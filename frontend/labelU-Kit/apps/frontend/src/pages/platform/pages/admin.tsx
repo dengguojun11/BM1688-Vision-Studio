@@ -16,6 +16,7 @@ import PublishConfigPanel from './publishConfig';
 import ExpertS3ConfigPanel from './expertS3Config';
 import ModelAccessConfigPanel from './modelAccessConfig';
 import ImageCleaningConfigPanel from './imageCleaningConfig';
+import TrainingAdmissionConfigPanel from './trainingAdmissionConfig';
 
 function errorText(error: unknown) {
   const status = responseStatus(error);
@@ -472,6 +473,7 @@ export default function AdminPage() {
   const expertS3Config = currentView === 'expert-s3-config';
   const modelAccessConfig = currentView === 'model-access-config';
   const imageCleaningConfig = currentView === 'image-cleaning';
+  const trainingAdmissionConfig = currentView === 'training-admission';
   const [userSearch, setUserSearch] = useState('');
   const [userSearchDraft, setUserSearchDraft] = useState('');
   const [userPage, setUserPage] = useState(0);
@@ -490,7 +492,8 @@ export default function AdminPage() {
       !publishConfig &&
       !expertS3Config &&
       !modelAccessConfig &&
-      !imageCleaningConfig,
+      !imageCleaningConfig &&
+      !trainingAdmissionConfig,
     staleTime: 30_000,
     placeholderData: (previous) => previous,
   });
@@ -589,6 +592,15 @@ export default function AdminPage() {
     );
   }
 
+  if (trainingAdmissionConfig) {
+    return (
+      <>
+        <ModuleHeader module="admin" />
+        <TrainingAdmissionConfigPanel />
+      </>
+    );
+  }
+
   const dataState = usersQuery.error ? 'error' : usersQuery.isLoading ? 'loading' : userTotal ? 'ready' : 'empty';
   return (
     <>
@@ -627,6 +639,9 @@ export default function AdminPage() {
         </Button>
         <Button icon={<SettingOutlined />} onClick={() => navigate('/admin?view=image-cleaning')}>
           图片清洗配置
+        </Button>
+        <Button icon={<SettingOutlined />} onClick={() => navigate('/admin?view=training-admission')}>
+          训练准入配置
         </Button>
       </Space>
       {usersQuery.error ? (

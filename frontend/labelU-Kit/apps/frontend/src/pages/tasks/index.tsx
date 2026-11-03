@@ -94,6 +94,9 @@ function ScrollingLabel({ text }: { text: string }) {
 
 const Wrapper = styled(FlexLayout)<{ $inIframe?: boolean }>`
   height: ${(p) => (p.$inIframe ? '100vh' : 'calc(100vh - var(--header-height))')};
+  max-height: ${(p) => (p.$inIframe ? '100vh' : 'calc(100vh - var(--header-height))')};
+  min-height: 0;
+  overflow: hidden;
   box-sizing: border-box;
 `;
 
@@ -102,6 +105,7 @@ const Body = styled(FlexLayout.Content)`
   width: 100%;
   min-width: 0;
   overflow-x: hidden;
+  overflow-y: hidden;
   min-height: 0;
   background: #f5f7fb;
 
@@ -154,14 +158,18 @@ const CardsWrapper = styled(ResponsiveGrid)`
   width: 100%;
   min-width: 0;
   overflow-x: hidden;
-  grid-template-columns: repeat(3, minmax(14rem, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
 
-  @media (max-width: 72rem) {
+  @media (max-width: 78rem) {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  @media (max-width: 58rem) {
     grid-template-columns: repeat(2, minmax(14rem, 1fr));
   }
 
-  @media (max-width: 54rem) {
+  @media (max-width: 42rem) {
     grid-template-columns: minmax(0, 1fr);
   }
 `;
@@ -170,6 +178,7 @@ const CardsScroll = styled(FlexLayout.Content)`
   width: 100%;
   min-width: 0;
   overflow-x: hidden;
+  overflow-y: auto;
 `;
 
 const Footer = styled(FlexLayout.Footer)`
@@ -388,10 +397,10 @@ const SearchToolbar = styled.div`
 const SearchBarRow = styled.div`
   display: grid;
   grid-template-columns:
-    minmax(15rem, 1.15fr) minmax(11rem, 0.8fr) minmax(13rem, 1fr)
-    minmax(14rem, 0.9fr);
-  gap: 0.75rem;
-  padding: 0.875rem;
+    minmax(0, 1.1fr) minmax(0, 0.85fr) minmax(0, 0.9fr)
+    minmax(0, 0.95fr) minmax(0, 0.8fr);
+  gap: 0.6rem;
+  padding: 0.7rem 0.8rem;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -554,6 +563,7 @@ const TaskListPanel = () => {
   const finalPageSize = searchParams.get('size') ? +searchParams.get('size')! : 16;
   const datasetSearch = searchParams.get('dataset_search') || '';
   const taskSearch = searchParams.get('q') || '';
+  const canTrainFilter = searchParams.get('can_train') === 'true' ? 'true' : undefined;
 
   const [imageQuery, setImageQuery] = useState('');
   const [taskSearchInput, setTaskSearchInput] = useState(taskSearch);
@@ -803,6 +813,16 @@ const TaskListPanel = () => {
     },
     [searchParams, setSearchParams],
   );
+  const handleCanTrainFilterChange = useCallback(
+    (value?: string) => {
+      const next = new URLSearchParams(searchParams);
+      next.set('page', '1');
+      if (value === 'true') next.set('can_train', 'true');
+      else next.delete('can_train');
+      setSearchParams(next);
+    },
+    [searchParams, setSearchParams],
+  );
 
   return (
     <>
@@ -854,6 +874,19 @@ const TaskListPanel = () => {
                       }}
                     />
                     <small>支持模糊匹配任务名称、编号和状态</small>
+                  </SearchField>
+                  <SearchField>
+                    状态
+                    <Select
+                      allowClear
+                      placeholder="全部任务"
+                      aria-label="按训练状态筛选"
+                      value={canTrainFilter}
+                      onChange={handleCanTrainFilterChange}
+                      options={[{ value: 'true', label: '可训练' }]}
+                      style={{ width: '100%' }}
+                    />
+                    <small>筛选已达到训练最低样本数的任务</small>
                   </SearchField>
                   <SearchField>
                     数据集

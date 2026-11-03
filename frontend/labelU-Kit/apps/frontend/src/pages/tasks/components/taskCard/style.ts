@@ -51,16 +51,16 @@ export const MediaBadge = styled.span<{ $color: string; $bg: string }>`
   justify-content: center;
   min-width: 0;
   max-width: 12rem;
-  height: 1.35rem;
-  padding: 0 0.45rem;
+  height: 1.15rem;
+  padding: 0 0.4rem;
   overflow: hidden;
   border: 1px solid transparent;
   border-radius: 999px;
   color: ${(props) => props.$color};
   background-color: ${(props) => props.$bg};
-  font-size: 0.6875rem;
+  font-size: 0.64rem;
   font-weight: 600;
-  line-height: 1.35rem;
+  line-height: 1.15rem;
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -70,12 +70,12 @@ export const CardWrapper = styled.div`
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
+  gap: 0.18rem;
   width: 100%;
-  min-height: 14.25rem;
+  min-height: 9.75rem;
   min-width: 0;
   box-sizing: border-box;
-  padding: 0.55rem 0.75rem 0.5rem;
+  padding: 0.38rem 0.55rem 0.32rem;
   overflow: hidden;
   border: 1px solid #e3e8f0;
   border-radius: 8px;
@@ -102,16 +102,16 @@ export const TaskTitleBlock = styled.div`
   display: flex;
   flex-direction: column;
   min-width: 0;
-  gap: 0.2rem;
+  gap: 0.08rem;
 `;
 
 export const TaskName = styled.div`
   min-width: 0;
   overflow: hidden;
   color: #142033;
-  font-size: 0.9rem;
+  font-size: 0.78rem;
   font-weight: 650;
-  line-height: 1.2;
+  line-height: 1.1;
   overflow-wrap: anywhere;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -121,7 +121,8 @@ export const TaskName = styled.div`
 
 export const TaskId = styled.span`
   color: #94a3b8;
-  font-size: 0.625rem;
+  font-size: 0.56rem;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
 `;
 
@@ -136,8 +137,8 @@ export const TagRow = styled.div`
 export const MetricGrid = styled.div`
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.25rem;
-  padding: 0.32rem 0.45rem;
+  gap: 0.1rem;
+  padding: 0.16rem 0.3rem;
   border: 1px solid #edf1f6;
   border-radius: 6px;
   background: #f8fafc;
@@ -148,18 +149,19 @@ export const MetricItem = styled.div`
 
   .metric-label {
     display: block;
-    margin-bottom: 0.05rem;
+    margin-bottom: 0.01rem;
     color: #94a3b8;
-    font-size: 0.625rem;
+    font-size: 0.55rem;
+    line-height: 1.05;
   }
 
   .metric-value {
     display: block;
     overflow: hidden;
     color: #1e293b;
-    font-size: 0.75rem;
+    font-size: 0.66rem;
     font-weight: 650;
-    line-height: 1.2;
+    line-height: 1.1;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -168,7 +170,7 @@ export const MetricItem = styled.div`
 export const ProgressSummary = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
+  gap: 0.08rem;
 
   .progress-label {
     display: flex;
@@ -176,7 +178,7 @@ export const ProgressSummary = styled.div`
     justify-content: space-between;
     gap: 0.5rem;
     color: #64748b;
-    font-size: 0.6875rem;
+    font-size: 0.62rem;
   }
 
   .progress-value {
@@ -205,17 +207,22 @@ export const ProgressFill = styled.div<{ $percent: number; $complete?: boolean }
 export const CardFooter = styled(Row)`
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem;
+  gap: 0.4rem;
   margin-top: auto;
-  padding-top: 0.35rem;
+  padding-top: 0.16rem;
   border-top: 1px solid #f0f2f5;
+  .ant-btn {
+    height: 1.45rem;
+    padding: 0 0.45rem;
+    font-size: 0.64rem;
+  }
 `;
 
 export const FooterMeta = styled.div`
   min-width: 0;
   color: #94a3b8;
-  font-size: 0.625rem;
-  line-height: 1.30;
+  font-size: 0.55rem;
+  line-height: 1.2;
 
   .creator {
     max-width: 8.5rem;
