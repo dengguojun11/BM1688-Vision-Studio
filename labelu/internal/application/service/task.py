@@ -564,6 +564,9 @@ def _task_response_with_statics(
     audit = (
         TaskAnnotationAuditSummary(**audit_raw) if isinstance(audit_raw, dict) else None
     )
+    minimum_trainable = max(int(settings.EXPERIMENT_DATASET_MIN_SAMPLE_COUNT or 1), 1)
+    trainable_samples = int(getattr(audit, "passed_samples", 0) or 0) if audit else 0
+    can_train = bool(ready.get("training_ready")) and trainable_samples >= minimum_trainable
     return TaskResponseWithStatics(
         id=task.id,
         project_id=task.project_id,
@@ -611,6 +614,9 @@ def _task_response_with_statics(
             incomplete=statics.get(f"{task.id}_{SampleState.INCOMPLETE.value}", 0),
         ),
         training_ready=ready.get("training_ready"),
+        can_train=can_train,
+        trainable_sample_count=trainable_samples,
+        minimum_trainable_sample_count=minimum_trainable,
         annotation_audit=audit,
     )
 

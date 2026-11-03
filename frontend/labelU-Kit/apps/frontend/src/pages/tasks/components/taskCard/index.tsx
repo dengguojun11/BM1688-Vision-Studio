@@ -54,7 +54,13 @@ function MediaTypeTag({ type }: { type: MediaType }) {
   );
 }
 
-function TrainingReadyTag({ trainingReady }: { trainingReady: boolean }) {
+function TrainingReadyTag({
+  trainingReady,
+}: {
+  trainingReady: boolean;
+  trainableCount?: number | null;
+  minimumCount?: number | null;
+}) {
   return (
     <MediaBadge
       data-task-card-own-tooltip
@@ -143,7 +149,7 @@ const TaskCard = (props: TaskCardProps) => {
   const canStartTraining =
     isImageTask &&
     taskActuallyFinished &&
-    cardInfo.training_ready === true;
+    (cardInfo.can_train ?? cardInfo.training_ready) === true;
   const turnToAnnotation = (e: React.MouseEvent<HTMLElement>) => {
     if (isEnteringTask) {
       return;
@@ -269,12 +275,18 @@ const TaskCard = (props: TaskCardProps) => {
             <Tooltip
               placement="top"
               title={
-                cardInfo.training_ready
-                  ? '全局标签、有效拉框或明确负样本、标框几何均已达标，可用于训练'
-                  : '存在未选全局标签、未确认空框、无效拉框或标框几何异常的样本，不可用于训练'
+                cardInfo.can_train === true
+                  ? '已达到训练最低样本数，可用于训练'
+                  : cardInfo.training_ready
+                    ? `当前合格标注样本 ${cardInfo.trainable_sample_count ?? 0} 张，至少需要 ${cardInfo.minimum_trainable_sample_count ?? 50} 张，仍不可直接训练`
+                    : '存在未选全局标签、未确认空框、无效拉框或标框几何异常的样本，不可用于训练'
               }
             >
-              <TrainingReadyTag trainingReady={!!cardInfo.training_ready} />
+              <TrainingReadyTag
+                trainingReady={cardInfo.can_train === true}
+                trainableCount={cardInfo.trainable_sample_count}
+                minimumCount={cardInfo.minimum_trainable_sample_count}
+              />
             </Tooltip>
           )}
         </TagRow>

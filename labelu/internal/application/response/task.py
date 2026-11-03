@@ -91,6 +91,12 @@ class TaskResponseWithStatics(TaskResponse):
         default=None,
         description="IMAGE task: true when every blocking sample has global tags and valid configured geometry",
     )
+    can_train: Union[bool, None] = Field(
+        default=None,
+        description="Whether the task has enough qualified samples to be submitted for training",
+    )
+    trainable_sample_count: Union[int, None] = None
+    minimum_trainable_sample_count: Union[int, None] = None
     annotation_audit: Union[TaskAnnotationAuditSummary, None] = None
 
 

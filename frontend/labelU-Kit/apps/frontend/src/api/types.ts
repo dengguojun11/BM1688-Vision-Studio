@@ -615,6 +615,9 @@ export interface TaskResponse {
   stats: TaskStatics;
   /** IMAGE task: global tags + valid rects on every sample */
   training_ready?: boolean | null;
+  can_train?: boolean | null;
+  trainable_sample_count?: number | null;
+  minimum_trainable_sample_count?: number | null;
   annotation_audit?: TaskAnnotationAuditSummary | null;
   /** Created At description: task created at time */
   created_at?: string;
@@ -667,6 +670,9 @@ export interface TaskResponseWithStatics {
   updaters?: UserResp[];
   stats?: TaskStatics;
   training_ready?: boolean | null;
+  can_train?: boolean | null;
+  trainable_sample_count?: number | null;
+  minimum_trainable_sample_count?: number | null;
   annotation_audit?: TaskAnnotationAuditSummary | null;
   current_annotation_contract_id?: number | null;
   annotation_contract_revision?: number | null;
