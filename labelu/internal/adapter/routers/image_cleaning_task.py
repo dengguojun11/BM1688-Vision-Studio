@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Security, status
 from fastapi.security import HTTPAuthorizationCredentials
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from labelu.internal.application.command.image_cleaning_task import (
@@ -73,7 +74,8 @@ async def preview_image_cleaning(
     current_user: User = Depends(get_current_user),
 ):
     _ = authorization
-    data = cleaning_service.preview_task_images(
+    data = await run_in_threadpool(
+        cleaning_service.preview_task_images,
         db=db,
         task_id=task_id,
         cmd=cmd,
@@ -95,7 +97,8 @@ async def create_samples_with_image_cleaning(
     current_user: User = Depends(get_current_user),
 ):
     _ = authorization
-    submitted_ids, preview = cleaning_service.validate_task_cleaning(
+    submitted_ids, preview = await run_in_threadpool(
+        cleaning_service.validate_task_cleaning,
         db=db,
         task_id=task_id,
         cmd=cmd.cleaning,
@@ -108,7 +111,8 @@ async def create_samples_with_image_cleaning(
     ]
     # Delete duplicates before creating any samples.  A failed physical
     # deletion must not leave a partially-created batch behind.
-    cleaning_service.delete_task_cleaning_duplicates(
+    await run_in_threadpool(
+        cleaning_service.delete_task_cleaning_duplicates,
         db=db,
         task_id=task_id,
         duplicate_attachment_ids=preview.duplicate_attachment_ids,
