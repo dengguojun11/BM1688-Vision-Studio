@@ -245,21 +245,42 @@ function TaskProgressItem({
   cancelling,
   queueInfo,
 }: TaskProgressItemProps) {
-  const percent = Math.round((processed / Math.max(total, 1)) * 100);
+  const currentBatch = queueInfo?.current_job;
+  const showingCurrentBatch = Boolean(
+    currentBatch && currentBatch.job_id !== queueInfo?.job_id,
+  );
+  const displayedProcessed = showingCurrentBatch
+    ? currentBatch!.processed_count
+    : processed;
+  const displayedTotal = showingCurrentBatch ? currentBatch!.sample_count : total;
+  const percent = Math.round((displayedProcessed / Math.max(displayedTotal, 1)) * 100);
   const progressStatus = status === 'FAILED' || failed > 0 || abnormal ? 'exception' : isActiveJobStatus(status) ? 'active' : 'success';
   const content = (
     <ProgressItem style={queueInfo ? { cursor: 'pointer' } : undefined}>
-      <ProgressTitle>{title}</ProgressTitle>
+      <ProgressTitle>
+        {title}
+        {showingCurrentBatch ? (
+          <span style={{ color: '#667085', fontWeight: 400 }}> · 当前批次 #{currentBatch!.job_id}</span>
+        ) : null}
+      </ProgressTitle>
       <Progress percent={percent} size="small" status={progressStatus} showInfo={false} />
       <ProgressMeta>
         <span>
-          {processed}/{total}
+          {displayedProcessed}/{displayedTotal}
         </span>
-        {typeof success === 'number' && <SuccessText>成功 {success}</SuccessText>}
-        {typeof normal === 'number' && <SuccessText>正常 {normal}</SuccessText>}
-        {typeof incomplete === 'number' && <WarningText>不完整 {incomplete}</WarningText>}
-        {typeof abnormal === 'number' && <ErrorText>异常 {abnormal}</ErrorText>}
-        {failed > 0 && <ErrorText>失败 {failed}</ErrorText>}
+        {showingCurrentBatch ? (
+          <span style={{ color: '#667085' }}>
+            排队批次 #{queueInfo!.job_id}: {processed}/{total}
+          </span>
+        ) : (
+          <>
+            {typeof success === 'number' && <SuccessText>成功 {success}</SuccessText>}
+            {typeof normal === 'number' && <SuccessText>正常 {normal}</SuccessText>}
+            {typeof incomplete === 'number' && <WarningText>不完整 {incomplete}</WarningText>}
+            {typeof abnormal === 'number' && <ErrorText>异常 {abnormal}</ErrorText>}
+            {failed > 0 && <ErrorText>失败 {failed}</ErrorText>}
+          </>
+        )}
         {onCancel && (
           <Button type="link" danger size="small" loading={cancelling} onClick={onCancel} style={{ padding: 0 }}>
             取消
