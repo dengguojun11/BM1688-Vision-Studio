@@ -327,6 +327,47 @@ def _visual_cache_key(path: str | Path) -> tuple[str, int, int] | None:
     return str(resolved), int(stat.st_size), int(stat.st_mtime_ns)
 
 
+def _cached_phash(path: str | Path, cache: dict[Any, Any]) -> int | None:
+    """Fast 64-bit perceptual hash used only as a loose candidate filter.
+
+    Histogram comparison is intentionally kept as the final scoring function;
+    the perceptual hash only avoids running the expensive 50x60x60 histogram
+    comparison for image pairs that are obviously unrelated.
+    """
+    key = _visual_cache_key(path)
+    if key is None:
+        return None
+    cache_key = ("phash", *key)
+    if cache_key in cache:
+        return cache[cache_key]
+    try:
+        import cv2
+        import numpy as np
+
+        image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+        if image is None:
+            result = None
+        else:
+            resized = cv2.resize(image, (32, 32), interpolation=cv2.INTER_AREA)
+            coefficients = cv2.dct(np.float32(resized) / 255.0)
+            low = coefficients[:8, :8].reshape(-1)
+            median = np.median(low[1:])
+            result = 0
+            for index, value in enumerate(low):
+                if float(value) > float(median):
+                    result |= 1 << index
+    except Exception:
+        result = None
+    cache[cache_key] = result
+    return result
+
+
+def _phash_distance(left: int | None, right: int | None) -> int | None:
+    if left is None or right is None:
+        return None
+    return int((int(left) ^ int(right)).bit_count())
+
+
 def _cached_histogram(path: str | Path, cache: dict[tuple[str, int, int], Any]):
     key = _visual_cache_key(path)
     if key is None:
@@ -473,6 +514,15 @@ def _preview_paths(
 
     rows = list(items or [])
     ids = [_item_id(item, index) for index, item in enumerate(rows)]
+    feature_cache = _VISUAL_FEATURE_CACHE.get()
+    if feature_cache is None:
+        feature_cache = {}
+    visual_hashes = [
+        _cached_phash(_item_value(item, "path"), feature_cache)
+        if _item_value(item, "path") is not None
+        else None
+        for item in rows
+    ]
     duplicate_indexes: set[int] = set()
     pairs: list[dict[str, Any]] = []
     for left_index, left in enumerate(rows):
@@ -489,7 +539,14 @@ def _preview_paths(
             if left_sha and right_sha and left_sha == right_sha:
                 score = 1.0
             elif left_path is not None and _item_value(right, "path") is not None:
-                score = visual_similarity(left_path, _item_value(right, "path"))
+                # Perceptual hash is a cheap, loose gate.  Pairs far apart in
+                # the 64-bit hash cannot plausibly pass a 0.90+ histogram
+                # threshold, so avoid the expensive full histogram compare.
+                distance = _phash_distance(
+                    visual_hashes[left_index], visual_hashes[right_index]
+                )
+                if distance is None or distance <= 32:
+                    score = visual_similarity(left_path, _item_value(right, "path"))
             if score < threshold_value:
                 continue
             duplicate_indexes.add(right_index)
