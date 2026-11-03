@@ -564,9 +564,43 @@ def _task_response_with_statics(
     audit = (
         TaskAnnotationAuditSummary(**audit_raw) if isinstance(audit_raw, dict) else None
     )
+    # Reuse the existing training admission calculation instead of maintaining
+    # a second "can train" rule in the task response.
     minimum_trainable = max(int(settings.EXPERIMENT_DATASET_MIN_SAMPLE_COUNT or 1), 1)
-    trainable_samples = int(getattr(audit, "passed_samples", 0) or 0) if audit else 0
-    can_train = bool(ready.get("training_ready")) and trainable_samples >= minimum_trainable
+    training_sample_stats: dict[str, Any] | None = None
+    if (
+        task.media_type == MediaType.IMAGE.value
+        and bool(ready.get("training_ready"))
+    ):
+        done_samples = [
+            sample
+            for sample in crud_sample.list_by_task(db=db, task_id=int(task.id))
+            if str(sample.state or "") == SampleState.DONE.value
+            and sample.deleted_at is None
+        ]
+        trainable_samples = [
+            sample
+            for sample in filter_trainable_samples(
+                db, task=task, samples=done_samples
+            )
+            if getattr(sample, "file", None) is not None
+        ]
+        training_sample_stats = _training_sample_stats(
+            db,
+            task=task,
+            trainable_sample_count=len(trainable_samples),
+            done_sample_count=len(done_samples),
+            annotation_ready=bool(ready.get("training_ready")),
+        )
+    can_train = bool(training_sample_stats and training_sample_stats["can_train"])
+    trainable_samples_count = int(
+        (training_sample_stats or {}).get("trainable_sample_count", 0)
+    )
+    minimum_trainable = int(
+        (training_sample_stats or {}).get(
+            "minimum_trainable_sample_count", minimum_trainable
+        )
+    )
     return TaskResponseWithStatics(
         id=task.id,
         project_id=task.project_id,
@@ -615,7 +649,7 @@ def _task_response_with_statics(
         ),
         training_ready=ready.get("training_ready"),
         can_train=can_train,
-        trainable_sample_count=trainable_samples,
+        trainable_sample_count=trainable_samples_count,
         minimum_trainable_sample_count=minimum_trainable,
         annotation_audit=audit,
     )
