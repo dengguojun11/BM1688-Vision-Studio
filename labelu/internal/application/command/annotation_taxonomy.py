@@ -335,6 +335,7 @@ class UpdateAnnotationLabelCommand(BaseModel):
     version: int = Field(ge=1)
     label_key: Optional[str] = Field(default=None, min_length=1, max_length=128)
     label_value: Optional[str] = Field(default=None, min_length=1, max_length=128)
+    annotation_kind: Optional[str] = Field(default=None, max_length=32)
     color: Optional[str] = Field(default=None, max_length=32)
     attributes: Optional[List[AnnotationLabelAttributeInput]] = None
     description: Optional[str] = Field(default=None, max_length=512)
@@ -368,6 +369,15 @@ class UpdateAnnotationLabelCommand(BaseModel):
             raise ValueError(
                 "label_value 必须以英文字母开头且只能包含字母、数字、下划线"
             )
+        return normalized
+
+    @validator("annotation_kind", pre=True)
+    def _update_annotation_kind(cls, value):
+        if value is None:
+            return None
+        normalized = str(value).strip().lower()
+        if normalized not in {"bbox", "polygon"}:
+            raise ValueError("annotation_kind 仅支持 bbox 或 polygon")
         return normalized
 
     @validator("color")

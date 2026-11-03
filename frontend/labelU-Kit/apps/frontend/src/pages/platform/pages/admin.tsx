@@ -201,6 +201,7 @@ function GovernancePanel() {
           version: editingLabel.version,
           label_key: values.label_key.trim(),
           label_value: values.label_value.trim(),
+          annotation_kind: values.annotation_kind || 'bbox',
           color: values.color?.trim() || undefined,
           description: values.description?.trim() || null,
           status: editingLabel.status,
@@ -425,12 +426,15 @@ function GovernancePanel() {
           ) : null}
           <Form.Item
             label="标注类型"
-            extra={editingLabel ? '标签类型创建后不可修改；如需另一种几何类型，请新建标签。' : '矩形框用于目标检测；多边形用于实例轮廓或四角定位点。'}
+            extra={
+              editingLabel
+                ? '修改后只影响后续新建的任务和新生成的标签契约；已冻结的数据版本、训练作业和已发布模型保留原类型。'
+                : '矩形框用于目标检测；多边形用于实例轮廓或四角定位点。'
+            }
             name="annotation_kind"
           >
             <Select
               aria-label="当前标注类型"
-              disabled={Boolean(editingLabel)}
               options={[
                 { value: 'bbox', label: '矩形框（目标检测）' },
                 { value: 'polygon', label: '多边形（实例分割/定位点）' },
