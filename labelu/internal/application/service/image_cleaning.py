@@ -31,6 +31,11 @@ _DEFAULT_IMAGE_SIMILARITY = image_similarity
 IMAGE_CLEANING_POLICY_GROUP = "image_cleaning_policy"
 IMAGE_CLEANING_POLICY_ITEM = "policy"
 IMAGE_CLEANING_ALGORITHM_VERSION = "visual-v1"
+# Above this count the full 50x60x60 histogram comparison is quadratic in
+# both pair count and histogram size.  Large upload batches use the 64-bit
+# perceptual hash as the final visual score; small batches keep the existing
+# histogram scoring to avoid changing their semantics.
+FAST_PHASH_MIN_ROWS = 120
 IMAGE_CLEANING_CONFIG_BACKEND_LABEL = "MySQL 治理表（system_config_*）"
 IMAGE_CLEANING_PRESET_NAMES = ("simple", "standard", "strict")
 
@@ -523,6 +528,7 @@ def _preview_paths(
         else None
         for item in rows
     ]
+    use_phash_only = len(rows) >= FAST_PHASH_MIN_ROWS
     duplicate_indexes: set[int] = set()
     pairs: list[dict[str, Any]] = []
     for left_index, left in enumerate(rows):
@@ -539,13 +545,22 @@ def _preview_paths(
             if left_sha and right_sha and left_sha == right_sha:
                 score = 1.0
             elif left_path is not None and _item_value(right, "path") is not None:
-                # Perceptual hash is a cheap, loose gate.  Pairs far apart in
-                # the 64-bit hash cannot plausibly pass a 0.90+ histogram
-                # threshold, so avoid the expensive full histogram compare.
                 distance = _phash_distance(
                     visual_hashes[left_index], visual_hashes[right_index]
                 )
-                if distance is None or distance <= 32:
+                if use_phash_only:
+                    # Broad upload batches must return to the edit page in
+                    # seconds.  pHash is a bounded 64-bit visual signature and
+                    # is a better fit for this large-n path than N² histogram
+                    # correlation over 180k-bin vectors.
+                    score = (
+                        max(0.0, 1.0 - (float(distance) / 64.0))
+                        if distance is not None
+                        else 0.0
+                    )
+                elif distance is None or distance <= 32:
+                    # Small batches keep the established histogram scoring;
+                    # the hash is only a cheap candidate filter here.
                     score = visual_similarity(left_path, _item_value(right, "path"))
             if score < threshold_value:
                 continue
