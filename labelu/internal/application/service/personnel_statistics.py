@@ -59,6 +59,7 @@ def _empty_user_row(user: User, *, online: bool, latest_seen: datetime | None) -
         "username": user.username,
         "online": online,
         "last_seen_at": latest_seen,
+        "last_active_at": latest_seen,
         "last_business_at": None,
         "online_seconds": 0,
         "effective_work_seconds": 0,
@@ -164,6 +165,9 @@ def get_personnel_dashboard(
             rows[uid]["last_business_at"] = max(
                 filter(None, [rows[uid]["last_business_at"], *events])
             )
+            rows[uid]["last_active_at"] = max(
+                filter(None, [rows[uid]["last_active_at"], *events])
+            )
 
     # Review events: append-only decisions, one count per review/user/status.
     review_events: dict[int, list[AnnotationReviewEvent]] = defaultdict(list)
@@ -191,6 +195,11 @@ def get_personnel_dashboard(
                 or event.created_at > row["last_business_at"]
             ):
                 row["last_business_at"] = event.created_at
+            if event.created_at and (
+                row["last_active_at"] is None
+                or event.created_at > row["last_active_at"]
+            ):
+                row["last_active_at"] = event.created_at
         row["review_images"] = len(seen_images)
         row["review_approved"] = len(status_sets.get("APPROVED", set()))
         row["review_rejected"] = len(status_sets.get("REJECTED", set()))

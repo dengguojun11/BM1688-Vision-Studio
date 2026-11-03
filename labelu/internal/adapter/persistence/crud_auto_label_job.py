@@ -158,6 +158,80 @@ def get_active_by_task_id(db: Session, task_id: int) -> Optional[AutoLabelJob]:
     )
 
 
+def cancel_pending_for_task(
+    db: Session,
+    task_id: int,
+    *,
+    message: str = "superseded by a newer task preannotation job",
+) -> int:
+    """Cancel queued jobs when a full-task job replaces them.
+
+    A label/config update schedules a job containing every current sample.
+    Leaving older queued jobs for the same task makes the UI show a stale
+    0/N job while the worker is still working through redundant work.
+    PROCESSING jobs are deliberately left alone; their lease/fencing handles
+    takeover safety.
+    """
+    rows = (
+        db.query(AutoLabelJob)
+        .filter(
+            AutoLabelJob.task_id == int(task_id),
+            AutoLabelJob.job_kind == AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+            AutoLabelJob.status == AutoLabelStatus.PENDING.value,
+        )
+        .all()
+    )
+    now = datetime.now()
+    for job in rows:
+        job.status = AutoLabelStatus.CANCELLED.value
+        job.lease_owner = None
+        job.lease_expires_at = None
+        job.error_message = message[:4000]
+        job.updated_at = now
+    db.flush()
+    return len(rows)
+
+
+def cancel_superseded_pending_jobs(db: Session) -> int:
+    """Collapse stale queued full-task jobs into the newest full-task job."""
+    rows = (
+        db.query(AutoLabelJob)
+        .filter(
+            AutoLabelJob.job_kind == AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+            AutoLabelJob.status == AutoLabelStatus.PENDING.value,
+        )
+        .order_by(AutoLabelJob.task_id.asc(), AutoLabelJob.id.asc())
+        .all()
+    )
+    by_task: dict[int, list[AutoLabelJob]] = {}
+    for row in rows:
+        by_task.setdefault(int(row.task_id), []).append(row)
+    cancelled = 0
+    now = datetime.now()
+    for task_rows in by_task.values():
+        full_rows = [
+            row
+            for row in task_rows
+            if str(row.source_hint or "") in {"task_config_update", "labels_apply"}
+        ]
+        if not full_rows:
+            continue
+        latest_full = max(full_rows, key=lambda row: int(row.id))
+        for row in task_rows:
+            if int(row.id) >= int(latest_full.id):
+                continue
+            row.status = AutoLabelStatus.CANCELLED.value
+            row.lease_owner = None
+            row.lease_expires_at = None
+            row.error_message = (
+                f"superseded by full-task job {int(latest_full.id)}"
+            )
+            row.updated_at = now
+            cancelled += 1
+    db.flush()
+    return cancelled
+
+
 def update_status(db: Session, job: AutoLabelJob, status: str, **kwargs) -> AutoLabelJob:
     job.status = status
     for k, v in kwargs.items():

@@ -57,6 +57,7 @@ class PersonnelUserRow(BaseModel):
     username: str
     online: bool = False
     last_seen_at: Optional[datetime] = None
+    last_active_at: Optional[datetime] = None
     last_business_at: Optional[datetime] = None
     online_seconds: int = 0
     effective_work_seconds: int = 0

@@ -43,9 +43,6 @@ function formatTime(value?: string | null) {
 
 function statusTag(row: PersonnelUserRow) {
   if (row.online) return <Tag color="green">在线</Tag>;
-  if (row.last_business_at || row.annotation_edits || row.review_images) {
-    return <Tag color="blue">今日有操作</Tag>;
-  }
   return <Tag>离线</Tag>;
 }
 
@@ -98,6 +95,13 @@ export default function PersonnelStatisticsPage() {
         key: 'status',
         width: 110,
         render: (_, row) => statusTag(row),
+      },
+      {
+        title: '最后活动',
+        dataIndex: 'last_active_at',
+        key: 'last_active_at',
+        width: 180,
+        render: (value) => formatTime(value),
       },
       {
         title: '今日在线',
@@ -156,7 +160,7 @@ export default function PersonnelStatisticsPage() {
         render: (_, row) => `${row.review_arbitrated} / ${row.review_invalidated}`,
       },
       {
-        title: '最后操作',
+        title: '最后有效操作',
         key: 'last_business',
         width: 180,
         render: (_, row) => formatTime(row.last_business_at),

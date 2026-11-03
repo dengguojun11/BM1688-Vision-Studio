@@ -410,6 +410,25 @@ def schedule_auto_preannotate_for_task_samples(
     *, db, task_id: int, user_id: int, source_hint: str
 ) -> None:
     """Retry existing samples after a task's label contract is saved."""
+    # A full-task retry supersedes every older queued job for this task.
+    # Without this, repeated label/config saves leave several 0/N rows and the
+    # UI can keep polling an older job while the worker drains the queue.
+    from labelu.internal.common.db import begin_transaction, session_scope
+    from labelu.internal.adapter.persistence import crud_auto_label_job
+
+    with session_scope() as cancel_db:
+        with begin_transaction(cancel_db):
+            cancelled = crud_auto_label_job.cancel_pending_for_task(
+                cancel_db, int(task_id)
+            )
+        if cancelled:
+            logger.info(
+                "{} superseded_pending_jobs task_id={} count={}",
+                _LOG,
+                int(task_id),
+                cancelled,
+            )
+
     samples = crud_sample.list_by_task(db=db, task_id=int(task_id))
     sample_ids = [int(sample.id) for sample in samples if getattr(sample, "id", None)]
     if sample_ids:

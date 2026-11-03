@@ -75,6 +75,22 @@ def run_worker_loop(*, once: bool = False) -> None:
         raise RuntimeError(
             "AUTO_PREANNOTATE_DEDICATED_WORKER_ENABLED=false，拒绝启动预标注 Worker"
         )
+    from labelu.internal.adapter.persistence import crud_auto_label_job
+    from labelu.internal.common.db import begin_transaction, session_scope
+
+    try:
+        with session_scope() as db:
+            with begin_transaction(db):
+                cancelled = crud_auto_label_job.cancel_superseded_pending_jobs(db)
+            if cancelled:
+                logger.info(
+                    "{} superseded_pending_jobs count={}",
+                    _LOG,
+                    cancelled,
+                )
+    except Exception:
+        logger.exception("{} failed to reconcile pending jobs", _LOG)
+
     interval = max(
         1.0,
         float(getattr(settings, "AUTO_PREANNOTATE_WORKER_INTERVAL_SECONDS", 5.0)),

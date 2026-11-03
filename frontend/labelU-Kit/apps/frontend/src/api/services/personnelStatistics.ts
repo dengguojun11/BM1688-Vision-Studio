@@ -21,6 +21,7 @@ export interface PersonnelUserRow {
   username: string;
   online: boolean;
   last_seen_at?: string | null;
+  last_active_at?: string | null;
   last_business_at?: string | null;
   online_seconds: number;
   effective_work_seconds: number;

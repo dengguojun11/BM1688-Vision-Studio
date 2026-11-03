@@ -1542,3 +1542,87 @@ def test_auto_preannotate_ai_detection_fallback_respects_sample_cap(
     )
 
     assert calls == []
+
+def test_pending_full_task_jobs_are_superseded(db: Session) -> None:
+    user = db.query(User).filter(User.username == "test@example.com").first()
+    task = _create_image_task(
+        db,
+        created_by=user.id,
+        name="supersede automatic global tags",
+        config={"tools": []},
+    )
+    with begin_transaction(db):
+        first = crud_auto_label_job.create(
+            db=db,
+            task_id=task.id,
+            user_id=user.id,
+            sample_count=10,
+            filter_by_labels=True,
+            job_kind=crud_auto_label_job.AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+            source_hint="task_config_update",
+            payload_json=json.dumps({"sample_ids": [1, 2]}),
+        )
+        second = crud_auto_label_job.create(
+            db=db,
+            task_id=task.id,
+            user_id=user.id,
+            sample_count=10,
+            filter_by_labels=True,
+            job_kind=crud_auto_label_job.AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+            source_hint="labels_apply",
+            payload_json=json.dumps({"sample_ids": [1, 2]}),
+        )
+
+    with begin_transaction(db):
+        cancelled = crud_auto_label_job.cancel_superseded_pending_jobs(db)
+
+    assert cancelled == 1
+    db.expire_all()
+    assert crud_auto_label_job.get(db, first.id).status == "CANCELLED"
+    assert crud_auto_label_job.get(db, second.id).status == "PENDING"
+
+
+def test_cancel_pending_for_task_keeps_processing_job(db: Session) -> None:
+    user = db.query(User).filter(User.username == "test@example.com").first()
+    task = _create_image_task(
+        db,
+        created_by=user.id,
+        name="cancel queued automatic global tags",
+        config={"tools": []},
+    )
+    with begin_transaction(db):
+        pending = crud_auto_label_job.create(
+            db=db,
+            task_id=task.id,
+            user_id=user.id,
+            sample_count=10,
+            filter_by_labels=True,
+            job_kind=crud_auto_label_job.AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+            source_hint="sample_create",
+            payload_json=json.dumps({"sample_ids": [1]}),
+        )
+        processing = crud_auto_label_job.create(
+            db=db,
+            task_id=task.id,
+            user_id=user.id,
+            sample_count=10,
+            filter_by_labels=True,
+            job_kind=crud_auto_label_job.AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+            source_hint="sample_create",
+            payload_json=json.dumps({"sample_ids": [2]}),
+        )
+        crud_auto_label_job.update_status(
+            db,
+            processing,
+            "PROCESSING",
+            lease_owner="worker",
+            lease_expires_at=auto_sample_service.datetime(2099, 1, 1),
+        )
+
+    with begin_transaction(db):
+        cancelled = crud_auto_label_job.cancel_pending_for_task(db, task.id)
+
+    assert cancelled == 1
+    db.expire_all()
+    assert crud_auto_label_job.get(db, pending.id).status == "CANCELLED"
+    assert crud_auto_label_job.get(db, processing.id).status == "PROCESSING"
