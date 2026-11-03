@@ -212,7 +212,7 @@ function TaskQueuePopover({ queue }: { queue: AutoLabelQueueResponse }) {
           {isCurrent
             ? '该批次正在执行。'
             : sameTask
-              ? `同一任务的上一个批次 #{current?.job_id} 正在执行，完成后才会执行该批次。`
+              ? `同一任务的上一个批次 #${current?.job_id} 正在执行，完成后才会执行该批次。`
               : '该批次在队列中等待执行。'}
         </div>
         <div>
