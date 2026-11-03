@@ -168,7 +168,6 @@ export const PLATFORM_NAVIGATION: ReadonlyArray<PlatformNavigationGroup> = [
       { key: 'admin-expert-s3', label: '专家 S3 回流配置', to: '/admin?view=expert-s3-config' },
       { key: 'admin-model-access', label: '模型接入配置', to: '/admin?view=model-access-config' },
       { key: 'admin-image-cleaning', label: '图片清洗配置', to: '/admin?view=image-cleaning' },
-      { key: 'admin-annotation-settings', label: '标签与标注设置', to: '/annotation-settings' },
     ],
   },
   {
