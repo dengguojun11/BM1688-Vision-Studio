@@ -118,6 +118,47 @@ function getAnnotationCount(_result: string | object) {
   return result;
 }
 
+const GEOMETRY_TOOL_NAMES = new Set(['rectTool', 'polygonTool', 'pointTool', 'lineTool', 'cuboidTool']);
+
+/**
+ * A blank image must not be submitted as DONE.  For geometry tasks the user
+ * must draw at least one item or explicitly mark the image as a negative
+ * sample; tag/text-only tasks may use their configured values.
+ */
+function hasEffectiveAnnotation(
+  result: string | object,
+  taskTools: Array<Record<string, any>> | undefined,
+  isNegative: boolean,
+) {
+  if (isNegative) {
+    return true;
+  }
+  let parsed: Record<string, any>;
+  try {
+    parsed = typeof result === 'object' ? result : JSON.parse(result);
+  } catch {
+    return false;
+  }
+  const tools = Array.isArray(taskTools) ? taskTools : [];
+  const configuredNames = new Set(
+    tools.map((tool) => String(tool?.tool || tool?.name || '')).filter(Boolean),
+  );
+  const hasGeometryTask = [...configuredNames].some((name) => GEOMETRY_TOOL_NAMES.has(name));
+  if (hasGeometryTask) {
+    return getAnnotationCount(parsed) > 0;
+  }
+  for (const [name, payload] of Object.entries(parsed || {})) {
+    if (!name.endsWith('Tool') || !payload || typeof payload !== 'object') {
+      continue;
+    }
+    const items = (payload as any).result || (payload as any).annotations || [];
+    if (Array.isArray(items) && items.length > 0) {
+      return true;
+    }
+  }
+  return getAnnotationCount(parsed) > 0;
+}
+
 export interface AnnotationLoaderData {
   sample: SampleResponse;
   samples: SampleListResponse;
@@ -481,6 +522,10 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
     if (!validateNegativeSampleResult(result)) {
       return false;
     }
+    if (!hasEffectiveAnnotation(result, task.config.tools, isNegativeSample)) {
+      message.warning('当前没有有效标注内容，请完成拉框/多边形或标记负样本后再保存');
+      return false;
+    }
     const latestUpdatedAt = latestSampleUpdatedAtRef.current[+innerSample.id];
     const sampleForSave = latestUpdatedAt
       ? { ...currentSample, updated_at: latestUpdatedAt }
@@ -626,6 +671,11 @@ const AnnotationRightCorner = ({ noSave, fetchNext, totalSize, isLastPage }: Ann
         toolName: 'textTool',
         result: generateDefaultValues(textConfig?.config.attributes),
       };
+    }
+
+    if (!hasEffectiveAnnotation(result, taskTools, negativeSampleSnapshot)) {
+      message.warning('当前没有有效标注内容，请完成拉框/多边形或标记负样本后再保存');
+      return false;
     }
 
     const body = withExplicitNegativeSample(

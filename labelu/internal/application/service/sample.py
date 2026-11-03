@@ -1159,7 +1159,17 @@ async def patch(
     sample_name = sample.file.filename if sample.file is not None else None
 
     # update
-    sample_obj_in = {}
+    requested_done = cmd.state not in {
+        SampleState.SKIPPED.value,
+        SampleState.NEW.value,
+    }
+    blank_done_blocked = requested_done and not _effective_annotation_content(
+        normalized_data,
+        task_config,
+        is_negative_sample=is_negative_sample,
+        annotated_count=cmd.annotated_count,
+    )
+    sample_obj_in: dict[str, Any] = {}
     if cmd.state == SampleState.SKIPPED.value:
         sample_obj_in[TaskSample.state.key] = SampleState.SKIPPED.value
     elif cmd.state == SampleState.NEW.value:
@@ -1169,7 +1179,16 @@ async def patch(
     else:  # can be None, or DONE
         sample_obj_in[TaskSample.data.key] = json.dumps(normalized_data, ensure_ascii=False)
         sample_obj_in[TaskSample.annotated_count.key] = cmd.annotated_count
-        sample_obj_in[TaskSample.state.key] = SampleState.DONE.value
+        if blank_done_blocked:
+            # A blank save must not turn an unannotated image into "已标注".
+            # Keep a cleared sample out of the completed set as well.
+            sample_obj_in[TaskSample.state.key] = (
+                SampleState.NEW.value
+                if str(sample.state or "") == SampleState.NEW.value
+                else SampleState.INCOMPLETE.value
+            )
+        else:
+            sample_obj_in[TaskSample.state.key] = SampleState.DONE.value
     has_actual_changes = _sample_patch_has_actual_changes(sample, sample_obj_in)
     previous_sample_audit = (
         audit_one_sample(sample, task_config) if has_actual_changes else None
@@ -1422,6 +1441,58 @@ def _normalize_annotation_payload(raw: Any) -> str:
     if isinstance(parsed, str):
         return parsed
     return json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _effective_annotation_content(
+    normalized_data: dict[str, Any],
+    task_config: dict[str, Any],
+    *,
+    is_negative_sample: bool,
+    annotated_count: int = 0,
+) -> bool:
+    """Whether a save contains real annotation work rather than a bare save.
+
+    Geometry tasks must have at least one geometry item (or be an explicit
+    negative sample).  Tag/text-only tasks may use their configured tag values.
+    This keeps a blank image from being counted as an annotated dataset sample.
+    """
+    if is_negative_sample:
+        return True
+
+    configured_tools = {
+        str(item.get("tool") or item.get("name") or "").strip()
+        for item in (task_config.get("tools") or [])
+        if isinstance(item, dict)
+    }
+    # Legacy tests/tasks without a structured tool config keep their previous
+    # count-based behavior; real tasks always have a tools list.
+    if not configured_tools:
+        return int(annotated_count or 0) > 0
+
+    parsed = _json_loads_maybe(normalized_data.get("result")) if isinstance(normalized_data, dict) else None
+    if isinstance(parsed, str):
+        parsed = _json_loads_maybe(parsed)
+    if not isinstance(parsed, dict):
+        return False
+
+    geometry_tools = {"rectTool", "polygonTool", "pointTool", "lineTool", "cuboidTool"}
+    has_geometry_task = bool(configured_tools & geometry_tools)
+
+    for tool_name, tool_payload in parsed.items():
+        if not str(tool_name).endswith("Tool"):
+            continue
+        if not isinstance(tool_payload, dict):
+            items = tool_payload if isinstance(tool_payload, list) else []
+        else:
+            items = tool_payload.get("result") or tool_payload.get("annotations") or []
+        if not items:
+            continue
+        if tool_name in geometry_tools:
+            return True
+        if not has_geometry_task:
+            # Video/audio and tag-only tasks use their own non-geometry tools.
+            return True
+    return False
 
 
 def _sample_patch_has_actual_changes(sample: TaskSample, sample_obj_in: dict[str, Any]) -> bool:
