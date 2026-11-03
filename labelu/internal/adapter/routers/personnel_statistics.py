@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query, Security, status
+from fastapi import APIRouter, Depends, Query, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -116,16 +116,25 @@ class OnlineUsersResponse(BaseModel):
 )
 def heartbeat(
     cmd: HeartbeatCommand,
+    request: Request,
     authorization: HTTPAuthorizationCredentials = Security(security),
     db: Session = Depends(db_module.get_db),
     current_user: User = Depends(get_current_user),
 ):
     _ = authorization
+    forwarded_for = request.headers.get("x-forwarded-for", "")
+    ip = (
+        forwarded_for.split(",", 1)[0].strip()
+        or request.headers.get("x-real-ip")
+        or (request.client.host if request.client else None)
+    )
     row = user_activity.record_heartbeat(
         db,
         user=current_user,
         session_id=cmd.session_id,
         path=cmd.path,
+        ip=ip,
+        user_agent=request.headers.get("user-agent"),
     )
     return OkResp[HeartbeatResponse](
         data=HeartbeatResponse(

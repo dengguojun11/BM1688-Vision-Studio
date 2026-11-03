@@ -258,9 +258,22 @@ function TaskProgressItem({
   );
 
   if (!queueInfo) return content;
+  const current = queueInfo.current_job;
+  const queueSummary = (
+    <div style={{ fontSize: 11, color: '#667085', marginTop: 2 }}>
+      {current
+        ? `当前：${current.task_name} ${current.processed_count}/${current.sample_count}`
+        : '当前：等待 Worker 领取'}
+      {queueInfo.queue_position > 0 ? ` · 排队第 ${queueInfo.queue_position} 位` : ''}
+      {` · 预计 ${queueWaitText(queueInfo.estimated_wait_seconds)}后开始 · 本任务剩余 ${queueInfo.remaining_samples} 张`}
+    </div>
+  );
   return (
     <Popover content={<TaskQueuePopover queue={queueInfo} />} title={null} trigger="click" placement="bottomLeft">
-      {content}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {content}
+        {queueSummary}
+      </div>
     </Popover>
   );
 }
