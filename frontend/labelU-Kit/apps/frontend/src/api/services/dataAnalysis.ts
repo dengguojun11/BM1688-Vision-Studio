@@ -103,6 +103,7 @@ export interface DataAnalysisRecommendation {
 
 export interface DataAnalysisContractOption {
   contract_id: number | null;
+  contract_revision: number | null;
   contract_label: string;
   label_count: number;
 }

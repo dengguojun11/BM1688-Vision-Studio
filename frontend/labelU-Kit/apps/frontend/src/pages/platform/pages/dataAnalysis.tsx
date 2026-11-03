@@ -321,7 +321,7 @@ export default function DataAnalysisPage() {
               { value: 0, label: '全部标签契约' },
               ...(query.data?.contract_options ?? []).map((option) => ({
                 value: Number(option.contract_id),
-                label: `${option.contract_label}（${option.label_count} 个标签）`,
+                label: `${option.contract_label} · 标签契约 r${option.contract_revision ?? '-'}（${option.label_count} 个标签）`,
               })),
             ]}
           />

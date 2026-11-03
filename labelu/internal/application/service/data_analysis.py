@@ -326,6 +326,7 @@ def get_data_analysis(
     contract_options = [
         {
             "contract_id": group["contract_id"],
+            "contract_revision": group["contract_revision"],
             "contract_label": " / ".join(group["task_names"]),
             "label_count": len(group["labels"]),
         }
