@@ -11,6 +11,7 @@ import hashlib
 import json
 import math
 from contextvars import ContextVar
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -373,6 +374,24 @@ def _phash_distance(left: int | None, right: int | None) -> int | None:
     return int((int(left) ^ int(right)).bit_count())
 
 
+def _feature_similarity(first: Any, second: Any) -> float:
+    if first is None or second is None:
+        return 0.0
+    try:
+        import numpy as np
+
+        left = np.asarray(first, dtype=np.float32).reshape(-1)
+        right = np.asarray(second, dtype=np.float32).reshape(-1)
+        if left.size == 0 or left.size != right.size:
+            return 0.0
+        denominator = float(np.linalg.norm(left) * np.linalg.norm(right))
+        if denominator <= 1e-8:
+            return 0.0
+        return max(0.0, min(1.0, float(np.dot(left, right) / denominator)))
+    except Exception:
+        return 0.0
+
+
 def _cached_histogram(path: str | Path, cache: dict[tuple[str, int, int], Any]):
     key = _visual_cache_key(path)
     if key is None:
@@ -522,13 +541,24 @@ def _preview_paths(
     feature_cache = _VISUAL_FEATURE_CACHE.get()
     if feature_cache is None:
         feature_cache = {}
-    visual_hashes = [
-        _cached_phash(_item_value(item, "path"), feature_cache)
-        if _item_value(item, "path") is not None
-        else None
-        for item in rows
-    ]
     use_phash_only = len(rows) >= FAST_PHASH_MIN_ROWS
+    paths = [_item_value(item, "path") for item in rows]
+    if use_phash_only:
+        # Image decode is the expensive part of the large-batch path.  OpenCV
+        # releases the GIL, so a bounded number of worker threads reduces an
+        # 800-image upload from ~16s to a few seconds without touching the web
+        # event loop or the GPU (pHash is not a GPU-friendly operation).
+        def hash_path(path):
+            return _cached_phash(path, feature_cache) if path is not None else None
+
+        with ThreadPoolExecutor(max_workers=min(8, max(1, len(paths)))) as executor:
+            visual_hashes = list(executor.map(hash_path, paths))
+    else:
+        visual_hashes = [
+            _cached_phash(path, feature_cache) if path is not None else None
+            for path in paths
+        ]
+
     duplicate_indexes: set[int] = set()
     pairs: list[dict[str, Any]] = []
     for left_index, left in enumerate(rows):
@@ -545,23 +575,25 @@ def _preview_paths(
             if left_sha and right_sha and left_sha == right_sha:
                 score = 1.0
             elif left_path is not None and _item_value(right, "path") is not None:
-                distance = _phash_distance(
-                    visual_hashes[left_index], visual_hashes[right_index]
-                )
                 if use_phash_only:
-                    # Broad upload batches must return to the edit page in
-                    # seconds.  pHash is a bounded 64-bit visual signature and
-                    # is a better fit for this large-n path than N² histogram
-                    # correlation over 180k-bin vectors.
+                    distance = _phash_distance(
+                        visual_hashes[left_index], visual_hashes[right_index]
+                    )
                     score = (
                         max(0.0, 1.0 - (float(distance) / 64.0))
                         if distance is not None
                         else 0.0
                     )
-                elif distance is None or distance <= 32:
+                else:
                     # Small batches keep the established histogram scoring;
                     # the hash is only a cheap candidate filter here.
-                    score = visual_similarity(left_path, _item_value(right, "path"))
+                    distance = _phash_distance(
+                        visual_hashes[left_index], visual_hashes[right_index]
+                    )
+                    if distance is None or distance <= 32:
+                        score = visual_similarity(
+                            left_path, _item_value(right, "path")
+                        )
             if score < threshold_value:
                 continue
             duplicate_indexes.add(right_index)
