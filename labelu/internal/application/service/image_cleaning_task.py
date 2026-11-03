@@ -167,7 +167,12 @@ def _candidate_rows(
 
 
 def _protected_rows(
-    db: Session, task_id: int, candidate_ids: set[int], cleanup_paths: list[Path]
+    db: Session,
+    task_id: int,
+    candidate_ids: set[int],
+    cleanup_paths: list[Path],
+    *,
+    candidate_sha256: set[str] | None = None,
 ) -> list[dict]:
     """Return readable existing sample/pre-annotation images before candidates."""
 
@@ -176,16 +181,21 @@ def _protected_rows(
     protected_ids = _active_reference_ids(db, task_id) - set(candidate_ids)
     if not protected_ids:
         return []
-    attachments = (
-        db.query(TaskAttachment)
-        .filter(
-            TaskAttachment.id.in_(tuple(protected_ids)),
-            TaskAttachment.task_id == int(task_id),
-            TaskAttachment.deleted_at.is_(None),
-        )
-        .order_by(TaskAttachment.id.asc())
-        .all()
+    query = db.query(TaskAttachment).filter(
+        TaskAttachment.id.in_(tuple(protected_ids)),
+        TaskAttachment.task_id == int(task_id),
+        TaskAttachment.deleted_at.is_(None),
     )
+    # Large upload batches are common on this page.  Loading every historical
+    # task image and comparing it against every upload is quadratic and makes
+    # the edit page appear frozen.  In fast mode exact content hashes still
+    # protect all already-used images; visual duplicate detection remains
+    # complete among the new upload set.
+    if candidate_sha256 is not None:
+        if not candidate_sha256:
+            return []
+        query = query.filter(TaskAttachment.sha256.in_(tuple(candidate_sha256)))
+    attachments = query.order_by(TaskAttachment.id.asc()).all()
     protected: list[dict] = []
     for attachment in attachments:
         if getattr(attachment, "data_source_id", None):
@@ -229,8 +239,19 @@ def _preview(
             db, task_id, candidate_ids, cleanup_paths
         )
         valid_candidate_ids = [int(item["id"]) for item in candidates]
+        candidate_sha256 = {
+            str(item.get("sha256") or "").strip().lower()
+            for item in candidates
+            if str(item.get("sha256") or "").strip()
+        }
         protected = _protected_rows(
-            db, task_id, set(valid_candidate_ids), cleanup_paths
+            db,
+            task_id,
+            set(valid_candidate_ids),
+            cleanup_paths,
+            candidate_sha256=(
+                candidate_sha256 if len(candidates) >= 120 else None
+            ),
         )
         all_items = protected + candidates
         threshold = float(policy["presets"][policy["active_preset"]]["threshold"])
