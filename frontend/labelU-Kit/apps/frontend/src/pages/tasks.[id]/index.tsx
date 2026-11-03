@@ -10,7 +10,7 @@ import styled from 'styled-components';
 import { DownOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useTranslation } from '@labelu/i18n';
 
-import type { AutoLabelJobResponse, PreAnnotationFileResponse, PreannotateJobResponse, SampleResponse } from '@/api/types';
+import type { AutoLabelJobResponse, AutoLabelQueueResponse, PreAnnotationFileResponse, PreannotateJobResponse, SampleResponse } from '@/api/types';
 import { MediaType, TaskStatus } from '@/api/types';
 import ExportPortal from '@/components/ExportPortal';
 import type { TaskLoaderResult } from '@/loaders/task.loader';
@@ -22,6 +22,7 @@ import {
   createAutoLabelJob,
   getActiveAutoLabelJob,
   getAutoLabelJobStatus,
+  getAutoLabelJobQueue,
   cancelAutoLabelJob,
   getLabelDatasetImportJob,
   getActiveLabelDatasetImportJob,
@@ -171,6 +172,51 @@ interface TaskProgressItemProps {
   abnormal?: number;
   onCancel?: () => void;
   cancelling?: boolean;
+  queueInfo?: AutoLabelQueueResponse | null;
+}
+
+function queueWaitText(seconds?: number | null) {
+  if (seconds === null || seconds === undefined) return '暂无法估算';
+  if (seconds < 60) return `约 ${Math.max(1, Math.round(seconds))} 秒`;
+  if (seconds < 3600) return `约 ${Math.ceil(seconds / 60)} 分钟`;
+  return `约 ${(seconds / 3600).toFixed(1)} 小时`;
+}
+
+function queueTimeText(value?: string | null) {
+  if (!value) return '-';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false });
+}
+
+function TaskQueuePopover({ queue }: { queue: AutoLabelQueueResponse }) {
+  const current = queue.current_job;
+  return (
+    <div style={{ width: 330, fontSize: 12, lineHeight: 1.7 }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>执行队列</div>
+      {current ? (
+        <div>
+          当前处理：<strong>{current.task_name}</strong>
+          <br />
+          进度：{current.processed_count}/{current.sample_count}，剩余 {current.remaining_count} 张
+        </div>
+      ) : (
+        <div>当前没有正在执行的任务。</div>
+      )}
+      <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0' }}>
+        <div>
+          本任务排队位置：<strong>第 {queue.queue_position} 位</strong>
+          {queue.ahead_count > 0 ? `，前面还有 ${queue.ahead_count} 个任务` : '，即将执行'}
+        </div>
+        <div>前方剩余图片：{queue.ahead_remaining_samples} 张</div>
+        <div>本任务剩余：{queue.remaining_samples} 张</div>
+        <div>
+          预计等待：<strong>{queueWaitText(queue.estimated_wait_seconds)}</strong>
+        </div>
+        <div>预计开始：{queueTimeText(queue.estimated_start_at)}</div>
+        <div style={{ color: '#8c8c8c', marginTop: 6 }}>{queue.note}</div>
+      </div>
+    </div>
+  );
 }
 
 function TaskProgressItem({
@@ -185,12 +231,12 @@ function TaskProgressItem({
   abnormal,
   onCancel,
   cancelling,
+  queueInfo,
 }: TaskProgressItemProps) {
   const percent = Math.round((processed / Math.max(total, 1)) * 100);
   const progressStatus = status === 'FAILED' || failed > 0 || abnormal ? 'exception' : isActiveJobStatus(status) ? 'active' : 'success';
-
-  return (
-    <ProgressItem>
+  const content = (
+    <ProgressItem style={queueInfo ? { cursor: 'pointer' } : undefined}>
       <ProgressTitle>{title}</ProgressTitle>
       <Progress percent={percent} size="small" status={progressStatus} showInfo={false} />
       <ProgressMeta>
@@ -209,6 +255,13 @@ function TaskProgressItem({
         )}
       </ProgressMeta>
     </ProgressItem>
+  );
+
+  if (!queueInfo) return content;
+  return (
+    <Popover content={<TaskQueuePopover queue={queueInfo} />} title={null} trigger="click" placement="bottomLeft">
+      {content}
+    </Popover>
   );
 }
 
@@ -256,6 +309,7 @@ const Samples = () => {
   });
 
   const [batchJob, setBatchJob] = useState<AutoLabelJobResponse | null>(null);
+  const [batchQueue, setBatchQueue] = useState<AutoLabelQueueResponse | null>(null);
   const [yoloPreannotateJob, setYoloPreannotateJob] = useState<PreannotateJobResponse | null>(null);
   const [aiDetectionPreannotateJob, setAiDetectionPreannotateJob] = useState<PreannotateJobResponse | null>(null);
   const [locateAnythingPreannotateJob, setLocateAnythingPreannotateJob] = useState<PreannotateJobResponse | null>(null);
@@ -279,6 +333,28 @@ const Samples = () => {
   useEffect(() => {
     setSampleSearchDraft(sampleSearch);
   }, [sampleSearch]);
+
+  useEffect(() => {
+    if (!batchJob || !['PENDING', 'PROCESSING'].includes(batchJob.status)) {
+      setBatchQueue(null);
+      return;
+    }
+    let disposed = false;
+    const loadQueue = async () => {
+      try {
+        const response = await getAutoLabelJobQueue(taskId, batchJob.id);
+        if (!disposed) setBatchQueue(response.data);
+      } catch {
+        // Queue metadata is supplementary; the progress bar still works.
+      }
+    };
+    void loadQueue();
+    const timer = window.setInterval(loadQueue, 5000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [batchJob?.id, batchJob?.status, taskId]);
 
   // The extension menu is rendered outside React.  Listen for its explicit
   // action event so opening AI batch labeling does not depend on finding and
@@ -1160,6 +1236,7 @@ const Samples = () => {
                         total={batchJob.sample_count}
                         success={batchJob.success_count}
                         failed={batchJob.failed_count}
+                        queueInfo={batchQueue}
                         onCancel={
                           isActiveJobStatus(batchJob.status) && currentAutoLabelJobId ? handleCancelBatchAutoLabel : undefined
                         }

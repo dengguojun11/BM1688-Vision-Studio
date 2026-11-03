@@ -164,6 +164,32 @@ export interface AutoLabelJobResponse {
   created_at?: string | null;
 }
 
+export interface AutoLabelQueueJob {
+  job_id: number;
+  task_id: number;
+  task_name: string;
+  status: string;
+  processed_count: number;
+  sample_count: number;
+  remaining_count: number;
+}
+
+export interface AutoLabelQueueResponse {
+  job_id: number;
+  status: string;
+  queue_position: number;
+  ahead_count: number;
+  queue_total: number;
+  ahead_remaining_samples: number;
+  remaining_samples: number;
+  current_job?: AutoLabelQueueJob | null;
+  ahead_jobs: AutoLabelQueueJob[];
+  estimated_wait_seconds?: number | null;
+  estimated_start_at?: string | null;
+  rate_seconds_per_sample?: number | null;
+  note: string;
+}
+
 export interface SampleBoundsCheckJobResponse {
   id: number;
   task_id: number;

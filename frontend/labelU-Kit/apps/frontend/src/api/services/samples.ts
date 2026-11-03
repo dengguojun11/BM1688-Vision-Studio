@@ -6,6 +6,7 @@ import {
   type AutoLabelCommand,
   type BatchAutoLabelCommand,
   type AutoLabelJobResponse,
+  type AutoLabelQueueResponse,
   type CopySampleToTaskCommand,
   type PreannotateJobResponse,
   type PreannotateModelsResponse,
@@ -227,6 +228,10 @@ export async function createAutoLabelJob(
 
 export async function getAutoLabelJobStatus(taskId: number, jobId: number): Promise<{ data: AutoLabelJobResponse }> {
   return await request.get(`/v1/tasks/${taskId}/auto_label_job/${jobId}`);
+}
+
+export async function getAutoLabelJobQueue(taskId: number, jobId: number): Promise<{ data: AutoLabelQueueResponse }> {
+  return await request.get(`/v1/tasks/${taskId}/auto_label_job/${jobId}/queue`);
 }
 
 export async function getActiveAutoLabelJob(taskId: number): Promise<{ data: AutoLabelJobResponse | null }> {

@@ -4,6 +4,8 @@ import math
 import re
 import time
 import uuid
+from datetime import datetime, timedelta
+from statistics import median
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -17,6 +19,10 @@ from labelu.internal.adapter.persistence import crud_pre_annotation, crud_sample
 from labelu.internal.adapter.persistence import crud_auto_label_job
 from labelu.internal.application.command.auto_label import AutoLabelCommand, BatchAutoLabelCommand
 from labelu.internal.application.response.auto_label import AutoLabelResponse, AutoLabelJobResponse
+from labelu.internal.application.response.auto_label import (
+    AutoLabelQueueJob,
+    AutoLabelQueueResponse,
+)
 from labelu.internal.common.business_log import biz_log, log_business_operation, set_request_context
 from labelu.internal.common.config import settings
 from labelu.internal.common.db import begin_transaction
@@ -43,10 +49,10 @@ from labelu.internal.application.service.task_training_ready import (
     refresh_task_training_ready,
     refresh_task_training_ready_after_sample_change,
 )
-from labelu.internal.domain.models.auto_label_job import AutoLabelStatus
+from labelu.internal.domain.models.auto_label_job import AutoLabelJob, AutoLabelStatus
 from labelu.internal.domain.models.pre_annotation import TaskPreAnnotation
 from labelu.internal.domain.models.sample import SampleState, TaskSample
-from labelu.internal.domain.models.task import MediaType
+from labelu.internal.domain.models.task import MediaType, Task
 from labelu.internal.domain.models.user import User
 
 
@@ -2416,6 +2422,170 @@ def get_batch_job(
         failed_count=job.failed_count or 0,
         error_message=job.error_message,
         created_at=job.created_at,
+    )
+
+
+@log_business_operation("auto_label.get_batch_job_queue")
+def get_batch_job_queue(
+    db: Session,
+    task_id: int,
+    job_id: int,
+    current_user: User,
+) -> AutoLabelQueueResponse:
+    task = crud_task.get(db=db, task_id=task_id)
+    if not task:
+        raise LabelUException(
+            code=ErrorCode.CODE_50002_TASK_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    assert_user_has_task_access(task, current_user)
+    job = crud_auto_label_job.get(db=db, job_id=job_id)
+    if not job or job.task_id != task_id:
+        raise LabelUException(
+            code=ErrorCode.CODE_50002_TASK_NOT_FOUND,
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    rows = (
+        db.query(AutoLabelJob)
+        .filter(
+            AutoLabelJob.job_kind
+            == crud_auto_label_job.AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+            AutoLabelJob.status.in_(
+                [AutoLabelStatus.PENDING.value, AutoLabelStatus.PROCESSING.value]
+            ),
+        )
+        .order_by(AutoLabelJob.id.asc())
+        .all()
+    )
+    task_ids = {int(row.task_id) for row in rows}
+    task_names = {
+        int(row.id): str(row.name)
+        for row in db.query(Task).filter(Task.id.in_(task_ids)).all()
+    } if task_ids else {}
+
+    def summary(row: AutoLabelJob) -> AutoLabelQueueJob:
+        total = int(row.sample_count or 0)
+        processed = int(row.processed_count or 0)
+        return AutoLabelQueueJob(
+            job_id=int(row.id),
+            task_id=int(row.task_id),
+            task_name=task_names.get(int(row.task_id), f"任务 #{row.task_id}"),
+            status=str(row.status),
+            processed_count=processed,
+            sample_count=total,
+            remaining_count=max(0, total - processed),
+        )
+
+    active_ids = {int(row.id) for row in rows}
+    current = max(
+        (row for row in rows if row.status == AutoLabelStatus.PROCESSING.value),
+        key=lambda row: row.updated_at or row.created_at or datetime.min,
+        default=None,
+    )
+    if current is None and rows:
+        current = rows[0]
+    if int(job.id) not in active_ids:
+        return AutoLabelQueueResponse(
+            job_id=int(job.id),
+            status=str(job.status),
+            queue_position=0,
+            queue_total=len(rows),
+            remaining_samples=max(
+                0, int(job.sample_count or 0) - int(job.processed_count or 0)
+            ),
+            current_job=summary(current) if current else None,
+            note="当前任务已结束，不在执行队列中。",
+        )
+
+    if str(job.status) == AutoLabelStatus.PROCESSING.value:
+        ahead_rows = []
+    else:
+        ahead_rows = [row for row in rows if int(row.id) < int(job.id)]
+    queue_position = len(ahead_rows) + 1
+    ahead_remaining = sum(
+        max(0, int(row.sample_count or 0) - int(row.processed_count or 0))
+        for row in ahead_rows
+    )
+    remaining = max(0, int(job.sample_count or 0) - int(job.processed_count or 0))
+
+    # Estimate from current throughput when available; otherwise use recent
+    # completed AUTO_SAMPLE jobs as a coarse reference.  This is intentionally
+    # a forecast, not an SLA.
+    rate: float | None = None
+    if current is not None and current.status == AutoLabelStatus.PROCESSING.value:
+        elapsed = max(
+            1.0,
+            (datetime.now() - (current.created_at or datetime.now())).total_seconds(),
+        )
+        processed = int(current.processed_count or 0)
+        # A long-lived job may include hours of queue wait in created_at, so
+        # only use its throughput while it is still a fresh, useful signal.
+        if processed > 0 and elapsed <= 1800:
+            rate = elapsed / processed
+    if rate is None:
+        completed = (
+            db.query(AutoLabelJob)
+            .filter(
+                AutoLabelJob.job_kind
+                == crud_auto_label_job.AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+                AutoLabelJob.status == AutoLabelStatus.COMPLETED.value,
+                AutoLabelJob.sample_count > 0,
+                AutoLabelJob.created_at.isnot(None),
+                AutoLabelJob.updated_at.isnot(None),
+            )
+            .order_by(AutoLabelJob.id.desc())
+            .limit(30)
+            .all()
+        )
+        rates = [
+            max(
+                0.05,
+                (row.updated_at - row.created_at).total_seconds()
+                / max(1, int(row.sample_count or 0)),
+            )
+            for row in completed
+            if row.updated_at and row.created_at and row.updated_at > row.created_at
+        ]
+        if rates:
+            rate = median(rates)
+    default_rate_used = False
+    if rate is None:
+        rate = 1.0
+        default_rate_used = True
+    if rate is not None:
+        rate = max(0.5, min(5.0, float(rate)))
+    estimated_wait = (
+        int(math.ceil(ahead_remaining * rate)) if rate else None
+    )
+    estimated_start = (
+        datetime.now() + timedelta(seconds=estimated_wait)
+        if estimated_wait is not None
+        else None
+    )
+    ahead_jobs = [summary(row) for row in ahead_rows[:10]]
+    current_summary = summary(current) if current else None
+    if current_summary and current and int(current.id) == int(job.id):
+        current_summary = None
+    note = (
+        "按每张约 1 秒的默认速度粗略估算，实际开始时间以 worker 队列为准。"
+        if default_rate_used
+        else "按当前/最近任务处理速度估算，实际开始时间以 worker 队列为准。"
+    )
+    return AutoLabelQueueResponse(
+        job_id=int(job.id),
+        status=str(job.status),
+        queue_position=queue_position,
+        ahead_count=len(ahead_rows),
+        queue_total=len(rows),
+        ahead_remaining_samples=ahead_remaining,
+        remaining_samples=remaining,
+        current_job=current_summary,
+        ahead_jobs=ahead_jobs,
+        estimated_wait_seconds=estimated_wait,
+        estimated_start_at=estimated_start,
+        rate_seconds_per_sample=round(rate, 3) if rate is not None else None,
+        note=note,
     )
 
 

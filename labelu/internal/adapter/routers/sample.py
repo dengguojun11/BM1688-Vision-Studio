@@ -38,6 +38,7 @@ from labelu.internal.application.response.sample import SampleResponse
 from labelu.internal.application.response.sample import CreateSampleResponse
 from labelu.internal.application.response.sample import SampleBoundsCheckJobResponse
 from labelu.internal.application.response.auto_label import AutoLabelResponse, AutoLabelJobResponse
+from labelu.internal.application.response.auto_label import AutoLabelQueueResponse
 from labelu.internal.application.response.locateanything_preannotate import LocateAnythingPreannotateJobResponse
 from labelu.internal.application.response.yolo_preannotate import (
     YoloPreannotateJobResponse,
@@ -493,6 +494,27 @@ async def get_auto_label_job_status(
         current_user=current_user,
     )
     return OkResp[AutoLabelJobResponse](data=data)
+
+
+@router.get(
+    "/{task_id}/auto_label_job/{job_id}/queue",
+    response_model=OkResp[AutoLabelQueueResponse],
+    status_code=status.HTTP_200_OK,
+)
+async def get_auto_label_job_queue(
+    task_id: int,
+    job_id: int,
+    authorization: HTTPAuthorizationCredentials = Security(security),
+    db: Session = Depends(db_module.get_db),
+    current_user: User = Depends(get_current_user),
+):
+    data = auto_label_service.get_batch_job_queue(
+        db=db,
+        task_id=task_id,
+        job_id=job_id,
+        current_user=current_user,
+    )
+    return OkResp[AutoLabelQueueResponse](data=data)
 
 
 @router.post(

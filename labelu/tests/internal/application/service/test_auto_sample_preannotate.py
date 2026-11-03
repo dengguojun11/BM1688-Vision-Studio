@@ -17,6 +17,7 @@ from labelu.internal.application.command.sample import CreateSampleCommand
 from labelu.internal.application.service import (
     auto_sample_preannotate as auto_sample_service,
 )
+from labelu.internal.application.service import auto_label as auto_label_service
 from labelu.internal.application.service import sample as sample_service
 from labelu.internal.application.service import yolo_preannotate
 from labelu.internal.application.service import yolo_dataset
@@ -1626,3 +1627,46 @@ def test_cancel_pending_for_task_keeps_processing_job(db: Session) -> None:
     db.expire_all()
     assert crud_auto_label_job.get(db, pending.id).status == "CANCELLED"
     assert crud_auto_label_job.get(db, processing.id).status == "PROCESSING"
+
+def test_auto_label_queue_reports_current_job_and_position(db: Session) -> None:
+    user = db.query(User).filter(User.username == "test@example.com").first()
+    task = _create_image_task(
+        db,
+        created_by=user.id,
+        name="queue visibility automatic global tags",
+        config={"tools": []},
+    )
+    with begin_transaction(db):
+        first = crud_auto_label_job.create(
+            db=db,
+            task_id=task.id,
+            user_id=user.id,
+            sample_count=100,
+            filter_by_labels=True,
+            job_kind=crud_auto_label_job.AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+            source_hint="task_config_update",
+            payload_json=json.dumps({"sample_ids": [1, 2]}),
+        )
+        second = crud_auto_label_job.create(
+            db=db,
+            task_id=task.id,
+            user_id=user.id,
+            sample_count=50,
+            filter_by_labels=True,
+            job_kind=crud_auto_label_job.AUTO_SAMPLE_PREANNOTATE_JOB_KIND,
+            source_hint="task_config_update",
+            payload_json=json.dumps({"sample_ids": [3]}),
+        )
+    response = auto_label_service.get_batch_job_queue(
+        db=db,
+        task_id=task.id,
+        job_id=second.id,
+        current_user=user,
+    )
+    assert response.queue_position == 2
+    assert response.ahead_count == 1
+    assert response.ahead_remaining_samples == 100
+    assert response.current_job is not None
+    assert response.current_job.job_id == first.id
+    assert response.remaining_samples == 50
+    assert response.estimated_wait_seconds is not None
