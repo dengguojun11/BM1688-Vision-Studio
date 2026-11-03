@@ -461,7 +461,13 @@ const CreateTask = () => {
               const shouldCleanImages = (taskData?.media_type || basicFormValues.media_type) === MediaType.IMAGE;
               if (shouldCleanImages) {
                 const attachmentIds = uniqueMediaFileList.map((item) => item.file_id);
-                const previewResponse = await previewImageCleaning(taskId, attachmentIds);
+                const closePreviewLoading = message.loading('正在分析图片重复情况，请稍候…', 0);
+                let previewResponse: Awaited<ReturnType<typeof previewImageCleaning>>;
+                try {
+                  previewResponse = await previewImageCleaning(taskId, attachmentIds);
+                } finally {
+                  closePreviewLoading();
+                }
                 const preview = previewResponse?.data;
                 if (!preview) {
                   throw new Error('图片清洗预览结果为空');
