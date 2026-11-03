@@ -2565,8 +2565,6 @@ def get_batch_job_queue(
     )
     ahead_jobs = [summary(row) for row in ahead_rows[:10]]
     current_summary = summary(current) if current else None
-    if current_summary and current and int(current.id) == int(job.id):
-        current_summary = None
     note = (
         "按每张约 1 秒的默认速度粗略估算，实际开始时间以 worker 队列为准。"
         if default_rate_used
