@@ -190,25 +190,37 @@ function queueTimeText(value?: string | null) {
 
 function TaskQueuePopover({ queue }: { queue: AutoLabelQueueResponse }) {
   const current = queue.current_job;
+  const sameTask = Boolean(current && current.task_id === queue.target_task_id);
+  const isCurrent = Boolean(current && current.job_id === queue.job_id);
   return (
-    <div style={{ width: 330, fontSize: 12, lineHeight: 1.7 }}>
+    <div style={{ width: 350, fontSize: 12, lineHeight: 1.7 }}>
       <div style={{ fontWeight: 600, marginBottom: 6 }}>执行队列</div>
       {current ? (
         <div>
-          当前处理：<strong>{current.task_name}</strong>
+          正在执行：<strong>{current.task_name} · 批次 #{current.job_id}</strong>
           <br />
           进度：{current.processed_count}/{current.sample_count}，剩余 {current.remaining_count} 张
         </div>
       ) : (
-        <div>当前没有正在执行的任务。</div>
+        <div>当前没有正在执行的批次，等待 Worker 领取。</div>
       )}
       <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0' }}>
         <div>
-          本任务排队位置：<strong>第 {queue.queue_position} 位</strong>
-          {queue.ahead_count > 0 ? `，前面还有 ${queue.ahead_count} 个任务` : '，即将执行'}
+          你查看的批次：<strong>#{queue.job_id}（{queue.target_task_name}）</strong>
         </div>
-        <div>前方剩余图片：{queue.ahead_remaining_samples} 张</div>
-        <div>本任务剩余：{queue.remaining_samples} 张</div>
+        <div>
+          {isCurrent
+            ? '该批次正在执行。'
+            : sameTask
+              ? `同一任务的上一个批次 #{current?.job_id} 正在执行，完成后才会执行该批次。`
+              : '该批次在队列中等待执行。'}
+        </div>
+        <div>
+          排队位置：<strong>{queue.queue_position > 0 ? `第 ${queue.queue_position} 位` : '-'}</strong>
+          {queue.ahead_count > 0 ? `，前面还有 ${queue.ahead_count} 个批次` : ''}
+        </div>
+        <div>前方批次剩余图片：{queue.ahead_remaining_samples} 张</div>
+        <div>你查看的批次待处理：{queue.remaining_samples} 张</div>
         <div>
           预计等待：<strong>{queueWaitText(queue.estimated_wait_seconds)}</strong>
         </div>
@@ -259,13 +271,19 @@ function TaskProgressItem({
 
   if (!queueInfo) return content;
   const current = queueInfo.current_job;
+  const sameTask = Boolean(current && current.task_id === queueInfo.target_task_id);
+  const isCurrent = Boolean(current && current.job_id === queueInfo.job_id);
   const queueSummary = (
     <div style={{ fontSize: 11, color: '#667085', marginTop: 2 }}>
       {current
-        ? `当前：${current.task_name} ${current.processed_count}/${current.sample_count}`
+        ? `当前执行：${current.task_name} · 批次 #${current.job_id} ${current.processed_count}/${current.sample_count}`
         : '当前：等待 Worker 领取'}
-      {queueInfo.queue_position > 0 ? ` · 排队第 ${queueInfo.queue_position} 位` : ''}
-      {` · 预计 ${queueWaitText(queueInfo.estimated_wait_seconds)}后开始 · 本任务剩余 ${queueInfo.remaining_samples} 张`}
+      {isCurrent
+        ? ' · 你查看的批次正在执行'
+        : sameTask
+          ? ` · 你查看的批次 #${queueInfo.job_id} 等待同任务上一批次 #${current?.job_id} 完成`
+          : ` · 你查看的批次 #${queueInfo.job_id} 排队第 ${queueInfo.queue_position} 位`}
+      {` · 预计 ${queueWaitText(queueInfo.estimated_wait_seconds)}后开始 · 待处理 ${queueInfo.remaining_samples} 张`}
     </div>
   );
   return (

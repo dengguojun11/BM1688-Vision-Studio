@@ -176,6 +176,8 @@ export interface AutoLabelQueueJob {
 
 export interface AutoLabelQueueResponse {
   job_id: number;
+  target_task_id: number;
+  target_task_name: string;
   status: string;
   queue_position: number;
   ahead_count: number;

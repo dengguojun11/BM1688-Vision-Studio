@@ -2488,6 +2488,8 @@ def get_batch_job_queue(
     if int(job.id) not in active_ids:
         return AutoLabelQueueResponse(
             job_id=int(job.id),
+            target_task_id=int(job.task_id),
+            target_task_name=str(task.name),
             status=str(job.status),
             queue_position=0,
             queue_total=len(rows),
@@ -2572,6 +2574,8 @@ def get_batch_job_queue(
     )
     return AutoLabelQueueResponse(
         job_id=int(job.id),
+        target_task_id=int(job.task_id),
+        target_task_name=str(task.name),
         status=str(job.status),
         queue_position=queue_position,
         ahead_count=len(ahead_rows),

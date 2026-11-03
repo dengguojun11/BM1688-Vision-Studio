@@ -40,6 +40,8 @@ class AutoLabelQueueJob(BaseModel):
 
 class AutoLabelQueueResponse(BaseModel):
     job_id: int
+    target_task_id: int
+    target_task_name: str
     status: str
     queue_position: int = 0
     ahead_count: int = 0
