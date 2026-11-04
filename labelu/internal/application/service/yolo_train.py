@@ -1694,6 +1694,56 @@ def prepare_cuda_env_for_yolo_train() -> None:
         )
 
 
+def prepare_yolo_train_runtime_env() -> Path:
+    """把训练运行时的 HOME/缓存/临时目录统一收拢到平台数据目录。
+
+    训练 Worker 以 ``nobody`` 运行时，从 systemd/supervisor 继承的
+    ``HOME=/root`` 会让 Ultralytics、Matplotlib、Torch 等尝试写
+    ``/root/.config`` 或 ``/root/.cache``，从而触发 Permission denied。
+    这里在导入 Ultralytics 之前显式设置所有可写目录，确保训练产物、
+    权重缓存、字体缓存和临时文件都落在 ``BASE_DATA_DIR`` 下。
+    """
+
+    base = Path(settings.BASE_DATA_DIR).expanduser().resolve()
+    runtime_root = base / "train-runtime-home"
+    directories = {
+        "HOME": runtime_root,
+        "XDG_CONFIG_HOME": runtime_root / "config",
+        "XDG_CACHE_HOME": runtime_root / "cache",
+        "XDG_DATA_HOME": runtime_root / "local" / "share",
+        "YOLO_CONFIG_DIR": runtime_root / "ultralytics",
+        "MPLCONFIGDIR": runtime_root / "matplotlib",
+        "TORCH_HOME": runtime_root / "torch",
+        "HF_HOME": runtime_root / "huggingface",
+        "TMPDIR": base / "train-runtime-tmp",
+        "TEMP": base / "train-runtime-tmp",
+        "TMP": base / "train-runtime-tmp",
+        "CUDA_CACHE_PATH": runtime_root / "cuda",
+    }
+    for directory in directories.values():
+        directory.mkdir(parents=True, exist_ok=True)
+    os.environ.update(
+        {
+            "HOME": str(directories["HOME"]),
+            "USER": os.environ.get("USER") or "nobody",
+            "LOGNAME": os.environ.get("LOGNAME") or os.environ.get("USER") or "nobody",
+            "XDG_CONFIG_HOME": str(directories["XDG_CONFIG_HOME"]),
+            "XDG_CACHE_HOME": str(directories["XDG_CACHE_HOME"]),
+            "XDG_DATA_HOME": str(directories["XDG_DATA_HOME"]),
+            "YOLO_CONFIG_DIR": str(directories["YOLO_CONFIG_DIR"]),
+            "MPLCONFIGDIR": str(directories["MPLCONFIGDIR"]),
+            "TORCH_HOME": str(directories["TORCH_HOME"]),
+            "HF_HOME": str(directories["HF_HOME"]),
+            "TMPDIR": str(directories["TMPDIR"]),
+            "TEMP": str(directories["TEMP"]),
+            "TMP": str(directories["TMP"]),
+            "CUDA_CACHE_PATH": str(directories["CUDA_CACHE_PATH"]),
+        }
+    )
+    logger.info("YOLO train runtime dirs rooted at {}", runtime_root)
+    return runtime_root
+
+
 def _cuda_runtime_snapshot() -> Tuple[bool, int]:
     prepare_cuda_env_for_yolo_train()
     try:
@@ -4539,6 +4589,7 @@ def _run_yolo_train_sync(
 
     _ACTIVE_TRAIN_JOBS.add(int(job_id))
     _ensure_train_sigterm_hooks()
+    prepare_yolo_train_runtime_env()
     work_root = _job_work_root(job_id)
     dataset_root = work_root / "dataset"
     train_n = val_n = test_n = 0
