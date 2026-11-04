@@ -70,7 +70,17 @@
 
 MySQL `labelu_prod` 可保留用于重试；SQLite 文件与备份不删除。
 
-## 8. 风险与后续
+## 8. 磁盘与 binlog
+
+迁移后 `/var/lib/mysql` 占用约 73GB，其中大量为 10 月中旬以来的 binlog（单文件约 100MB）。已执行：
+
+- `PURGE BINARY LOGS BEFORE '2026-10-28 00:00:00'`，根分区可用空间从约 20GB 恢复到约 43GB
+- `SET GLOBAL binlog_expire_logs_seconds = 604800`（7 天）
+- 在 `/etc/mysql/mysql.conf.d/mysqld.cnf` 持久化 `binlog_expire_logs_seconds = 604800`
+
+旧库 `labelu`（约 774MB）与 `labelu_snapshot_20260710`（约 7.6GB）未删除，待确认后再清理。
+
+## 9. 风险与后续
 
 - 目标库删除了 20 个 `project` 外键，列 `project_id` 仍保留；一期代码不再创建项目控制面，写入以 NULL 为主。
 - MySQL 数据目录在 `/`（剩余约 20GB），需关注 binlog 与旧库 `labelu`、`labelu_snapshot_20260710` 的磁盘占用。
