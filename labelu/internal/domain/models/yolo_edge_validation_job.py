@@ -1,6 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects import mysql
 
 from labelu.internal.common.db import Base
 
@@ -72,7 +73,9 @@ class YoloEdgeValidationJob(Base):
     unlabeled_image_count = Column(Integer, nullable=False, default=0)
 
     progress_json = Column(Text, nullable=True, comment="手动边端验证实时进度 JSON")
-    result_json = Column(Text, nullable=True)
+    result_json = Column(
+        Text().with_variant(mysql.LONGTEXT(), "mysql"), nullable=True
+    )
     report_summary = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
 

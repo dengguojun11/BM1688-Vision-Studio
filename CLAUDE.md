@@ -52,24 +52,37 @@ Layered architecture following Domain-Driven Design principles:
 ## Environment Variables
 
 - `PASSWORD_SECRET_KEY`: JWT signing key (required in production)
-- `DATABASE_URL`: DB connection string (default: `sqlite:///<data_dir>/labelu.sqlite`)
+- `DATABASE_URL`: MySQL connection string. Required for every runtime environment, e.g. `mysql+pymysql://<user>:<password>@127.0.0.1:3306/<db>?charset=utf8mb4`. The SQLite fallback is retired for manual development and production.
 - `MEDIA_HOST`: Media file serving host URL (default: `http://localhost:8000`)
 
 Data directory is determined by `appdirs.user_data_dir("labelu")`.
 
 ## Tech Stack
 
-- Python 3.11, FastAPI ^0.90, SQLAlchemy ^1.4 (1.x style), Pydantic v1
-- Auth: python-jose (JWT), passlib + bcrypt
-- DB: SQLite (default) or MySQL (optional)
+- Python 3.11, FastAPI 0.125.x, SQLAlchemy 2.0.x, Pydantic 2.x + pydantic-settings
+- Auth: python-jose (JWT), bcrypt
+- DB: **MySQL 8.0+ required** for local development, staging and production; SQLite is limited to automated tests and temporary migration rehearsals
 - Migrations: Alembic
-- Package manager: Poetry
+- Package manager: Poetry / uv
 - WebSocket: websockets ^10
+
+## Database Rule (MySQL Only)
+
+- **MySQL is mandatory for every runtime environment**: local manual development, staging and production all use MySQL 8.0+ through `mysql+pymysql://`. Do not start `labelu` / `labelu dev` against SQLite.
+- SQLite is allowed only for:
+  - the automated pytest suite and isolated unit fixtures (see `labelu/tests/conftest.py`);
+  - short-lived, throwaway migration rehearsals on a copied database.
+- Never use SQLite for interactive development, shared environments, production, or as an implicit fallback when `DATABASE_URL` is missing.
+- `DATABASE_URL` must be provided explicitly by `.env`, process environment or a deployment env file. Do not depend on the code default.
+- Local manual development must use its own dedicated MySQL schema and user; it must not point at the production schema unless the user explicitly authorizes the existing tunnel workflow.
+- New schema changes and Alembic migrations must be MySQL-first and verified against MySQL. SQLite-only DDL, `PRAGMA`-dependent migration logic, and SQLite-specific SQL must not enter production code paths.
+- Existing SQLite files are rollback artifacts only. They must not be written by any runtime process; rename or archive them instead of leaving a live fallback.
+- Any exception to this rule requires explicit user approval and must be documented in the same change.
 
 ## Testing
 
 - Tests in `labelu/tests/` using pytest
-- Test DB: SQLite file `./test.db` (not in-memory)
+- Test DB: per-process SQLite file under `.pytest_labelu_data/` (the only permitted SQLite runtime; see `.pytest_labelu_data`)
 - Test fixtures in `labelu/tests/conftest.py`
 - Test user: `test@example.com` / `test@123`
 - Tables (except `user`) are cleaned between tests via `autouse` fixture

@@ -138,3 +138,12 @@ This project layer is supported by:
 - [maps/code-map.md](./maps/code-map.md)
 - [maps/docs-map.md](./maps/docs-map.md)
 - [maps/business-flow.md](./maps/business-flow.md)
+
+## 9. Database Rule (MySQL Only)
+
+- Local manual development, staging and production must all use MySQL 8.0+ via `mysql+pymysql://...?charset=utf8mb4`.
+- SQLite is allowed only for the automated pytest fixtures (`.pytest_labelu_data/`) and one-off migration rehearsals on copied data.
+- Do not start `labelu` / `labelu dev` against SQLite, and do not rely on an implicit SQLite fallback when `DATABASE_URL` is missing.
+- Schema changes and Alembic migrations must be verified on MySQL; SQLite-only DDL or `PRAGMA` logic must not enter production paths.
+- Historical SQLite files are rollback artifacts only and must not be written by runtime processes.
+- The authoritative rule is `AGENTS.md` → `Database Rule (MySQL Only)`; this section only adapts it for project-skill routing.

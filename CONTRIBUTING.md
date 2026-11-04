@@ -24,6 +24,16 @@
 - [`skills/projects/labelU/PROJECT.md`](skills/projects/labelU/PROJECT.md)
 - [`skills/projects/labelU/INDEX.md`](skills/projects/labelU/INDEX.md)
 
+## 数据库约束（MySQL）
+
+- 本地手工开发、联调、预发布和生产**必须使用 MySQL 8.0+**，连接串形如 `mysql+pymysql://<user>:<password>@<host>:3306/<db>?charset=utf8mb4`。
+- 不得用 SQLite 启动 `labelu` / `labelu dev`，也不得在缺少 `DATABASE_URL` 时回退到 SQLite。
+- SQLite 仅允许用于自动化 pytest 测试夹具和一次性迁移演练；测试库位于 `.pytest_labelu_data/`。
+- 本地手工开发使用独立的 MySQL schema 和账号，不直接连生产库；确需联调生产数据时必须显式授权。
+- 新增表、字段和 Alembic 迁移必须先在 MySQL 验证，不得引入仅 SQLite 可用的 DDL 或 `PRAGMA` 逻辑。
+- 历史 SQLite 文件只作为回滚副本，不得被运行中的进程写入。
+- 例外必须经用户明确同意，并在同一次变更中记录原因。
+
 ## 提交前检查
 
 - [ ] 只 `git add` 与本任务相关的文件

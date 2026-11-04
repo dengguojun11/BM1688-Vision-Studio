@@ -10,6 +10,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import foreign, relationship
 
 from labelu.internal.common.db import Base
@@ -104,7 +105,9 @@ class DatasetVersion(Base):
     review_comment = Column(Text, nullable=True)
     reviewed_by = Column(Integer, ForeignKey("user.id"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
-    metadata_json = Column(Text, nullable=True)
+    metadata_json = Column(
+        Text().with_variant(mysql.LONGTEXT(), "mysql"), nullable=True
+    )
     dataset_category_snapshot_json = Column(Text, nullable=True)
     dataset_label_contract_id = Column(
         Integer,

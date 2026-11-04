@@ -9,3 +9,5 @@
 Python 包目录仍保留为 `labelu/`，CLI 命令仍保留为 `labelu`，这是为了兼容现有导入路径、数据库迁移和生产 Worker。产品界面品牌继续使用“7GAI 进化平台”。
 
 后续本地代码修改、测试和提交均以本目录为唯一源码目录；生产发布只更新 `/data/7G_AI/app`，不修改旧项目 `/data/labeIU`。
+
+数据库统一使用 MySQL 8.0+：本地手工开发、联调、预发布和生产都必须指向 MySQL（`mysql+pymysql://...?charset=utf8mb4`）；SQLite 仅允许用于自动化测试（`.pytest_labelu_data/`）与一次性迁移演练。

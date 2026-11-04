@@ -1,0 +1,15 @@
+---
+description: Require MySQL for every runtime environment; SQLite only for tests and migration rehearsals
+alwaysApply: true
+---
+
+# 数据库必须使用 MySQL
+
+- 本地手工开发、联调、预发布、生产全部使用 MySQL 8.0+，连接串为 `mysql+pymysql://...?...charset=utf8mb4`。
+- 禁止用 SQLite 启动 `labelu` / `labelu dev`，禁止在 `DATABASE_URL` 缺失时回退 SQLite。
+- SQLite 仅允许用于 pytest 测试夹具（`.pytest_labelu_data/`）和一次性迁移演练。
+- 本地开发使用独立 MySQL schema 和账号，不直接连生产库；确需联调生产数据必须经用户明确授权。
+- 数据库变更和 Alembic 迁移必须先在 MySQL 验证；不得引入仅 SQLite 可用的 DDL、`PRAGMA` 逻辑或 SQLite 专用 SQL 到生产路径。
+- 历史 SQLite 文件只能作为回滚副本，不得被运行进程写入。
+- 任何例外必须获得用户明确同意，并在同一次变更中记录。
+- 本规则以 `AGENTS.md` 的 `Database Rule (MySQL Only)` 为准，不得弱化。
