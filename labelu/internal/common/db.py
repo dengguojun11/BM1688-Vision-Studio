@@ -20,10 +20,17 @@ if settings.DATABASE_URL.startswith('mysql'):
         pool_recycle=int(settings.DATABASE_POOL_RECYCLE),
     )
 else:
-    # connect_args is needed only for SQLite. It's not needed for other databases
+    # connect_args is needed only for SQLite. It's not needed for other databases.
+    # The production SQLite deployment serves concurrent uploads, annotation
+    # saves and polling clients; SQLAlchemy's default 5+10 pool is exhausted by
+    # a bulk-upload burst, so apply the same explicit pool budget as MySQL.
     engine = create_engine(
         database_url,
         connect_args={"check_same_thread": False, "timeout": 30},
+        pool_size=int(settings.DATABASE_POOL_SIZE),
+        max_overflow=int(settings.DATABASE_MAX_OVERFLOW),
+        pool_timeout=int(settings.DATABASE_POOL_TIMEOUT),
+        pool_recycle=int(settings.DATABASE_POOL_RECYCLE),
     )
 
     @event.listens_for(engine, "connect")

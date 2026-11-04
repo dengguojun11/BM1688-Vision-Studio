@@ -52,8 +52,12 @@ def _check_database() -> dict[str, str]:
 
 
 @router.get("/healthz", response_model=OkResp[dict[str, Any]], include_in_schema=False)
-def healthz() -> OkResp[dict[str, Any]]:
-    """Liveness probe; deliberately independent of external dependencies."""
+async def healthz() -> OkResp[dict[str, Any]]:
+    """Liveness probe; deliberately independent of external dependencies.
+
+    ``async`` keeps the probe on the event loop so it still answers while the
+    sync threadpool is saturated by database waits.
+    """
     return OkResp[dict[str, Any]](data=_payload(state="ok"))
 
 
@@ -82,7 +86,7 @@ def readyz(response: Response) -> OkResp[dict[str, Any]]:
 
 
 @router.get("/version", response_model=OkResp[dict[str, Any]], include_in_schema=False)
-def version() -> OkResp[dict[str, Any]]:
+async def version() -> OkResp[dict[str, Any]]:
     """Return build and compatibility information for operators."""
     return OkResp[dict[str, Any]](
         data={

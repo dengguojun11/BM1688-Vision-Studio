@@ -571,6 +571,12 @@ async def create(
 
     assert_user_has_task_access(task, current_user)
 
+    # Upload requests can stream hundreds of megabytes while holding the
+    # request-scoped session. Release the pooled connection now and let the
+    # session reconnect for the short dedup/insert writes at the end, otherwise
+    # a bulk upload burst exhausts the connection pool and stalls the worker.
+    db.close()
+
     # file relative path
     path_filename = cmd.file.filename.split("/")
     #  filename = str(uuid.uuid4())[0:8] + "-" + path_filename[-1] NOTE: If you want keep filename safe, you can use uuid as filename 
