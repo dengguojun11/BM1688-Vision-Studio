@@ -346,6 +346,11 @@ def _schedule_missing_auto_evaluations(db: Session, job) -> bool:
         current = getattr(job, _eval_status_field(kind), None)
         if reports and _can_auto_retry_failed_reports(all_reports):
             needs_run = True
+            if current == "RUNNING":
+                # A worker may have died after writing RUNNING and before the
+                # report row reached a terminal state.  Treat that as an
+                # interrupted auto evaluation and recover it.
+                recover_interrupted = True
         elif not reports and current in (None, ""):
             needs_run = True
         elif not reports and current in {"RUNNING", "COMPLETED"}:

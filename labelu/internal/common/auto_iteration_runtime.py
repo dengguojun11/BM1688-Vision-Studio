@@ -30,9 +30,9 @@ GROUP_KEY = "auto_iteration"
 # 所有可配置项的默认值，必须与 system_config_registry 中 auto_iteration 组一致。
 AUTO_ITERATION_DEFAULTS: dict[str, Any] = {
     "enabled": False,
-    "metric_basis": "val_recall",
-    "pass_threshold": 0.6,
-    "warn_threshold": 0.5,
+    "metric_basis": "map50_95",
+    "pass_threshold": 0.5,
+    "warn_threshold": 0.45,
     "max_rounds": 4,
     "no_improvement_rounds": 2,
     "min_improvement_delta": 0.02,
