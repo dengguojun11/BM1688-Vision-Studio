@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
+import io
 import json
 import zipfile
 
@@ -19,7 +20,7 @@ def _row(model_id: int, **values) -> PublishedModelCatalog:
         "aicm_model_set_id": model_id,
         "name": f"model-{model_id}",
         "display_name": f"model-{model_id}",
-        "source_type": "remote_legacy",
+        "source_type": "labelu_publish",
         "source_system": "aicm",
         "status": "active",
         "is_public": True,
@@ -62,7 +63,7 @@ def test_public_catalog_routes_expose_only_downloadable_models(
     assert payload["meta_data"]["total"] == 1
     assert [item["model_id"] for item in payload["data"]["models"]] == ["701"]
     assert payload["data"]["models"][0]["download_path"] == (
-        "/api/v1/public/models/701/download"
+        "http://testserver/api/v1/public/models/701/download"
     )
     assert payload["data"]["models"][0]["download_enabled"] is True
     assert payload["data"]["models"][0]["class_names"] == ["vehicle_motorbike"]
@@ -75,6 +76,7 @@ def test_public_catalog_routes_expose_only_downloadable_models(
             "status": "active",
             "annotation_kind": "bbox",
             "matched": True,
+            "thresh": None,
         }
     ]
 
@@ -82,6 +84,86 @@ def test_public_catalog_routes_expose_only_downloadable_models(
     assert detail.status_code == 200
     assert detail.json()["data"]["aicm_model_set_id"] == 701
     assert client.get("/api/v1/public/models/702").status_code == 404
+
+
+def test_public_catalog_supports_full_list_name_event_f1_and_metadata(
+    client: TestClient, db: Session
+):
+    with begin_transaction(db):
+        db.add(
+            AnnotationLabel(
+                label_key="摩托车",
+                label_value="vehicle_motorbike",
+                normalized_label_value="vehicle_motorbike",
+                annotation_kind="bbox",
+                color="#52c41a",
+                status="active",
+            )
+        )
+        meta = {
+            "f1": 88.1,
+            "env_profile": {"weather": "rain", "lighting": "night"},
+            "env_profile_all": {
+                "weather": ["rain", "sunny"],
+                "lighting": ["night"],
+            },
+            "viewProfile": {"sceneType": "outdoorRoad", "angle": "eyeLevel"},
+            "viewProfile_all": {"sceneType": ["outdoorRoad"], "angle": ["eyeLevel"]},
+            "thresh": {"low_thresh": 9.38, "high_thresh": 26.33, "bypass_thresh": 36.23},
+            "class_thresholds": {
+                "vehicle_motorbike": {
+                    "low_thresh": 61.0,
+                    "high_thresh": 84.0,
+                    "bypass_thresh": 62.0,
+                }
+            },
+        }
+        db.add_all(
+            [
+                _row(
+                    720,
+                    labels_json=json.dumps(["vehicle_motorbike"]),
+                    f1=88.1,
+                    integration_meta_json=json.dumps(meta),
+                ),
+                _row(721, labels_json=json.dumps(["vehicle_motorbike"]), f1=42.0),
+            ]
+        )
+
+    response = client.get("/api/v1/public/models")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["meta_data"]["total"] == 2
+    assert [item["model_id"] for item in payload["data"]["models"]] == ["721", "720"]
+    first = payload["data"]["models"][1]
+    assert first["f1"] == 88.1
+    assert first["env_profile"]["weather"] == "rain"
+    assert first["env_profile_all"]["weather"] == ["rain", "sunny"]
+    assert first["viewProfile"]["sceneType"] == "outdoorRoad"
+    assert first["thresh"]["bypass_thresh"] == 36.23
+    assert first["class_labels"][0]["thresh"]["bypass_thresh"] == 62.0
+    assert first["download_path"] == "http://testserver/api/v1/public/models/720/download"
+
+    assert client.get("/api/v1/public/models?name=model-721").json()["meta_data"]["total"] == 1
+    assert client.get("/api/v1/public/models?event=摩托车").json()["meta_data"]["total"] == 2
+    assert client.get("/api/v1/public/models?event=vehicle_motorbike").json()["meta_data"]["total"] == 2
+    assert client.get("/api/v1/public/models?f1=88.1").json()["meta_data"]["total"] == 1
+    assert client.get("/api/v1/public/models?size=1").json()["meta_data"]["size"] == 1
+    assert client.get("/api/v1/public/models?size=1").json()["data"]["models"][0]["model_id"] == "721"
+
+
+def test_public_catalog_excludes_aicm_synced_models_from_download(
+    client: TestClient, db: Session
+):
+    with begin_transaction(db):
+        db.add(_row(730, source_type="remote_legacy"))
+        db.add(_row(731, source_type="labelu_publish"))
+
+    payload = client.get("/api/v1/public/models").json()
+    assert [item["model_id"] for item in payload["data"]["models"]] == ["731"]
+    assert client.get("/api/v1/public/models/730").status_code == 404
+    assert client.get("/api/v1/public/models/730/download").status_code == 404
+    assert client.get("/api/v1/public/models/731").status_code == 200
 
 
 def test_management_catalog_list_requires_authentication(
@@ -194,6 +276,46 @@ def test_public_download_url_keeps_aicm_id_and_third_party_alias_alignment(
     assert payload["model_id"] == "712"
     assert payload["aicm_model_set_id"] == 712
     assert payload["download_url"] == "/api/v1/published-models/712/download"
+
+
+def test_public_v2_download_flattens_output_rknn_into_release_folder(
+    client: TestClient,
+    db: Session,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(service.settings, "BASE_DATA_DIR", str(tmp_path))
+    package = tmp_path / "published_model_packages" / "713" / "model.zip"
+    package.parent.mkdir(parents=True)
+    with zipfile.ZipFile(package, "w") as archive:
+        archive.writestr("running_info.yml", "mAP: 0.9\n")
+        archive.writestr("output_rknn/video.json", '{"rknn": {}}\n')
+        archive.writestr("output_rknn/helmet_int8.bmodel", b"bmodel-713")
+        archive.writestr("output_rknn/labels.txt", "label_a\n")
+    with begin_transaction(db):
+        db.add(
+            _row(
+                713,
+                remote_download_url="http://10.10.11.20:8102/media/downloads/model-20261028225850.zip",
+                package_rel_path="published_model_packages/713/model.zip",
+                package_size_bytes=package.stat().st_size,
+            )
+        )
+
+    response = client.get("/api/v2/public/models/713/download")
+
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "application/zip"
+    assert "v2" in response.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert sorted(archive.namelist()) == sorted(
+            [
+                "model-20261028225850/running_info.yml",
+                "model-20261028225850/video.json",
+                "model-20261028225850/helmet_int8.bmodel",
+                "model-20261028225850/labels.txt",
+            ]
+        )
 
 
 def test_public_download_serves_labelu_package_when_aicm_is_unavailable(

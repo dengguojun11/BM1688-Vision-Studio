@@ -78,6 +78,10 @@ CHINESE_TAGS: dict[str, tuple[str, str]] = {
         "已发布模型、兼容标识、下载开关和模型包管理。",
     ),
     "published_models_public": ("公开模型服务", "供外部项目查询和下载已开放模型。"),
+    "published_models_public_v2": (
+        "公开模型服务",
+        "供外部项目查询和下载已开放模型（V2 下载格式）。",
+    ),
     "projects": ("项目与权限", "项目边界、成员和项目级访问权限管理。"),
     "organizations": ("组织管理", "组织层级、成员和组织级访问边界管理。"),
     "scenes": ("场景管理", "业务场景定义、配置和项目场景关联管理。"),
@@ -94,6 +98,23 @@ CHINESE_TAGS: dict[str, tuple[str, str]] = {
     "project_ownership": ("项目归属审计", "历史资源归属分析、隔离和确定性回填证据。"),
     "rule-center": ("规则中心", "规则模板、不可变版本、设备绑定和验签结果管理。"),
     "model_versions": ("模型仓库", "模型版本、产物、质量证据和发布门禁。"),
+    "model_series": ("模型系列", "模型系列、分支和版本血缘关系。"),
+    "model-series": ("模型系列", "模型系列、分支和版本血缘关系。"),
+    "annotation_prompts": ("标注提示词", "数据集标注提示词模板管理。"),
+    "annotation-prompts": ("标注提示词", "数据集标注提示词模板管理。"),
+    "evolution_screen": ("进化大屏", "进化中心汇总指标、排行和趋势数据。"),
+    "image_cleaning_policy": ("图片清洗配置", "任务图片清洗策略和阈值配置。"),
+    "image_cleaning_task": ("任务图片清洗", "任务上传图片的重复检测和清洗。"),
+    "图片清洗配置": ("图片清洗配置", "任务图片清洗策略和阈值配置。"),
+    "任务图片清洗": ("任务图片清洗", "任务上传图片的重复检测和清洗。"),
+    "edge_validation_settings": (
+        "边端设备管理",
+        "边端验证图片数量和取图范围全局配置。",
+    ),
+    "边端设备管理": (
+        "边端设备管理",
+        "边端验证图片数量和取图范围全局配置。",
+    ),
     "deployment_releases": ("部署中心", "边端发布、设备目标、期望状态和运行观测。"),
     "workspace": ("工作台", "项目、数据集、模型、部署和训练运行摘要。"),
     "工作台": ("工作台", "任务、训练、模型、回流和系统运行摘要。"),
@@ -760,9 +781,40 @@ def enrich_openapi_schema(schema: dict[str, Any]) -> dict[str, Any]:
     schema["tags"] = list(grouped_tags.values())
 
     components = schema.setdefault("components", {})
-    for schema_name, component_schema in components.get("schemas", {}).items():
-        if isinstance(component_schema, dict):
-            _enrich_schema(schema_name, component_schema)
+    schemas = components.get("schemas", {})
+    if isinstance(schemas, dict):
+        canonical_names: dict[str, str] = {}
+        replacements: dict[str, str] = {}
+        for schema_name in list(schemas):
+            folded = schema_name.casefold()
+            canonical = canonical_names.get(folded)
+            if canonical is None:
+                canonical_names[folded] = schema_name
+                continue
+            if canonical != schema_name:
+                replacements[
+                    f"#/components/schemas/{schema_name}"
+                ] = f"#/components/schemas/{canonical}"
+                del schemas[schema_name]
+
+        def _rewrite_refs(value: Any) -> Any:
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    value[key] = _rewrite_refs(item)
+                return value
+            if isinstance(value, list):
+                for index, item in enumerate(value):
+                    value[index] = _rewrite_refs(item)
+                return value
+            if isinstance(value, str):
+                return replacements.get(value, value)
+            return value
+
+        if replacements:
+            _rewrite_refs(schema)
+        for schema_name, component_schema in schemas.items():
+            if isinstance(component_schema, dict):
+                _enrich_schema(schema_name, component_schema)
     bearer = components.get("securitySchemes", {}).get("HTTPBearer")
     if isinstance(bearer, dict):
         bearer["description"] = (

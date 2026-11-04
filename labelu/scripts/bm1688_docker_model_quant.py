@@ -455,8 +455,11 @@ def main() -> int:
     shutil.copy2(produced, canonical)
     canonical_qt = out_dir / f"{model_stem}_qtable"
     shutil.copy2(qtable, canonical_qt)
+    canonical_cali = out_dir / f"{model_stem}_cali_table"
+    shutil.copy2(cali_table, canonical_cali)
     print(f"INT8 bmodel OK: {canonical}", flush=True)
     print(f"qtable OK: {canonical_qt}", flush=True)
+    print(f"cali_table OK: {canonical_cali}", flush=True)
     return 0
 
 

@@ -599,6 +599,31 @@ export default function EdgeDevicesPanel() {
     retry: 1,
   });
   const canonicalEdgeRoot = edgeRuntimeSettingsQuery.data?.edge_root?.trim() || '';
+  const [edgeMinImages, setEdgeMinImages] = useState(200);
+  const [edgeMaxImages, setEdgeMaxImages] = useState(500);
+  const edgeValidationSettingsQuery = useQuery<{ min_images: number; max_images: number }>({
+    queryKey: ['edge-validation-settings'],
+    queryFn: async () => (await request.get('/v1/edge-validation-settings')).data,
+    staleTime: 60_000,
+    retry: 1,
+  });
+  useEffect(() => {
+    if (!edgeValidationSettingsQuery.data) return;
+    setEdgeMinImages(Number(edgeValidationSettingsQuery.data.min_images || 200));
+    setEdgeMaxImages(Number(edgeValidationSettingsQuery.data.max_images || 500));
+  }, [edgeValidationSettingsQuery.data]);
+  const edgeValidationSettingsMutation = useMutation({
+    mutationFn: async () =>
+      (
+        await request.put('/v1/edge-validation-settings', {
+          min_images: edgeMinImages,
+          max_images: edgeMaxImages,
+        })
+      ).data,
+    onSuccess: async () => {
+      await edgeValidationSettingsQuery.refetch();
+    },
+  });
 
   const devicesQuery = useQuery<EdgeDeviceList>({
     queryKey: ['edge-devices', page, pageSize, keyword, statusFilter],
@@ -1063,6 +1088,30 @@ export default function EdgeDevicesPanel() {
             </Button>
           </Space>
         </div>
+
+        <TablePanel style={{ marginTop: 16 }}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div>
+              <Typography.Title level={5} style={{ margin: 0 }}>边端验证图片配置</Typography.Title>
+              <Typography.Text type="secondary">
+                控制边端验证最少图片数和单次最多图片数；不足最低值时继续使用现有图片验证并记录实际张数。
+              </Typography.Text>
+            </div>
+            <Space wrap>
+              <span>最低图片数</span>
+              <InputNumber min={1} max={500} value={edgeMinImages} onChange={(value) => setEdgeMinImages(Number(value || 1))} />
+              <span>最多图片数</span>
+              <InputNumber min={1} max={500} value={edgeMaxImages} onChange={(value) => setEdgeMaxImages(Number(value || 500))} />
+              <Button
+                type="primary"
+                loading={edgeValidationSettingsMutation.isPending}
+                onClick={() => edgeValidationSettingsMutation.mutate()}
+              >
+                保存配置
+              </Button>
+            </Space>
+          </div>
+        </TablePanel>
 
         {activeDeviceId ? (
           activeDevice ? (

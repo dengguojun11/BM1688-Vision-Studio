@@ -23,6 +23,7 @@ import {
   Space,
   Spin,
   Table,
+  Tabs,
   Tag,
   Typography,
   Upload,
@@ -2723,7 +2724,7 @@ export default function ModelsPage() {
   const [externalSearchDraft, setExternalSearchDraft] = useState('');
   const [publishedSearch, setPublishedSearch] = useState('');
   const [publishedSearchDraft, setPublishedSearchDraft] = useState('');
-  const [publishedSource, setPublishedSource] = useState('');
+  const [publishedSource, setPublishedSource] = useState('labelu_publish');
   const [selectedPublished, setSelectedPublished] = useState<PublishedModel | null>(null);
   const [selected, setSelected] = useState<ModelVersion | null>(null);
   const [selectedDetailMode, setSelectedDetailMode] = useState<ModelDetailMode>('pt');
@@ -3648,7 +3649,7 @@ export default function ModelsPage() {
             : view === 'bmodel'
             ? '同一任务与算法的边端模型归为一个系列；展开后可查看每个版本的 FP32、FP16、INT8 制品及独立状态。'
             : view === 'published'
-            ? '查看本平台发布和AICM历史模型。第三方回流可通过这里保存的模型编号查找对应模型。'
+            ? '本系统训练并发布的模型可下载；AICM同步模型仅用于第三方专家回流和模型编号映射，不提供下载。'
             : view === 'external'
             ? '查看所有有权限访问的外部权重；管理人员可查看并删除全部记录，标注人员可删除自己上传的记录。'
             : '同一任务与算法的训练迭代归为一个模型系列；展开查看历史版本、召回率和推荐置信度，完整曲线请到训练中心查看。'}
@@ -3707,19 +3708,17 @@ export default function ModelsPage() {
                   updateSearchQuery(next);
                 }}
               />
-              <Select
-                aria-label="模型来源"
-                value={publishedSource}
-                style={{ width: 160 }}
-                options={[
-                  { value: '', label: '全部来源' },
-                  { value: 'labelu_publish', label: '本平台发布' },
-                  { value: 'remote_legacy', label: 'AICM历史模型' },
-                ]}
-                onChange={(value) => {
-                  setPublishedSource(value);
+              <Tabs
+                activeKey={publishedSource === 'remote_legacy' ? 'aicm' : 'local'}
+                onChange={(key) => {
+                  setPublishedSource(key === 'aicm' ? 'remote_legacy' : 'labelu_publish');
                   setPublishedPage(0);
                 }}
+                items={[
+                  { key: 'local', label: '本系统训练已发布' },
+                  { key: 'aicm', label: 'AICM同步模型' },
+                ]}
+                style={{ width: '100%' }}
               />
             </Space>
             <Space wrap>
@@ -3995,7 +3994,8 @@ export default function ModelsPage() {
                       <Button type="link" onClick={() => setSelectedPublished(row)}>详情</Button>
                       <Button
                       type="link"
-                      disabled={!row.download_enabled}
+                      disabled={!row.download_enabled || row.source_type === 'remote_legacy'}
+                      title={row.source_type === 'remote_legacy' ? 'AICM同步模型仅用于编号映射，不提供下载' : undefined}
                       onClick={async () => {
                         try {
                           const response = await request.get(

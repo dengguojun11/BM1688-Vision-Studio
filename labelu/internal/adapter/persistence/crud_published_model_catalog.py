@@ -190,7 +190,14 @@ def list_rows(
             PublishedModelCatalog.availability_status == availability_status
         )
     if source_type:
-        query = query.filter(PublishedModelCatalog.source_type == source_type)
+        if source_type == "labelu_publish":
+            query = query.filter(
+                PublishedModelCatalog.source_type.in_(
+                    ("labelu_publish", "labelu_model_version")
+                )
+            )
+        else:
+            query = query.filter(PublishedModelCatalog.source_type == source_type)
     if is_public is not None:
         query = query.filter(PublishedModelCatalog.is_public.is_(bool(is_public)))
     if download_enabled is not None:

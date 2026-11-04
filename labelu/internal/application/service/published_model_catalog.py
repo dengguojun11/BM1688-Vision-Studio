@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from fastapi import status as http_status
 from sqlalchemy import func
@@ -57,6 +57,7 @@ from labelu.internal.domain.models.annotation_taxonomy import AnnotationLabel
 from labelu.internal.domain.models.user import User
 
 PACKAGE_ROOT_DIRNAME = "published_model_packages"
+LOCAL_PUBLISH_SOURCE_TYPES = {"labelu_publish", "labelu_model_version"}
 
 
 @dataclass(frozen=True)
@@ -66,6 +67,7 @@ class ResolvedPublishedModelPackage:
     aicm_model_set_id: Optional[int]
     file_path: Path
     filename: str
+    root_folder: str = ""
 
 
 def _package_root() -> Path:
@@ -399,6 +401,112 @@ def _download_filename(row: PublishedModelCatalog) -> str:
     return f"{base}{model_suffix}.zip"
 
 
+def _v2_root_folder(row: PublishedModelCatalog) -> str:
+    """Folder name used by the V2 package layout.
+
+    V2 keeps the release folder plus flattened model files, unlike V1 where
+    metadata and bmodel files live under ``output_rknn/``.  AICM package names
+    such as ``model-20261028225850.zip`` carry the release timestamp; fall back
+    to the publish time if that name is unavailable.
+    """
+    remote_url = str(getattr(row, "remote_download_url", "") or "").strip()
+    if remote_url:
+        candidate = Path(urlparse(remote_url).path).stem
+        candidate = re.sub(r"[^A-Za-z0-9._-]+", "_", candidate).strip("._-")
+        if candidate:
+            return candidate
+    published_at = getattr(row, "published_at", None)
+    if published_at is not None:
+        try:
+            return f"model-{published_at.strftime('%Y%m%d%H%M%S')}"
+        except (AttributeError, ValueError):
+            pass
+    return f"model-{row.public_model_id}"
+
+
+def _v2_download_filename(v1_filename: str) -> str:
+    """V2 filename only depends on the resolved V1 filename."""
+    if "_v1" in v1_filename:
+        return v1_filename.replace("_v1", "_v2", 1)
+    stem = Path(v1_filename).stem
+    return f"{stem}-v2.zip"
+
+
+def build_v2_download_file(
+    db: Session,
+    identifier: str,
+    *,
+    source_system: Optional[str] = None,
+    public_only: bool = False,
+) -> tuple[Path, str]:
+    """Materialize a V2 package without modifying the stored V1 archive.
+
+    V2 layout:
+      model-<release timestamp>/
+        video.json
+        labels.txt
+        running_info.yml
+        *.bmodel
+
+    V1 keeps the model files under ``output_rknn/``; they are flattened into
+    the release folder here.  Files already in the flat V2 layout are copied
+    as-is, which makes the endpoint usable for both legacy and new packages.
+    """
+    resolved = resolve_download_file(
+        db,
+        identifier,
+        source_system=source_system,
+        public_only=public_only,
+    )
+    root_folder = resolved.root_folder or f"model-{resolved.model_id}"
+    target_fd, target_raw = tempfile.mkstemp(
+        prefix="labelu-model-v2-", suffix=".zip"
+    )
+    os.close(target_fd)
+    target = Path(target_raw)
+    try:
+        with zipfile.ZipFile(resolved.file_path, "r") as source_bundle:
+            members = [
+                info
+                for info in source_bundle.infolist()
+                if not info.is_dir()
+                and not Path(info.filename).name.startswith(".")
+                and "__MACOSX" not in info.filename
+            ]
+            if not members:
+                raise LabelUException(
+                    code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
+                    status_code=http_status.HTTP_409_CONFLICT,
+                    message=f"模型 {resolved.model_id} 的模型包为空，无法生成 V2 包",
+                )
+            with zipfile.ZipFile(
+                target, "w", compression=zipfile.ZIP_DEFLATED
+            ) as target_bundle:
+                for info in members:
+                    name = info.filename.replace("\\", "/").lstrip("/")
+                    if name.startswith("output_rknn/"):
+                        name = name[len("output_rknn/") :]
+                    elif name == "output_rknn":
+                        continue
+                    name = Path(name).name
+                    if not name:
+                        continue
+                    target_bundle.writestr(
+                        f"{root_folder}/{name}",
+                        source_bundle.read(info),
+                    )
+        if not zipfile.is_zipfile(target):
+            raise LabelUException(
+                code=ErrorCode.CODE_57028_YOLO_AICM_REMOTE_ERROR,
+                status_code=http_status.HTTP_409_CONFLICT,
+                message=f"模型 {resolved.model_id} 的 V2 包生成校验失败",
+            )
+        return target, _v2_download_filename(resolved.filename)
+    except Exception:
+        target.unlink(missing_ok=True)
+        raise
+
+
 def _assert_aicm_identity_not_rebound(
     row: PublishedModelCatalog,
     *,
@@ -550,37 +658,58 @@ def _label_lookup_for_rows(
 
 
 def _class_label_responses(
-    class_names: list[str], label_lookup: dict[str, AnnotationLabel]
+    class_names: list[str],
+    label_lookup: dict[str, AnnotationLabel],
+    class_thresholds: Optional[dict[str, Any]] = None,
 ) -> list[PublishedModelClassLabelResponse]:
+    thresholds = class_thresholds if isinstance(class_thresholds, dict) else {}
     responses: list[PublishedModelClassLabelResponse] = []
     for class_index, class_name in enumerate(class_names):
         label = label_lookup.get(_normalized_label_value(class_name))
+        class_key = str(label.label_value if label else class_name)
         responses.append(
             PublishedModelClassLabelResponse(
                 class_index=class_index,
                 label_key=str(label.label_key) if label else None,
-                label_value=str(label.label_value) if label else class_name,
+                label_value=class_key,
                 color=str(label.color) if label else None,
                 status=str(label.status) if label else None,
                 annotation_kind=str(label.annotation_kind) if label else None,
                 matched=label is not None,
+                thresh=(
+                    thresholds.get(class_key)
+                    or thresholds.get(_normalized_label_value(class_key))
+                ),
             )
         )
     return responses
 
 
+def _integration_meta(row: PublishedModelCatalog) -> dict[str, Any]:
+    return _json_object(getattr(row, "integration_meta_json", None))
+
+
 def _row_response(
     row: PublishedModelCatalog,
     label_lookup: Optional[dict[str, AnnotationLabel]] = None,
+    *,
+    base_url: str = "",
 ) -> PublishedModelResponse:
     class_names = _json_list(row.labels_json)
+    meta = _integration_meta(row)
+    class_thresholds = meta.get("class_thresholds")
+    if not isinstance(class_thresholds, dict):
+        class_thresholds = {}
+    download_path = (
+        "/api/v1/public/models/"
+        f"{quote(str(row.public_model_id), safe='')}/download"
+    )
+    if base_url:
+        download_path = f"{base_url.rstrip('/')}{download_path}"
     return PublishedModelResponse(
         catalog_id=int(row.id),
         model_id=str(row.public_model_id),
-        download_path=(
-            "/api/v1/public/models/"
-            f"{quote(str(row.public_model_id), safe='')}/download"
-        ),
+        download_path=download_path,
         aicm_model_set_id=row.aicm_model_set_id,
         aicm_environment_id=row.aicm_environment_id,
         export_id=row.export_id,
@@ -599,8 +728,20 @@ def _row_response(
         precision=_row_precision(row),
         resolution=row.resolution,
         map50=_as_float(row.map50),
+        f1=(
+            float(row.f1)
+            if getattr(row, "f1", None) is not None
+            else _as_float(meta.get("f1"))
+        ),
+        env_profile=meta.get("env_profile"),
+        env_profile_all=meta.get("env_profile_all"),
+        viewProfile=meta.get("viewProfile"),
+        viewProfile_all=meta.get("viewProfile_all"),
+        thresh=meta.get("thresh"),
         class_names=class_names,
-        class_labels=_class_label_responses(class_names, label_lookup or {}),
+        class_labels=_class_label_responses(
+            class_names, label_lookup or {}, class_thresholds
+        ),
         remote_download_url=row.remote_download_url,
         local_package_available=_existing_local_package(row) is not None,
         package_size_bytes=row.package_size_bytes,
@@ -764,25 +905,120 @@ def list_models(
     )
 
 
+def list_public_models(
+    db: Session,
+    *,
+    page: int = 0,
+    size: Optional[int] = None,
+    q: str = "",
+    name: str = "",
+    event: str = "",
+    f1: Optional[float] = None,
+    base_url: str = "",
+) -> tuple[PublishedModelListResponse, int, int]:
+    """Public catalog: all models by default (max 500), newest first.
+
+    The public endpoint needs cross-model label filtering, so rows are loaded
+    once and filtered before slicing.  The public catalog is small and bounded
+    by MAX_PUBLIC_MODELS.
+    """
+    max_public_models = 500
+    rows, _ = catalog_crud.list_rows(
+        db,
+        page=0,
+        size=10000,
+        query_text=q,
+        status="active",
+        is_public=True,
+        download_enabled=True,
+        downloadable_only=True,
+    )
+    label_lookup = _label_lookup_for_rows(db, rows)
+    responses = [
+        _row_response(row, label_lookup, base_url=base_url)
+        for row in rows
+        if str(row.source_type or "") in LOCAL_PUBLISH_SOURCE_TYPES
+    ]
+    name_text = str(name or "").strip().casefold()
+    event_text = str(event or "").strip().casefold()
+    if event_text.isdigit():
+        label = (
+            db.query(AnnotationLabel)
+            .filter(
+                AnnotationLabel.id == int(event_text),
+                AnnotationLabel.deleted_at.is_(None),
+            )
+            .first()
+        )
+        if label is not None:
+            event_text = str(label.label_value or label.label_key or "").casefold()
+    if name_text:
+        responses = [
+            item
+            for item in responses
+            if name_text in str(item.name or "").casefold()
+            or name_text in str(item.display_name or "").casefold()
+        ]
+    if event_text:
+        responses = [
+            item
+            for item in responses
+            if any(
+                event_text == str(label.label_key or "").casefold()
+                or event_text == str(label.label_value or "").casefold()
+                or event_text in str(label.label_key or "").casefold()
+                or event_text in str(label.label_value or "").casefold()
+                for label in (item.class_labels or [])
+            )
+        ]
+    if f1 is not None:
+        expected = round(float(f1), 2)
+        responses = [
+            item
+            for item in responses
+            if item.f1 is not None and round(float(item.f1), 2) == expected
+        ]
+    total = len(responses)
+    if size is None:
+        selected = responses[:max_public_models]
+        page_size = len(selected)
+    else:
+        page_size = min(max(int(size), 1), max_public_models)
+        page = max(int(page), 0)
+        selected = responses[page * page_size : (page + 1) * page_size]
+    summary = PublishedModelSummaryResponse(
+        total=total, active=total, public=total
+    )
+    return (
+        PublishedModelListResponse(summary=summary, models=selected),
+        total,
+        page_size,
+    )
+
+
 def get_model(
     db: Session,
     identifier: str,
     *,
     source_system: Optional[str] = None,
     public_only: bool = False,
+    base_url: str = "",
 ) -> PublishedModelResponse:
     row = resolve_model(db, identifier, source_system=source_system)
     if public_only and (
         row.status != "active"
         or not row.is_public
         or not row.download_enabled
+        or str(row.source_type or "") not in LOCAL_PUBLISH_SOURCE_TYPES
         or (
             _existing_local_package(row) is None
             and row.availability_status != "available"
         )
     ):
         raise _not_found(identifier)
-    response = _row_response(row, _label_lookup_for_rows(db, [row]))
+    response = _row_response(
+        row, _label_lookup_for_rows(db, [row]), base_url=base_url
+    )
     if not public_only:
         _attach_label_analysis(
             response, _catalog_label_analysis(db).get(int(row.id), {})
@@ -982,6 +1218,17 @@ def register_published_model(
         model_id=public_model_id,
         reason="published_model_registered",
     )
+    try:
+        from labelu.internal.application.service.published_model_integration import (
+            refresh_model_integration_metadata,
+        )
+
+        refresh_model_integration_metadata(db, row)
+        db.flush()
+    except Exception:
+        # Publication must not fail because optional edge/quantization evidence
+        # is not available yet; the backfill path can update it later.
+        pass
     return row
 
 
@@ -1549,7 +1796,10 @@ def resolve_download_file(
 ) -> ResolvedPublishedModelPackage:
     row = resolve_model(db, identifier, source_system=source_system)
     if public_only and (
-        row.status != "active" or not row.is_public or not row.download_enabled
+        row.status != "active"
+        or not row.is_public
+        or not row.download_enabled
+        or str(row.source_type or "") not in LOCAL_PUBLISH_SOURCE_TYPES
     ):
         raise _not_found(identifier)
     if not row.download_enabled:
@@ -1580,6 +1830,7 @@ def resolve_download_file(
         ),
         file_path=local_path,
         filename=_download_filename(row),
+        root_folder=_v2_root_folder(row),
     )
 
 

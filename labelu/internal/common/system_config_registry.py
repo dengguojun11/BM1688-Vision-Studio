@@ -480,6 +480,27 @@ SYSTEM_CONFIG_REGISTRY: dict[str, dict[str, Any]] = {
             }
         ],
     },
+    "edge_validation_settings": {
+        "group_name_zh": "边端验证设置",
+        "group_comment": "边端验证取图和最低验证样本数配置",
+        "scope_type": "global",
+        "sort_order": 86,
+        "items": [
+            {
+                "item_key": "config",
+                "item_name_zh": "边端验证图片配置",
+                "item_comment": "min_images：最低验证图片数；max_images：单次最多图片数",
+                "value_type": "json",
+                "default_value": {
+                    "version": 1,
+                    "min_images": 200,
+                    "max_images": 500,
+                },
+                "source_mode": "db_primary",
+                "sort_order": 10,
+            }
+        ],
+    },
 }
 
 

@@ -33,6 +33,7 @@ from labelu.internal.application.service.yolo_edge_validation import (
     _run_same_batch_pt_eval,
     _serialize_job_result_json,
 )
+from labelu.internal.application.service import edge_validation_settings
 from labelu.internal.application.service.yolo_edge_validation_pack import (
     edge_validation_job_root,
 )
@@ -953,7 +954,11 @@ def test_yolo_edge_validation_job_create_rejects_too_many_samples(
     client: TestClient, testuser_token_headers: dict, db: Session, tmp_path, monkeypatch
 ) -> None:
     monkeypatch.setattr(settings, "MEDIA_ROOT", str(tmp_path))
-    monkeypatch.setattr(settings, "YOLO_EDGE_VALIDATION_MAX_IMAGES", 1)
+    monkeypatch.setattr(
+        edge_validation_settings,
+        "get_config",
+        lambda: {"version": 1, "min_images": 1, "max_images": 1},
+    )
     task, _, export_row, samples = _prepare_export_and_samples(db, tmp_path)
 
     create_resp = client.post(

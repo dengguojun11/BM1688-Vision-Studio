@@ -88,6 +88,24 @@ def latest_by_export_ids(
     return {int(row.export_id): row for row in rows}
 
 
+def latest_completed_for_export(
+    db: Session, *, export_id: int
+) -> Optional[YoloEdgeValidationJob]:
+    return (
+        db.query(YoloEdgeValidationJob)
+        .filter(
+            YoloEdgeValidationJob.export_id == int(export_id),
+            YoloEdgeValidationJob.status == "COMPLETED",
+            YoloEdgeValidationJob.result_json.isnot(None),
+        )
+        .order_by(
+            desc(YoloEdgeValidationJob.completed_at),
+            desc(YoloEdgeValidationJob.id),
+        )
+        .first()
+    )
+
+
 def update(db: Session, row: YoloEdgeValidationJob, **kwargs) -> YoloEdgeValidationJob:
     for key, value in kwargs.items():
         setattr(row, key, value)

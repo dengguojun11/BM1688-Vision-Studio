@@ -20,6 +20,10 @@ class PublishedModelClassLabelResponse(BaseModel):
     status: Optional[str] = None
     annotation_kind: Optional[str] = None
     matched: bool = Field(description="是否已匹配 LabelU 系统标签")
+    thresh: Optional[dict] = Field(
+        default=None,
+        description="边端验证得到的类别阈值（百分比数值，不带百分号）",
+    )
 
 
 class PublishedModelResponse(BaseModel):
@@ -66,6 +70,24 @@ class PublishedModelResponse(BaseModel):
         default=0, description="至少共享一个标签的其他模型数量"
     )
     aliases: List[PublishedModelAliasResponse] = Field(default_factory=list)
+    f1: Optional[float] = Field(
+        default=None, description="边端 int8 验证 F1，百分比数值（0~100）"
+    )
+    env_profile: Optional[dict] = Field(
+        default=None, description="环境主值（天气、光照）"
+    )
+    env_profile_all: Optional[dict] = Field(
+        default=None, description="环境全部取值（天气、光照）"
+    )
+    viewProfile: Optional[dict] = Field(
+        default=None, description="视角主值（场景、角度）"
+    )
+    viewProfile_all: Optional[dict] = Field(
+        default=None, description="视角全部取值（场景、角度）"
+    )
+    thresh: Optional[dict] = Field(
+        default=None, description="TPU-MLIR 量化阈值（百分比数值）"
+    )
 
 
 class PublishedModelSummaryResponse(BaseModel):

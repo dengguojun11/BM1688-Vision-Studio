@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     String,
@@ -47,6 +48,8 @@ class PublishedModelCatalog(Base):
     precision = Column(String(16), nullable=True)
     resolution = Column(String(64), nullable=True)
     map50 = Column(String(32), nullable=True)
+    f1 = Column(Float, nullable=True, index=True)
+    integration_meta_json = Column(Text, nullable=True)
     labels_json = Column(Text, nullable=True)
     remote_download_url = Column(Text, nullable=True)
     package_rel_path = Column(String(512), nullable=True)

@@ -41,6 +41,7 @@ from labelu.internal.application.response.yolo_edge_validation import (
 )
 from labelu.internal.application.service import edge_ssh_validation
 from labelu.internal.application.service import edge_runtime_provision
+from labelu.internal.application.service import edge_validation_settings
 from labelu.internal.application.service.attachment import build_attachment_response
 from labelu.internal.application.service.yolo_sop_eval_analysis import (
     build_sop_eval_analysis,
@@ -2247,6 +2248,53 @@ def _sample_eval_files_with_class_coverage(
     }
 
 
+def edge_validation_image_limits() -> tuple[int, int]:
+    config = edge_validation_settings.get_config()
+    minimum = max(1, int(config.get("min_images") or 200))
+    maximum = max(minimum, int(config.get("max_images") or 500))
+    return minimum, maximum
+
+
+def _task_sample_ids_for_edge_validation(
+    db: Session,
+    *,
+    task_id: int,
+    class_names: list[str],
+    limit: int,
+    excluded_sample_ids: set[int] | None = None,
+) -> list[int]:
+    """Pick annotated task samples whose labels match the model contract."""
+    wanted = {str(name) for name in class_names if str(name).strip()}
+    excluded = excluded_sample_ids or set()
+    selected: list[int] = []
+    for sample in crud_sample.list_by_task(db=db, task_id=int(task_id)):
+        if int(sample.id) in excluded:
+            continue
+        if str(getattr(sample, "state", "") or "") not in {"DONE", "INCOMPLETE"}:
+            continue
+        payload = _decode_json(getattr(sample, "data", None), {})
+        if not isinstance(payload, dict):
+            continue
+        result = payload.get("result")
+        result = _decode_json(result, {}) if isinstance(result, str) else result
+        labels: set[str] = set()
+        if isinstance(result, dict):
+            for key, value in result.items():
+                if not str(key).endswith("Tool") or not isinstance(value, dict):
+                    continue
+                for item in value.get("result") or []:
+                    if isinstance(item, dict) and item.get("label"):
+                        labels.add(str(item["label"]))
+        if not labels:
+            continue
+        if wanted and not (labels & wanted):
+            continue
+        selected.append(int(sample.id))
+        if len(selected) >= max(1, int(limit)):
+            break
+    return selected
+
+
 def _copy_legacy_eval_dataset_into_job(
     *,
     export_id: int,
@@ -2329,7 +2377,8 @@ def _copy_legacy_eval_dataset_into_job(
             if not source_files:
                 continue
             source_image_count = len(source_files)
-            max_images = max(1, int(settings.YOLO_EDGE_VALIDATION_MAX_IMAGES or 50))
+            _, configured_max_images = edge_validation_image_limits()
+            max_images = max(1, int(configured_max_images))
             label_src = dataset_root / label_dir / split
             if not label_src.is_dir():
                 label_src = dataset_root / label_dir / "test"
@@ -2378,6 +2427,43 @@ def _copy_legacy_eval_dataset_into_job(
             status_code=status.HTTP_400_BAD_REQUEST,
             message="训练产物中未找到可用的 test/val 评估图片，无法发起边端验证",
         )
+
+    minimum_images, _ = edge_validation_image_limits()
+    if copied_count < minimum_images and db is not None:
+        train_job = crud_yolo_train_job.get(db=db, job_id=int(yolo_train_job_id))
+        task_id = int(getattr(train_job, "task_id", 0) or 0) if train_job else 0
+        if task_id:
+            excluded_ids: set[int] = set()
+            manifest_raw = getattr(train_job, "source_sample_manifest_json", None) if train_job else None
+            try:
+                manifest_rows = json.loads(manifest_raw) if manifest_raw else []
+            except (TypeError, ValueError, json.JSONDecodeError):
+                manifest_rows = []
+            for item in manifest_rows if isinstance(manifest_rows, list) else []:
+                if isinstance(item, dict):
+                    try:
+                        excluded_ids.add(int(item.get("source_sample_id")))
+                    except (TypeError, ValueError):
+                        continue
+            sample_ids = _task_sample_ids_for_edge_validation(
+                db,
+                task_id=task_id,
+                class_names=class_names,
+                limit=minimum_images,
+                excluded_sample_ids=excluded_ids,
+            )
+            if sample_ids:
+                task = crud_task.get(db=db, task_id=task_id)
+                return pack_selected_samples_for_job(
+                    db,
+                    export_id=int(export_id),
+                    job_id=int(job_id),
+                    task_id=task_id,
+                    mode="run_and_eval",
+                    sample_ids=sample_ids,
+                    task_config_json=getattr(task, "config", None),
+                    root_override=job_root,
+                )
 
     if not class_names and sampling_evidence.get("expected_classes"):
         class_names = list(sampling_evidence["expected_classes"])
@@ -2602,13 +2688,14 @@ def create_job(
         )
 
     total_selected = len(set(sample_ids)) + len(set(attachment_ids))
-    if total_selected > int(settings.YOLO_EDGE_VALIDATION_MAX_IMAGES or 50):
+    _, configured_max_images = edge_validation_image_limits()
+    if total_selected > int(configured_max_images):
         raise LabelUException(
             code=ErrorCode.CODE_30003_CLIENT_ERROR,
             status_code=status.HTTP_400_BAD_REQUEST,
             message=(
                 f"鍗曟杈圭楠岃瘉鏈€澶氬彧鑳介€夋嫨 "
-                f"{int(settings.YOLO_EDGE_VALIDATION_MAX_IMAGES or 50)} 寮犲浘鐗?"
+                f"{int(configured_max_images)} 张图片"
             ),
         )
 
@@ -4581,6 +4668,18 @@ def _run_manual_job_sync(job_id: int) -> None:
                         db,
                         row,
                         **final_updates,
+                    )
+            if final_status != "FAILED":
+                try:
+                    from labelu.internal.application.service.published_model_integration import (
+                        refresh_models_for_export,
+                    )
+
+                    refresh_models_for_export(db, int(row.export_id))
+                except Exception:
+                    logger.exception(
+                        "refresh published model integration metadata failed export_id={}",
+                        row.export_id,
                     )
     except Exception as exc:
         logger.exception("manual edge validation job failed job_id={}", job_id)
