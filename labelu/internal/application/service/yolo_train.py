@@ -1745,6 +1745,58 @@ def prepare_yolo_train_runtime_env() -> Path:
     return runtime_root
 
 
+def _install_ultralytics_threadpool_compat() -> None:
+    """用线程池替代 Ultralytics 的 multiprocessing ThreadPool。
+
+    Ultralytics 在首次生成 labels cache 时会创建
+    ``multiprocessing.pool.ThreadPool``，其内部 ``SimpleQueue`` 依赖
+    ``/dev/shm`` 的 POSIX semaphore。受限 Worker 在 semaphore 资源异常时
+    会直接抛 ``PermissionError``，导致训练还没开始就失败。labels cache
+    的校验本身是并发读文件，改用线程池即可，也不需要把运行时数据写到
+    ``/dev/shm``。
+    """
+
+    try:
+        from concurrent.futures import ThreadPoolExecutor
+
+        import ultralytics.data.base as ultralytics_data_base
+        import ultralytics.data.dataset as ultralytics_data_dataset
+        import ultralytics.data.utils as ultralytics_data_utils
+    except Exception as exc:
+        logger.warning("安装 Ultralytics labels cache 线程池兼容层失败: {}", exc)
+        return
+
+    class _ExecutorThreadPool:
+        def __init__(self, processes):
+            workers = max(1, int(processes or 1))
+            self._executor = ThreadPoolExecutor(max_workers=workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self._executor.shutdown(wait=True)
+
+        def imap(self, func, iterable):
+            futures = [
+                self._executor.submit(func, *args)
+                for args in iterable
+            ]
+            for future in futures:
+                yield future.result()
+
+    for module in (
+        ultralytics_data_dataset,
+        ultralytics_data_base,
+        ultralytics_data_utils,
+    ):
+        if getattr(module, "_labelu_threadpool_compat", False):
+            continue
+        module.ThreadPool = _ExecutorThreadPool
+        module._labelu_threadpool_compat = True
+    logger.info("Ultralytics labels cache 已切换为线程池模式，避免依赖 /dev/shm semaphore")
+
+
 def _cuda_runtime_snapshot() -> Tuple[bool, int]:
     prepare_cuda_env_for_yolo_train()
     try:
@@ -4964,6 +5016,7 @@ def _run_yolo_train_sync(
 
             from ultralytics import YOLO
 
+            _install_ultralytics_threadpool_compat()
             _write_train_phase(
                 job_id,
                 "loading_model",
