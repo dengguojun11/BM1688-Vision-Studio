@@ -130,12 +130,6 @@ export default function PersonnelStatisticsPage() {
         width: 90,
       },
       {
-        title: '编辑次数',
-        dataIndex: 'annotation_edits',
-        key: 'annotation_edits',
-        width: 90,
-      },
-      {
         title: '审核图片',
         dataIndex: 'review_images',
         key: 'review_images',
@@ -148,16 +142,10 @@ export default function PersonnelStatisticsPage() {
         width: 90,
       },
       {
-        title: '审核驳回',
-        dataIndex: 'review_rejected',
-        key: 'review_rejected',
+        title: '作废',
+        dataIndex: 'deleted_images',
+        key: 'deleted_images',
         width: 90,
-      },
-      {
-        title: '仲裁/作废',
-        key: 'review_other',
-        width: 110,
-        render: (_, row) => `${row.review_arbitrated} / ${row.review_invalidated}`,
       },
       {
         title: '最后有效操作',
@@ -183,10 +171,9 @@ export default function PersonnelStatisticsPage() {
       { title: '日期', dataIndex: 'date', key: 'date', width: 120 },
       { title: '标注图片', dataIndex: 'annotation_images', key: 'annotation_images' },
       { title: '标注框', dataIndex: 'annotation_boxes', key: 'annotation_boxes' },
-      { title: '编辑次数', dataIndex: 'annotation_edits', key: 'annotation_edits' },
       { title: '审核图片', dataIndex: 'review_images', key: 'review_images' },
       { title: '通过', dataIndex: 'review_approved', key: 'review_approved' },
-      { title: '驳回', dataIndex: 'review_rejected', key: 'review_rejected' },
+      { title: '作废', dataIndex: 'deleted_images', key: 'deleted_images' },
     ],
     [],
   );
@@ -203,7 +190,7 @@ export default function PersonnelStatisticsPage() {
             人员标注审核统计
           </Typography.Title>
           <Typography.Text type="secondary">
-            统计实际标注内容变化和审核决策；无操作保存不计入有效标注工作量。
+            标注图片按实际修改标注框去重统计；审核图片为对比后无变化，审核通过为改动后点击下一步；作废为任务内删除的图片数。
           </Typography.Text>
         </div>
         <Space wrap>
@@ -233,7 +220,8 @@ export default function PersonnelStatisticsPage() {
         <Statistic title="标注图片" value={summary?.annotation_images ?? 0} suffix="张" />
         <Statistic title="标注框" value={summary?.annotation_boxes ?? 0} suffix="个" />
         <Statistic title="审核图片" value={summary?.review_images ?? 0} suffix="张" />
-        <Statistic title="审核通过/驳回" value={`${summary?.review_approved ?? 0} / ${summary?.review_rejected ?? 0}`} />
+        <Statistic title="审核通过" value={summary?.review_approved ?? 0} suffix="张" />
+        <Statistic title="作废" value={summary?.deleted_images ?? 0} suffix="张" />
       </div>
 
       <QueueToolbar>

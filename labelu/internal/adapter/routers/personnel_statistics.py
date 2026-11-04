@@ -20,6 +20,7 @@ router = APIRouter()
 class HeartbeatCommand(BaseModel):
     session_id: Optional[str] = Field(default=None, max_length=128)
     path: Optional[str] = Field(default=None, max_length=512)
+    active_seconds: int = Field(default=0, ge=0, le=300)
 
 
 class HeartbeatResponse(BaseModel):
@@ -43,12 +44,9 @@ class PersonnelSummary(BaseModel):
     active_users: int = 0
     annotation_images: int = 0
     annotation_boxes: int = 0
-    annotation_edits: int = 0
     review_images: int = 0
     review_approved: int = 0
-    review_rejected: int = 0
-    review_arbitrated: int = 0
-    review_invalidated: int = 0
+    deleted_images: int = 0
     effective_work_seconds: int = 0
 
 
@@ -63,12 +61,9 @@ class PersonnelUserRow(BaseModel):
     effective_work_seconds: int = 0
     annotation_images: int = 0
     annotation_boxes: int = 0
-    annotation_edits: int = 0
     review_images: int = 0
     review_approved: int = 0
-    review_rejected: int = 0
-    review_arbitrated: int = 0
-    review_invalidated: int = 0
+    deleted_images: int = 0
     task_count: int = 0
 
 
@@ -81,12 +76,9 @@ class PersonnelDailyRow(BaseModel):
     date: date
     annotation_images: int = 0
     annotation_boxes: int = 0
-    annotation_edits: int = 0
     review_images: int = 0
     review_approved: int = 0
-    review_rejected: int = 0
-    review_arbitrated: int = 0
-    review_invalidated: int = 0
+    deleted_images: int = 0
 
 
 class PersonnelDetailResponse(BaseModel):
@@ -135,6 +127,7 @@ def heartbeat(
         path=cmd.path,
         ip=ip,
         user_agent=request.headers.get("user-agent"),
+        active_seconds=cmd.active_seconds,
     )
     return OkResp[HeartbeatResponse](
         data=HeartbeatResponse(
@@ -185,9 +178,7 @@ def personnel_dashboard(
         date_to=end,
         user_id=user_id,
     )
-    return OkResp[PersonnelDashboardResponse](
-        data=PersonnelDashboardResponse(**data)
-    )
+    return OkResp[PersonnelDashboardResponse](data=PersonnelDashboardResponse(**data))
 
 
 @router.get(
@@ -215,9 +206,7 @@ def personnel_user_detail(
         date_from=start,
         date_to=end,
     )
-    return OkResp[PersonnelDetailResponse](
-        data=PersonnelDetailResponse(**data)
-    )
+    return OkResp[PersonnelDetailResponse](data=PersonnelDetailResponse(**data))
 
 
 @router.get(

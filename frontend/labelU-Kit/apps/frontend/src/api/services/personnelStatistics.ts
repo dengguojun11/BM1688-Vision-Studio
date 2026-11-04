@@ -7,12 +7,9 @@ export interface PersonnelSummary {
   active_users: number;
   annotation_images: number;
   annotation_boxes: number;
-  annotation_edits: number;
   review_images: number;
   review_approved: number;
-  review_rejected: number;
-  review_arbitrated: number;
-  review_invalidated: number;
+  deleted_images: number;
   effective_work_seconds: number;
 }
 
@@ -27,12 +24,9 @@ export interface PersonnelUserRow {
   effective_work_seconds: number;
   annotation_images: number;
   annotation_boxes: number;
-  annotation_edits: number;
   review_images: number;
   review_approved: number;
-  review_rejected: number;
-  review_arbitrated: number;
-  review_invalidated: number;
+  deleted_images: number;
   task_count: number;
 }
 
@@ -45,12 +39,9 @@ export interface PersonnelDailyRow {
   date: string;
   annotation_images: number;
   annotation_boxes: number;
-  annotation_edits: number;
   review_images: number;
   review_approved: number;
-  review_rejected: number;
-  review_arbitrated: number;
-  review_invalidated: number;
+  deleted_images: number;
 }
 
 export interface PersonnelDetail {

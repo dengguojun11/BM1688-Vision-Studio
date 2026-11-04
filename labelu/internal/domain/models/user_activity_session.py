@@ -1,6 +1,15 @@
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 
 from labelu.internal.common.db import Base
 
@@ -24,6 +33,11 @@ class UserActivitySession(Base):
     ip = Column(String(64), nullable=True)
     user_agent = Column(String(512), nullable=True)
     logout_at = Column(DateTime(timezone=True), nullable=True)
+    # Actual on-screen interaction time accumulated by the browser heartbeat.
+    # ``active_date`` lets a session that stays open across midnight reset the
+    # counter instead of inflating "today" with yesterday's minutes.
+    active_seconds = Column(Integer, nullable=False, default=0)
+    active_date = Column(Date, nullable=True, index=True)
     updated_at = Column(
         DateTime(timezone=True), nullable=False, default=datetime.now, onupdate=datetime.now
     )

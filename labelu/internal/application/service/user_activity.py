@@ -28,9 +28,15 @@ def record_heartbeat(
     path: str | None = None,
     ip: str | None = None,
     user_agent: str | None = None,
+    active_seconds: int = 0,
 ) -> UserActivitySession:
     now = datetime.now()
+    today = now.date()
     normalized = normalize_session_id(session_id)
+    try:
+        delta = max(0, min(int(active_seconds or 0), 300))
+    except (TypeError, ValueError):
+        delta = 0
     row = (
         db.query(UserActivitySession)
         .filter(
@@ -49,10 +55,18 @@ def record_heartbeat(
                 last_path=(path or "")[:512] or None,
                 ip=(ip or "")[:64] or None,
                 user_agent=(user_agent or "")[:512] or None,
+                active_seconds=delta,
+                active_date=today,
                 updated_at=now,
             )
             db.add(row)
         else:
+            if row.active_date != today:
+                row.active_seconds = 0
+                row.active_date = today
+            row.active_seconds = min(
+                24 * 3600, int(row.active_seconds or 0) + delta
+            )
             row.last_seen_at = now
             row.last_path = (path or "")[:512] or None
             row.ip = (ip or "")[:64] or None
