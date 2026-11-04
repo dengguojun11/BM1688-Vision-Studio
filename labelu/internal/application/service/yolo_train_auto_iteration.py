@@ -514,6 +514,28 @@ def maybe_start_auto_iteration_train(job_id: int) -> None:
                 category=(cmd.category or "").strip()[:128],
                 hyperparams_json=hp_json,
                 source_task_ids_json=source_task_ids_json(source_ids),
+                dataset_manifest_json=getattr(completed_job, "dataset_manifest_json", None),
+                training_recipe_key=getattr(completed_job, "training_recipe_key", None),
+                training_recipe_version=getattr(
+                    completed_job, "training_recipe_version", None
+                ),
+                series_id=getattr(completed_job, "series_id", None),
+                variant_id=getattr(completed_job, "variant_id", None),
+                parent_training_job_id=int(completed_job.id),
+                parent_model_version_id=getattr(
+                    completed_job, "parent_model_version_id", None
+                ),
+                branch_key=getattr(completed_job, "branch_key", None),
+                selection_contract_sha256=getattr(
+                    completed_job, "selection_contract_sha256", None
+                ),
+                selection_contract_json=getattr(
+                    completed_job, "selection_contract_json", None
+                ),
+                sample_conditions_json=getattr(
+                    completed_job, "sample_conditions_json", None
+                ),
+                inheritance_mode="auto_iteration",
             )
             new_job_id = int(new_job.id)
             new_job.auto_iteration_root_id = root_id
