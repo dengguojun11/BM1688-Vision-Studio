@@ -24,6 +24,11 @@ def test_phase_one_scope_excludes_retired_control_plane_tables() -> None:
     assert phase_one_table_names(metadata) == frozenset({"task", "user"})
     assert PHASE_ONE_RETIRED_TABLES >= {"project", "organization", "edge_agent"}
     assert {"task", "dataset", "yolo_bm1688_export"} <= PHASE_ONE_TABLE_ALLOWLIST
+    assert {
+        "annotation_review_event",
+        "system_operation_log",
+        "user_activity_session",
+    } <= PHASE_ONE_TABLE_ALLOWLIST
 
 
 def test_phase_one_foreign_key_closure_reports_legacy_reference() -> None:
@@ -106,4 +111,5 @@ def test_empty_sqlite_uses_phase_one_scope(tmp_path: Path) -> None:
 
     assert "task" in tables
     assert "dataset" in tables
+    assert "user_activity_session" in tables
     assert not (tables & PHASE_ONE_RETIRED_TABLES)
