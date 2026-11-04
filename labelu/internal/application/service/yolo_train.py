@@ -1779,8 +1779,8 @@ def _install_ultralytics_threadpool_compat() -> None:
 
         def imap(self, func, iterable):
             futures = [
-                self._executor.submit(func, *args)
-                for args in iterable
+                self._executor.submit(func, item)
+                for item in iterable
             ]
             for future in futures:
                 yield future.result()
