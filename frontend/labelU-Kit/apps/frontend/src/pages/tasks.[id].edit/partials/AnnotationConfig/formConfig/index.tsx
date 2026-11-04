@@ -90,32 +90,6 @@ const LabelBindingField = styled.div`
   }
 `;
 
-const LabelImportOptions = styled.div`
-  display: grid;
-  gap: 0.375rem;
-  margin-top: 0.5rem;
-  padding: 0.5rem 0.625rem;
-  border: 1px solid var(--color-border-secondary);
-  border-radius: var(--border-radius);
-  background: var(--color-fill-quaternary);
-`;
-
-const LabelImportRow = styled.div`
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-width: 0;
-  color: var(--color-text-secondary);
-  font-size: 0.8125rem;
-
-  .label-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-`;
-
 const LabelBindingLabel = styled.div`
   display: flex;
   align-items: center;
@@ -858,94 +832,9 @@ const FormConfig = () => {
               )}
             </DatasetContractPreview>
             <LabelBindingHelp>
-              只读取数据集契约，不修改数据集；确认后会覆盖当前任务标注工具中的任务标签。
+              只读取数据集契约，不修改数据集；任务标签只能由数据集契约生成，不支持手工选择。
             </LabelBindingHelp>
           </DatasetContractField>
-          <LabelBindingField>
-            <LabelBindingLabel>
-              <span>* 任务标签</span>
-              <Tooltip title="直接选择当前任务允许标注的独立标签；系统会创建版本化标签契约。">
-                <InfoCircleOutlined />
-              </Tooltip>
-            </LabelBindingLabel>
-            <Select
-              mode="multiple"
-              value={selectedLabelIds}
-              placeholder="选择一个或多个独立标签"
-              maxTagCount="responsive"
-              loading={applyingLabels}
-              disabled={applyingLabels}
-              optionFilterProp="label"
-              options={systemLabels.map((item) => ({
-                value: item.id,
-                label: `${item.label_key} (${item.label_value}) · ${annotationKindLabel(item.annotation_kind)}`,
-              }))}
-              onChange={(values) => void handleDirectLabelsChange(values)}
-            />
-            {isCreateNewTask && selectedLabelIds.length > 0 && (
-              <LabelImportOptions>
-                <LabelImportRow>
-                  <span className="label-name">新建任务时导入所选标签的图片与标注</span>
-                </LabelImportRow>
-                {systemLabels
-                  .filter((item) => selectedLabelIds.includes(item.id))
-                  .map((item) => (
-                    <LabelImportRow key={item.id}>
-                      <span
-                        className="label-name"
-                        title={`${item.label_key} (${item.label_value}) · ${annotationKindLabel(item.annotation_kind)}`}
-                      >
-                        {item.label_key} ({item.label_value}) · {annotationKindLabel(item.annotation_kind)}
-                      </span>
-                      <Switch
-                        size="small"
-                        checked={labelDatasetImportIds.includes(item.id)}
-                        onChange={(checked) => {
-                          setLabelDatasetImportIds((current) =>
-                            checked
-                              ? Array.from(new Set([...current, item.id]))
-                              : current.filter((id) => id !== item.id),
-                          );
-                        }}
-                      />
-                    </LabelImportRow>
-                  ))}
-              </LabelImportOptions>
-            )}
-            <LabelBindingHelp>标签决定任务的类别契约；修改后会同步标注工具中的类别。</LabelBindingHelp>
-          </LabelBindingField>
-          {rectPresetOptions.length > 0 && (
-            <LabelBindingField>
-              <LabelBindingLabel>
-                <span>预设快捷应用</span>
-                <Tooltip title="可选。预设只用于一次性带入标签，任务最终仍保存独立标签契约。">
-                  <InfoCircleOutlined />
-                </Tooltip>
-              </LabelBindingLabel>
-              <Space.Compact>
-                <Select
-                  value={selectedRectPresetSlug}
-                  placeholder="从预设快速带入标签"
-                  loading={applyingRectPreset}
-                  disabled={applyingRectPreset}
-                  options={rectPresetOptions.map((item) => ({
-                    label: item.name,
-                    value: item.id,
-                  }))}
-                  onChange={(value) => void handleRectPresetChange(value)}
-                />
-                <Button href="/annotation-settings" target="_blank" rel="noreferrer">
-                  管理预设
-                </Button>
-              </Space.Compact>
-              <LabelBindingHelp>只负责快速带入，不会把任务重新绑定为预设。</LabelBindingHelp>
-            </LabelBindingField>
-          )}
-          {rectPresetOptions.length > 0 && (
-            <Form.Item name="selectedRectPresetId" hidden>
-              <FancyInput type="text" />
-            </Form.Item>
-          )}
         </LabelBindingBar>
       )}
       <Modal
@@ -999,48 +888,6 @@ const FormConfig = () => {
           )}
         </Space>
       </Modal>
-      {false && task?.media_type === MediaType.IMAGE && (
-        <Form.Item label="任务标签" tooltip="直接选择当前任务允许标注的全局标签；系统会创建版本化标签契约。" required>
-          <Select
-            mode="multiple"
-            value={selectedLabelIds}
-            placeholder="请选择一个或多个全局标签"
-            loading={applyingLabels}
-            disabled={applyingLabels}
-            optionFilterProp="label"
-            options={systemLabels.map((item) => ({
-              value: item.id,
-              label: `${item.label_key} (${item.label_value})`,
-            }))}
-            onChange={(values) => void handleDirectLabelsChange(values)}
-          />
-        </Form.Item>
-      )}
-      {false && task?.media_type === MediaType.IMAGE && rectPresetOptions.length > 0 && (
-        <>
-          <Form.Item label="预设快捷应用" tooltip="可选。预设只用于一次性带入标签，任务最终仍保存独立标签契约。">
-            <Space.Compact style={{ width: '100%' }}>
-              <Select
-                value={selectedRectPresetSlug}
-                placeholder="可选：从预设快速带入标签"
-                loading={applyingRectPreset}
-                disabled={applyingRectPreset}
-                options={rectPresetOptions.map((item) => ({
-                  label: item.name,
-                  value: item.id,
-                }))}
-                onChange={(value) => void handleRectPresetChange(value)}
-              />
-              <Button href="/annotation-settings" target="_blank" rel="noreferrer">
-                管理预设
-              </Button>
-            </Space.Compact>
-          </Form.Item>
-          <Form.Item name="selectedRectPresetId" hidden>
-            <FancyInput type="text" />
-          </Form.Item>
-        </>
-      )}
       <Form.Item label={t('annotationTool')}>
         <Select
           placeholder={t('addTool')}
