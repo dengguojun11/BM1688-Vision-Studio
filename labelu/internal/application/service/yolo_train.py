@@ -13,6 +13,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import uuid
 from datetime import datetime
 from io import BytesIO
@@ -5142,6 +5143,8 @@ def _run_yolo_train_sync(
             _cleanup_train_runtime_after_terminal_failure(job_id)
             return
         fail_detail = _format_train_failure_detail(job_id, e)
+        logger.exception("YOLO train job {} failed with traceback", job_id)
+        train_log.write_block("train_traceback", traceback.format_exc())
         train_log.write_block("train_failure", fail_detail)
         _write_train_phase(
             job_id,
