@@ -40,6 +40,9 @@ export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
 # tpuc-opt is an OpenMP binary; in the restricted compiler worker it must not
 # allocate a shared-memory team (SHM2) that /dev/shm permissions can deny.
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+# LLVM libomp also opens a file-backed shared-memory region (SHM2) even for a
+# single thread; disable it in the restricted compiler worker.
+export KMP_USE_SHM="${KMP_USE_SHM:-0}"
 
 TPU_MLIR_PIP_EXTRAS=(psutil tqdm numpy)
 TPU_MLIR_PIP_MODE=0
