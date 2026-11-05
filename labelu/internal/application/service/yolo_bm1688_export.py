@@ -2010,17 +2010,14 @@ def _compile_subprocess_env(file_cfg: dict) -> dict:
     # The compiler worker may inherit HOME=/root from supervisor.  libomp
     # resolves some per-user runtime paths via HOME/TMPDIR; keep them in the
     # writable platform data area so tpuc-opt does not fail on /root or /tmp.
-    runtime_root = Path(settings.BASE_DATA_DIR) / "train-runtime-home"
-    runtime_tmp = Path(settings.BASE_DATA_DIR) / "train-runtime-tmp"
+    runtime_root = Path("/root")
+    runtime_tmp = Path("/data/7G_AI/tmp")
     runtime_root.mkdir(parents=True, exist_ok=True)
     runtime_tmp.mkdir(parents=True, exist_ok=True)
     env["HOME"] = str(runtime_root)
     env["TMPDIR"] = str(runtime_tmp)
     env["OMP_NUM_THREADS"] = "1"
     env["KMP_USE_SHM"] = "0"
-    shm_shim = Path(settings.BASE_DATA_DIR) / "shmwrap.so"
-    if shm_shim.is_file():
-        env["LD_PRELOAD"] = str(shm_shim)
     tpu_py = str(file_cfg.get("tpu_mlir_python") or "").strip()
     if tpu_py:
         py_dir = str(Path(tpu_py).parent)
