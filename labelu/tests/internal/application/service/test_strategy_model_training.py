@@ -5,6 +5,7 @@ import json
 from types import SimpleNamespace
 
 from labelu.internal.application.service import strategy_model_training as service
+from labelu.internal.common.config import settings
 from labelu.internal.common.db import begin_transaction
 from labelu.internal.domain.models.annotation_contract import TaskAnnotationLabel
 from labelu.internal.domain.models.annotation_taxonomy import AnnotationLabel
@@ -291,6 +292,10 @@ def test_ensure_training_job_uses_manual_entrypoint_with_preset_weights(
         "create_label_dimension_training_task",
         fake_create,
     )
+    monkeypatch.setattr(
+        "labelu.internal.application.service.yolo_train.gpu_training_available",
+        lambda: (True, 1),
+    )
     admin = User(username="open@system-test", hashed_password="x")
     with begin_transaction(db):
         db.add(admin)
@@ -309,7 +314,7 @@ def test_ensure_training_job_uses_manual_entrypoint_with_preset_weights(
     assert command.selected_task_ids == [int(task.id)]
     assert command.weights_source == "preset"
     assert command.model_weights.endswith(".pt")
-    assert captured["idempotency_key"] == f"strategy:{row.external_task_id}"
+    assert captured["idempotency_key"] == f"strategy:{row.external_task_id}:1"
     job = (
         db.query(YoloTrainJob)
         .filter(YoloTrainJob.id == payload["derived_train_job_id"])
@@ -318,3 +323,33 @@ def test_ensure_training_job_uses_manual_entrypoint_with_preset_weights(
     assert job.source_system == "strategy_evolution"
     assert job.source_external_task_id == row.external_task_id
     assert job.source_integration_id == int(row.id)
+
+
+def test_ensure_training_job_waits_for_gpu_instead_of_cpu(db, monkeypatch):
+    _catalog(db)
+    _annotated_task(db, name="非机动车违停", labels=MODEL_LABELS[:4], done_samples=20)
+    row = _strategy_row(db)
+    admin = User(username="open@system-gpu-wait", hashed_password="x")
+    with begin_transaction(db):
+        db.add(admin)
+        db.flush()
+    admin = db.query(User).filter(User.id == int(admin.id)).one()
+    monkeypatch.setattr(settings, "YOLO_TRAIN_REQUIRE_GPU", True)
+    monkeypatch.setattr(
+        "labelu.internal.application.service.yolo_train.gpu_training_available",
+        lambda: (False, 0),
+    )
+
+    created, payload = service.ensure_model_training_job_sync(
+        db, row=row, result={}, admin=admin
+    )
+
+    assert created is False
+    assert payload["model_training_status"] == "waiting_for_gpu"
+    assert "禁止 CPU 训练" in payload["message"]
+    assert (
+        db.query(YoloTrainJob)
+        .filter(YoloTrainJob.source_integration_id == int(row.id))
+        .count()
+        == 0
+    )

@@ -309,6 +309,10 @@ class ErrorCode(Enum):
         TASK_INIT_CODE + 7033,
         "YOLO pre-annotation model labels do not match the current task labels",
     )
+    CODE_57034_YOLO_TRAIN_GPU_REQUIRED = (
+        TASK_INIT_CODE + 7034,
+        "训练必须使用 GPU：当前运行时没有可用 CUDA 设备，已禁止 CPU 训练",
+    )
     CODE_57100_AUTO_TRAIN_PLAN_NOT_FOUND = (57100, "自动训练计划不存在或不可见")
     CODE_57101_AUTO_TRAIN_PLAN_CONFIG_INCOMPLETE = (57101, "自动训练计划配置不完整")
     CODE_57102_AUTO_TRAIN_PLAN_CONFLICT = (57102, "自动训练计划版本或状态冲突")

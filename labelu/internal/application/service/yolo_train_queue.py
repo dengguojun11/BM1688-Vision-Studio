@@ -556,7 +556,9 @@ def _bind_train_child_cuda_device(train_device: Optional[str]) -> str:
     """Bind physical GPUs before the child imports torch/Ultralytics."""
     raw = str(train_device or "").strip().lower()
     if not raw or raw == "cpu":
-        os.environ["CUDA_VISIBLE_DEVICES"] = ""
+        # Never poison the long-lived worker process: an empty
+        # CUDA_VISIBLE_DEVICES makes every later torch import see no GPU.
+        os.environ.pop("CUDA_VISIBLE_DEVICES", None)
         return "cpu"
     physical_indices = [
         int(part.replace("cuda:", "").strip())

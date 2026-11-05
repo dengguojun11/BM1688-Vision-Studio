@@ -45,7 +45,7 @@ from labelu.internal.domain.models.strategy_task_integration import (
 )
 from labelu.internal.domain.models.task import Task
 from labelu.internal.domain.models.user import User
-from labelu.internal.domain.models.yolo_train_job import YoloTrainJob
+from labelu.internal.domain.models.yolo_train_job import YoloTrainJob, YoloTrainStatus
 
 DEFAULT_TRAINING_RECIPE = "yolov11_detection"
 IMAGE_MEDIA_TYPE = "IMAGE"
@@ -371,7 +371,10 @@ def _existing_training_job(
             | (
                 (YoloTrainJob.source_system == "strategy_evolution")
                 & (YoloTrainJob.source_external_task_id == row.external_task_id)
-            )
+            ),
+            YoloTrainJob.status.notin_(
+                (YoloTrainStatus.CANCELLED.value, YoloTrainStatus.FAILED.value)
+            ),
         )
         .order_by(YoloTrainJob.id.desc())
         .first()
@@ -477,6 +480,34 @@ def ensure_model_training_job_sync(
 
     task = selection["task"]
     weights = resolve_initial_weights(db, int(task.id))
+    from labelu.internal.application.service import yolo_train as yolo_train_service
+
+    cuda_ok, gpu_count = yolo_train_service.gpu_training_available()
+    if bool(getattr(settings, "YOLO_TRAIN_REQUIRE_GPU", True)) and (
+        not cuda_ok or int(gpu_count) <= 0
+    ):
+        payload["model_training_status"] = "waiting_for_gpu"
+        payload["message"] = (
+            "GPU 不可用，已禁止 CPU 训练；等待 GPU 恢复后自动重试"
+        )
+        payload["model_resolution"] = {
+            **contract,
+            "matched_task_id": int(task.id),
+            "matched_task_name": str(task.name),
+            "matched_labels": list(selection["matched_labels"]),
+            "weights": weights,
+        }
+        payload["model_lookup_attempted_at"] = _now_text()
+        return False, payload
+    generation = (
+        int(
+            db.query(func.count(YoloTrainJob.id))
+            .filter(YoloTrainJob.source_integration_id == int(row.id))
+            .scalar()
+            or 0
+        )
+        + 1
+    )
     command = CreateLabelDimensionTrainingTaskCommand(
         name=_training_task_name(db, admin, row),
         selected_task_ids=[int(task.id)],
@@ -495,7 +526,7 @@ def ensure_model_training_job_sync(
         db=db,
         current_user=admin,
         cmd=command,
-        idempotency_key=f"strategy:{row.external_task_id}",
+        idempotency_key=f"strategy:{row.external_task_id}:{generation}",
     )
     job = crud_yolo_train_job.get(db, int(response.latest_job_id))
     if job is None:

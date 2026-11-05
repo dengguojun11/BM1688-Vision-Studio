@@ -322,6 +322,13 @@ class Settings(BaseSettings):
     VISION_QWEN_MODEL_235B: str = "qwen3-vl-235b-a22b-thinking"
 
     YOLO_TRAIN_ENABLED: bool = False
+    YOLO_TRAIN_REQUIRE_GPU: bool = Field(
+        True,
+        description=(
+            "禁止 CPU 训练：CUDA 不可用或训练设备解析为 cpu 时直接拒绝/失败，"
+            "不再静默回退 cpu；仅本地单元测试可显式关闭"
+        ),
+    )
     # 独立 YOLO/车牌训练 Worker：一期默认关闭，前置迁移和本地验收完成后再单独开启。
     YOLO_TRAIN_DEDICATED_WORKER_ENABLED: bool = False
     YOLO_TRAIN_DEDICATED_WORKER_INTERVAL_SECONDS: float = 5.0

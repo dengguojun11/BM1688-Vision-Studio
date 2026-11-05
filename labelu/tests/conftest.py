@@ -29,6 +29,10 @@ os.environ["STRATEGY_EVOLUTION_ALLOW_UNSIGNED_CALLBACKS"] = "true"
 # headers.  Keep that call shape in the test environment while production and
 # normal local processes use the fail-closed default.
 os.environ["STRATEGY_EVOLUTION_INTERNAL_AUTH_REQUIRED"] = "false"
+# Production forbids CPU training.  The pytest suite runs on CPU-only CI
+# machines, so keep the legacy CPU fallback for unit tests; the GPU-required
+# behavior is covered explicitly by test_yolo_train_device_resolve.py.
+os.environ["YOLO_TRAIN_REQUIRE_GPU"] = "false"
 # Tests invoke watchdog cycles explicitly.  Keep API lifespan free of daemon
 # schedulers so module-scoped TestClient instances cannot race cleanup or
 # mutate the shared SQLite fixture while another test is running.

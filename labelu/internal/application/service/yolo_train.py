@@ -1807,6 +1807,31 @@ def _cuda_runtime_snapshot() -> Tuple[bool, int]:
         return False, 0
 
 
+def gpu_training_available() -> tuple[bool, int]:
+    """Public GPU probe used by callers that must fail closed instead of CPU."""
+    return _cuda_runtime_snapshot()
+
+
+def _gpu_required_exception() -> LabelUException:
+    return LabelUException(
+        code=ErrorCode.CODE_57034_YOLO_TRAIN_GPU_REQUIRED,
+        status_code=status.HTTP_400_BAD_REQUEST,
+        message=(
+            "训练必须使用 GPU：当前运行时没有可用 CUDA 设备，已禁止 CPU 训练。"
+            f"{_torch_cuda_summary()}"
+        ),
+    )
+
+
+def _enforce_gpu_train_device(device: str) -> str:
+    """Fail closed when GPU is required but the resolved device is CPU."""
+    if _is_cpu_train_device(device) and bool(
+        getattr(settings, "YOLO_TRAIN_REQUIRE_GPU", True)
+    ):
+        raise _gpu_required_exception()
+    return device
+
+
 def _is_cpu_train_device(device: str) -> bool:
     return (device or "").strip().lower() in ("", "cpu")
 
@@ -1839,27 +1864,29 @@ def _sanitize_explicit_yolo_train_device(explicit: str) -> str:
     if not raw:
         return raw
     if _is_cpu_train_device(raw):
-        return "cpu"
+        return _enforce_gpu_train_device("cpu")
 
     cuda_ok, device_count = _cuda_runtime_snapshot()
     if not cuda_ok:
         logger.warning(
-            "YOLO_TRAIN_DEVICE={} 但 torch.cuda.is_available()=False，回退 cpu。{} "
+            "YOLO_TRAIN_DEVICE={} 但 torch.cuda.is_available()=False。{} "
             "CUDA_VISIBLE_DEVICES={!r}",
             raw,
             _torch_cuda_summary(),
             os.environ.get("CUDA_VISIBLE_DEVICES"),
         )
-        return "cpu"
+        return _enforce_gpu_train_device("cpu")
 
     try:
         indices = _requested_gpu_indices(raw)
     except ValueError:
-        logger.warning("YOLO_TRAIN_DEVICE={} 无法解析 GPU 编号，回退 cpu", raw)
-        return "cpu"
+        logger.warning("YOLO_TRAIN_DEVICE={} 无法解析 GPU 编号", raw)
+        return _enforce_gpu_train_device("cpu")
 
     if not indices:
-        return _fallback_train_device_for_visible_gpus(device_count)
+        return _enforce_gpu_train_device(
+            _fallback_train_device_for_visible_gpus(device_count)
+        )
 
     if max(indices) >= device_count:
         fallback = _fallback_train_device_for_visible_gpus(device_count)
@@ -1869,7 +1896,7 @@ def _sanitize_explicit_yolo_train_device(explicit: str) -> str:
             device_count,
             fallback,
         )
-        return fallback
+        return _enforce_gpu_train_device(fallback)
 
     if "," in raw:
         return ",".join(str(i) for i in indices)
@@ -2116,14 +2143,14 @@ def _validate_weights_source_at_create(
 
 
 def _resolve_yolo_train_device() -> str:
-    """Ultralytics train(device=...)；未配置时优先用 GPU 0，且始终校验 CUDA 可用性。"""
+    """Ultralytics train(device=...)；禁止 CPU 训练时无 GPU 直接失败。"""
     explicit = (settings.YOLO_TRAIN_DEVICE or "").strip()
     if explicit and explicit.lower() not in ("auto",):
         return _sanitize_explicit_yolo_train_device(explicit)
     cuda_ok, device_count = _cuda_runtime_snapshot()
     if cuda_ok and device_count > 0:
         return "0"
-    return "cpu"
+    return _enforce_gpu_train_device("cpu")
 
 
 def _resolve_train_device_for_job(
@@ -2133,7 +2160,7 @@ def _resolve_train_device_for_job(
     if override and str(override).strip():
         token = str(override).strip()
         if _is_cpu_train_device(token):
-            return token
+            return _enforce_gpu_train_device(token)
         return _sanitize_explicit_yolo_train_device(token)
     from labelu.internal.common.yolo_train_gpu_allocator import (
         load_persisted_gpu_allocation,
@@ -2143,7 +2170,7 @@ def _resolve_train_device_for_job(
     if yolo_train_gpu_auto_alloc_enabled():
         persisted = load_persisted_gpu_allocation(int(job_id))
         if persisted and persisted.device:
-            return persisted.device
+            return _enforce_gpu_train_device(persisted.device)
     return _resolve_yolo_train_device()
 
 
