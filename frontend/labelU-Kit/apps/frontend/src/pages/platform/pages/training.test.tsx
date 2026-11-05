@@ -601,13 +601,15 @@ describe('TrainingPage', () => {
     expect(trainingCandidateCanTrain(blocked)).toBe(false);
   });
 
-  it('maps deep-link views to the legacy panels without changing the canonical jobs view', () => {
+  it('maps deep-link views to the legacy panels and defaults to the dataset workbench', () => {
     const original = window.location.href;
     window.history.replaceState({}, '', '/training?view=auto-plan');
     expect(trainingViewFromLocation()).toBe('auto-plan');
     window.history.replaceState({}, '', '/training?view=reports');
     expect(trainingViewFromLocation()).toBe('reports');
     window.history.replaceState({}, '', '/training?view=unknown');
+    expect(trainingViewFromLocation()).toBe('datasets');
+    window.history.replaceState({}, '', '/training?view=jobs');
     expect(trainingViewFromLocation()).toBe('jobs');
     window.history.replaceState({}, '', original);
   });

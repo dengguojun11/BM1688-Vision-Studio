@@ -16,10 +16,10 @@ import { ACTIVE_TRAINING_STATUSES } from '../polling';
 import ResourcePage from '../ResourcePage';
 import { trainingRuntimeStatusLabel, trainingStatusLabel, type Row } from '../shared';
 import AutoIterationSettingsPanel from './AutoIterationSettings';
-import DatasetCards from './datasetCards';
+import DatasetTreeWorkbench from './datasetTreeWorkbench';
 import TrainingAiReportAction from './TrainingAiReport';
 
-type TrainingView = 'jobs' | 'auto-plan' | 'reports' | 'iteration-settings';
+type TrainingView = 'datasets' | 'jobs' | 'auto-plan' | 'reports' | 'iteration-settings';
 
 export const TARGET_CHIP_OPTIONS = [
   { value: 'bm1688', label: 'BM1688' },
@@ -296,9 +296,12 @@ const TRAINING_PANELS: Record<'auto-plan' | 'reports', { title: string; descript
 };
 
 export function trainingViewFromLocation(): TrainingView {
-  if (typeof window === 'undefined') return 'jobs';
+  if (typeof window === 'undefined') return 'datasets';
   const view = new URLSearchParams(window.location.search).get('view');
-  return view === 'auto-plan' || view === 'reports' || view === 'iteration-settings' ? view : 'jobs';
+  if (view === 'auto-plan' || view === 'reports' || view === 'iteration-settings' || view === 'jobs') {
+    return view;
+  }
+  return 'datasets';
 }
 
 export type TrainingEntryParams = {
@@ -4498,7 +4501,7 @@ export default function TrainingPage() {
     })();
     return <div style={{ display: 'grid', gap: 14 }}><div><TrainingAiReportAction row={row} /></div>{compileNotice}</div>;
   };
-  const jobsPanel = <ResourcePage module="training" queryKey="training-jobs" needsProject={false} queryFn={async (_scopeId, page = 0, size = 20, query) => await request.get('/v1/training/jobs', { params: { page, size, q: query || undefined } })} pagination pageSize={20} search={jobSearch} onSearchChange={setJobSearch} searchPlaceholder="按作业、任务、数据集、权重或节点搜索" searchAriaLabel="搜索训练作业" actionColumnWidth={compactActions ? 72 : undefined} detailColumnWidth={compactActions ? 60 : undefined} tableLayout={compactActions ? 'fixed' : undefined} scrollX={compactActions ? '100%' : undefined} beforeTable={<><DatasetCards mode="training" />{actionError && <Alert type="error" showIcon message={actionError} style={{ marginBottom: 14 }} />}<CreateTrainingAction /></>} staleTime={15_000} pollInterval={10_000} activeStatuses={ACTIVE_TRAINING_STATUSES} detailPath={(row) => row.id ? `/v1/training/jobs/${row.id}` : null} detailActions={trainingDetailActions} rowActions={(row) => {
+  const jobsPanel = <ResourcePage module="training" queryKey="training-jobs" needsProject={false} queryFn={async (_scopeId, page = 0, size = 20, query) => await request.get('/v1/training/jobs', { params: { page, size, q: query || undefined } })} pagination pageSize={20} search={jobSearch} onSearchChange={setJobSearch} searchPlaceholder="按作业、任务、数据集、权重或节点搜索" searchAriaLabel="搜索训练作业" actionColumnWidth={compactActions ? 72 : undefined} detailColumnWidth={compactActions ? 60 : undefined} tableLayout={compactActions ? 'fixed' : undefined} scrollX={compactActions ? '100%' : undefined} beforeTable={<>{actionError && <Alert type="error" showIcon message={actionError} style={{ marginBottom: 14 }} />}<CreateTrainingAction /></>} staleTime={15_000} pollInterval={10_000} activeStatuses={ACTIVE_TRAINING_STATUSES} detailPath={(row) => row.id ? `/v1/training/jobs/${row.id}` : null} detailActions={trainingDetailActions} rowActions={(row) => {
     const status = String(row.status || '').toUpperCase();
     const busy = action.isPending;
     if (status === 'COMPLETED') return <TrainingAiReportAction row={row} compact />;
@@ -4524,12 +4527,15 @@ export default function TrainingPage() {
     }
   }, [activeView, isTaskSuperuser, isTaskSuperuserFetched]);
   const handleViewChange = (key: string) => {
-    const requested: TrainingView = key === 'auto-plan' || key === 'reports' || key === 'iteration-settings' ? key : 'jobs';
+    const requested: TrainingView =
+      key === 'auto-plan' || key === 'reports' || key === 'iteration-settings' || key === 'jobs'
+        ? key
+        : 'datasets';
     const next: TrainingView = requested === 'auto-plan' && isTaskSuperuserFetched && !isTaskSuperuser ? 'jobs' : requested;
     setActiveView(next);
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (next === 'jobs') params.delete('view');
+      if (next === 'datasets') params.delete('view');
       else params.set('view', next);
       const query = params.toString();
       window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
@@ -4548,7 +4554,8 @@ export default function TrainingPage() {
       onChange={handleViewChange}
       destroyInactiveTabPane
       items={[
-        { key: 'jobs', label: '训练作业', children: jobsPanel },
+        { key: 'datasets', label: '按数据集', children: <DatasetTreeWorkbench mode="training" /> },
+        { key: 'jobs', label: '全部训练作业', children: jobsPanel },
         { key: 'iteration-settings', label: '自动迭代设置', children: <AutoIterationSettingsPanel /> },
       ]}
     />

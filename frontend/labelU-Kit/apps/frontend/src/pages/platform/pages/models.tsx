@@ -39,7 +39,7 @@ import ServerSearchInput from '@/components/ServerSearchInput';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
 import { listData, listTotal, ModuleHeader, responseStatus, TablePanel, type Row } from '../shared';
 import EdgeValidationModal from './edgeValidationModal';
-import DatasetCards from './datasetCards';
+import DatasetTreeWorkbench from './datasetTreeWorkbench';
 
 const ModelCenterPanel = styled(TablePanel)`
   padding: 0;
@@ -374,7 +374,7 @@ export function hasActiveCompileExports(value: unknown) {
   );
 }
 
-type ModelCenterView = 'pt' | 'compile' | 'bmodel' | 'quality-gates' | 'external' | 'published';
+type ModelCenterView = 'tree' | 'pt' | 'compile' | 'bmodel' | 'quality-gates' | 'external' | 'published';
 type ModelDetailMode = 'pt' | 'bmodel';
 
 const REQUIRED_GATES = ['training', 'generalization', 'conversion', 'edge', 'release'];
@@ -2736,14 +2736,18 @@ export default function ModelsPage() {
   const linkedTrainingJobId = Number(searchParams.get('training_job_id')) || undefined;
   const linkedExportId = Number(searchParams.get('export_id')) || undefined;
   const linkedModelId = Number(searchParams.get('model_id')) || undefined;
+  const hasModelDeepLink = Boolean(linkedModelId || linkedTrainingJobId || linkedExportId);
   const view: ModelCenterView =
+    requestedView === 'tree' ||
     requestedView === 'compile' ||
     requestedView === 'bmodel' ||
     requestedView === 'quality-gates' ||
     requestedView === 'external' ||
     requestedView === 'published'
       ? requestedView
-      : 'pt';
+      : hasModelDeepLink
+        ? 'pt'
+        : 'tree';
   const groupedView = view === 'pt' || view === 'bmodel';
   const activeModelSearch = view === 'quality-gates' ? qualityGateSearch : modelSearch;
   const searchViewRef = useRef<ModelCenterView | null>(null);
@@ -3582,6 +3586,9 @@ export default function ModelsPage() {
       },
     });
   };
+  if (view === 'tree') {
+    return <DatasetTreeWorkbench mode="model" />;
+  }
   return (
     <>
       <ModuleHeader module="models" />
@@ -3609,7 +3616,6 @@ export default function ModelsPage() {
             : `当前页 ${activeRowCount} 条记录`}
         </Tag>
       </div>
-      {view === 'pt' && <DatasetCards mode="model" />}
       <ModelCenterPanel className="model-center-panel" style={{ minWidth: 0, width: '100%', overflowX: 'hidden' }}>
         <Space
           className="model-center-header"
