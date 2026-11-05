@@ -253,7 +253,9 @@ class YoloTrainStepItemResponse(BaseModel):
 
 class StrategyTaskMarkerResponse(BaseModel):
     source: str = "third_party_api"
-    source_label: str = "第三方接口"
+    source_label: str = "柔性工作流"
+    workflow: str = "flexible_workflow"
+    workflow_label: str = "柔性工作流"
     task_type: str = ""
     task_type_label: str = ""
     external_task_id: str = ""

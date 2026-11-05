@@ -17,6 +17,7 @@ from labelu.internal.domain.models.strategy_task_integration import (
     StrategyTaskIntegration,
 )
 from labelu.internal.domain.models.task import Task
+from labelu.internal.domain.models.training_task import TrainingTask
 from labelu.internal.domain.models.user import User
 from labelu.internal.domain.models.yolo_train_job import YoloTrainJob
 
@@ -277,12 +278,22 @@ def test_ensure_training_job_uses_manual_entrypoint_with_preset_weights(
     def fake_create(db, *, current_user, cmd, idempotency_key=None):
         captured["cmd"] = cmd
         captured["idempotency_key"] = idempotency_key
-        job = YoloTrainJob(
-            task_id=int(task.id),
-            status="PENDING",
-            created_by=int(current_user.id),
-        )
         with begin_transaction(db):
+            db.add(
+                TrainingTask(
+                    id=999,
+                    owner_id=int(current_user.id),
+                    name="fake-flexible-training-task",
+                    mode="label_dimension",
+                    status="PENDING",
+                    source_mode=None,
+                )
+            )
+            job = YoloTrainJob(
+                task_id=int(task.id),
+                status="PENDING",
+                created_by=int(current_user.id),
+            )
             db.add(job)
             db.flush()
         return SimpleNamespace(latest_job_id=int(job.id), training_task_id=999)
@@ -323,6 +334,12 @@ def test_ensure_training_job_uses_manual_entrypoint_with_preset_weights(
     assert job.source_system == "strategy_evolution"
     assert job.source_external_task_id == row.external_task_id
     assert job.source_integration_id == int(row.id)
+    training_task = (
+        db.query(TrainingTask)
+        .filter(TrainingTask.id == int(payload["training_task_id"]))
+        .one()
+    )
+    assert training_task.source_mode == "FLEXIBLE"
 
 
 def test_ensure_training_job_waits_for_gpu_instead_of_cpu(db, monkeypatch):

@@ -44,13 +44,35 @@ from labelu.internal.domain.models.strategy_task_integration import (
     StrategyTaskIntegration,
 )
 from labelu.internal.domain.models.task import Task
+from labelu.internal.domain.models.training_task import TrainingTask
 from labelu.internal.domain.models.user import User
 from labelu.internal.domain.models.yolo_train_job import YoloTrainJob, YoloTrainStatus
 
 DEFAULT_TRAINING_RECIPE = "yolov11_detection"
+FLEXIBLE_WORKFLOW_SOURCE_MODE = "FLEXIBLE"
 IMAGE_MEDIA_TYPE = "IMAGE"
 DRAFT_TASK_STATUS = "DRAFT"
 COMPLETED_JOB_STATUS = "COMPLETED"
+
+
+def _mark_training_task_flexible(
+    db: Session, training_task_id: int | None
+) -> None:
+    """Persist the flexible-workflow origin on the unified training task."""
+    if not training_task_id:
+        return
+    row = (
+        db.query(TrainingTask)
+        .filter(TrainingTask.id == int(training_task_id))
+        .first()
+    )
+    if row is None:
+        return
+    if str(row.source_mode or "").strip().upper() == FLEXIBLE_WORKFLOW_SOURCE_MODE:
+        return
+    with begin_transaction(db):
+        row.source_mode = FLEXIBLE_WORKFLOW_SOURCE_MODE
+        db.add(row)
 
 
 def _json_loads_object(value: str | None) -> dict[str, Any]:
@@ -432,6 +454,7 @@ def ensure_model_training_job_sync(
     payload = dict(result or {})
     existing = _existing_training_job(db, row)
     if existing is not None:
+        _mark_training_task_flexible(db, getattr(existing, "training_task_id", None))
         payload.update(
             _result_from_job(
                 db,
@@ -544,6 +567,7 @@ def ensure_model_training_job_sync(
         if row.dataset_category_id:
             job.dataset_category_id = int(row.dataset_category_id)
         db.add(job)
+    _mark_training_task_flexible(db, int(response.training_task_id))
     payload = _result_from_job(
         db,
         row,

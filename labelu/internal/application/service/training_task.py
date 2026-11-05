@@ -3190,6 +3190,7 @@ def build_training_task_detail_response(
         name=row.name,
         mode=row.mode,
         status=row.status,
+        source_mode=getattr(row, "source_mode", None),
         primary_task_id=row.primary_task_id,
         primary_task_name=_task_name(db, row.primary_task_id),
         selected_presets=[
@@ -3350,6 +3351,7 @@ def list_training_tasks(
                 name=row.name,
                 mode=row.mode,
                 status=row.status,
+                source_mode=getattr(row, "source_mode", None),
                 primary_task_id=row.primary_task_id,
                 primary_task_name=primary_name,
                 source_task_count=source_task_count,

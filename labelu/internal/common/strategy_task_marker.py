@@ -11,7 +11,9 @@ def strategy_task_marker(row: Any) -> dict[str, str] | None:
     }
     return {
         "source": "third_party_api",
-        "source_label": "第三方接口",
+        "source_label": "柔性工作流",
+        "workflow": "flexible_workflow",
+        "workflow_label": "柔性工作流",
         "task_type": task_type,
         "task_type_label": type_labels.get(task_type, task_type or "第三方策略任务"),
         "external_task_id": str(getattr(row, "external_task_id", "") or ""),

@@ -108,6 +108,7 @@ class TrainingTaskDetailResponse(BaseModel):
     name: str
     mode: str
     status: str
+    source_mode: Optional[str] = None
     primary_task_id: Optional[int] = None
     primary_task_name: Optional[str] = None
     selected_presets: List[SelectedPresetSnapshotResponse] = Field(default_factory=list)
@@ -142,6 +143,7 @@ class TrainingTaskListRowResponse(BaseModel):
     name: str
     mode: str
     status: str
+    source_mode: Optional[str] = None
     primary_task_id: Optional[int] = None
     primary_task_name: Optional[str] = None
     source_task_count: int = 0

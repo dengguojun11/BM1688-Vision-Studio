@@ -143,6 +143,12 @@ class TrainingJobResponse(BaseModel):
     auto_iteration_stop_reason: str | None = None
     status: str
     execution_mode: str
+    source_type: str = "internal"
+    source_system: str | None = None
+    source_external_task_id: str | None = None
+    source_mode: str | None = None
+    workflow_source: str = "manual"
+    workflow_source_label: str = "手动创建"
     container_image: str | None = None
     epochs: int | None = None
     current_epoch: int | None = None

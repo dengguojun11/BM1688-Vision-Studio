@@ -61,6 +61,7 @@ from labelu.internal.common.task_access import (
     is_task_superuser,
     user_has_task_access,
 )
+from labelu.internal.domain.models.training_task import TrainingTask
 from labelu.internal.common.training_contract import (
     branch_identity_sha256,
     build_selection_contract,
@@ -178,6 +179,28 @@ def _unified_selection_contract(
     return contract, digest, selection_contract_json(contract)
 
 
+def _workflow_source(
+    job: Any, training_task_mode: str | None = None
+) -> tuple[str, str]:
+    """Return the persisted creator/workflow marker for a training job.
+
+    Flexible workflow (third-party strategy evolution) jobs carry
+    ``source_system='strategy_evolution'``; automatic training-plan jobs carry
+    ``source_mode='AUTO'`` on the linked training task.  Everything else is a
+    manual creation from the training center.
+    """
+    source_system = str(getattr(job, "source_system", None) or "").strip()
+    source_type = str(getattr(job, "source_type", "internal") or "internal").strip()
+    mode = str(training_task_mode or "").strip().upper()
+    if source_system == "strategy_evolution":
+        return "flexible_workflow", "柔性工作流"
+    if mode == "AUTO":
+        return "auto_training", "自动迭代"
+    if source_type == "third_party":
+        return "third_party", "第三方接口"
+    return "manual", "手动创建"
+
+
 def _response(
     job: Any,
     *,
@@ -186,6 +209,7 @@ def _response(
     dataset_version_id: int | None,
     params: dict[str, Any],
     task_name: str | None = None,
+    training_task_mode: str | None = None,
 ) -> TrainingJobResponse:
     status_value = getattr(job, "status", "")
     status_value = getattr(status_value, "value", status_value)
@@ -228,6 +252,9 @@ def _response(
     series_name = params.get("series_name")
     variant_name = params.get("variant_name")
     model_family = params.get("model_family")
+    workflow_source, workflow_source_label = _workflow_source(
+        job, training_task_mode=training_task_mode
+    )
     return TrainingJobResponse(
         id=int(job.id),
         task_id=int(job.task_id),
@@ -251,6 +278,12 @@ def _response(
         auto_iteration_stop_reason=getattr(job, "auto_iteration_stop_reason", None),
         status=str(status_value),
         execution_mode=str(getattr(job, "execution_mode", "local") or "local"),
+        source_type=str(getattr(job, "source_type", "internal") or "internal"),
+        source_system=getattr(job, "source_system", None),
+        source_external_task_id=getattr(job, "source_external_task_id", None),
+        source_mode=training_task_mode,
+        workflow_source=workflow_source,
+        workflow_source_label=workflow_source_label,
         container_image=params.get("container_image"),
         epochs=getattr(job, "epochs", None),
         current_epoch=current_epoch,
@@ -720,6 +753,13 @@ def _job_response(db: Session, job: Any, task: Task) -> TrainingJobResponse:
         dataset_version_id = int(dataset_version_id) if dataset_version_id else None
     except (TypeError, ValueError):
         dataset_version_id = None
+    training_task_mode = None
+    if getattr(job, "training_task_id", None):
+        training_task_mode = (
+            db.query(TrainingTask.source_mode)
+            .filter(TrainingTask.id == int(job.training_task_id))
+            .scalar()
+        )
     response = _response(
         job,
         algorithm_key=algorithm_key,
@@ -727,6 +767,7 @@ def _job_response(db: Session, job: Any, task: Task) -> TrainingJobResponse:
         dataset_version_id=dataset_version_id,
         params=params,
         task_name=getattr(task, "name", None),
+        training_task_mode=training_task_mode,
     )
     from labelu.internal.application.service.training_iteration import (
         build_previous_version_comparison,
@@ -2326,6 +2367,19 @@ async def list_training_jobs(
         task_access_builtin_admin=is_consistent_pool_admin(current_user),
     )
     data: list[TrainingJobResponse] = []
+    task_mode_by_id: dict[int, str | None] = {}
+    training_task_ids = {
+        int(job.training_task_id)
+        for job, _ in rows
+        if getattr(job, "training_task_id", None)
+    }
+    if training_task_ids:
+        for task_id, mode in (
+            db.query(TrainingTask.id, TrainingTask.source_mode)
+            .filter(TrainingTask.id.in_(training_task_ids))
+            .all()
+        ):
+            task_mode_by_id[int(task_id)] = mode
     for job, task in rows:
         params = _job_params(job)
         manifest = params.get("dataset_manifest")
@@ -2359,6 +2413,9 @@ async def list_training_jobs(
                 dataset_version_id=dataset_version_id,
                 params=params,
                 task_name=getattr(task, "name", None),
+                training_task_mode=task_mode_by_id.get(
+                    int(getattr(job, "training_task_id", 0) or 0)
+                ),
             )
         )
     return OkRespWithMeta[List[TrainingJobResponse]](

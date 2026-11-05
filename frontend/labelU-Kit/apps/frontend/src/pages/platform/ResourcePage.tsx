@@ -29,6 +29,11 @@ const DETAIL_LABELS: Record<string, string> = {
   target_device_ids: '目标设备',
   gray_ratio: '灰度比例',
   source_type: '来源类型',
+  source_system: '来源系统',
+  source_external_task_id: '外部任务 ID',
+  source_mode: '创建方式',
+  workflow_source: '创建来源',
+  workflow_source_label: '创建来源',
   source_connection_id: '来源连接',
   total_count: '总数量',
   accepted_count: '已接收',
@@ -1026,7 +1031,7 @@ function ResourceDetailModal({
     : module === 'models'
     ? ['id', 'name', 'status', 'quality_status', 'quality_gate_status', 'model_set_id', 'export_id', 'source_training_job_id', 'manifest_sha256', 'release_key']
     : module === 'training'
-    ? ['id', 'task_name', 'task_id', 'algorithm_key', 'status', 'runtime_status', 'training_assessment', 'edge_validation_assessment', 'release_gate_assessment', 'quality_assessment', 'error_message', 'failure_reason', 'dataset_version_id', 'dataset_manifest', 'manifest_sha256', 'train_sample_count', 'val_sample_count', 'metrics_summary', 'metrics', 'execution_mode', 'train_node_id', 'model_weights', 'epochs', 'imgsz', 'params', 'hyperparams']
+    ? ['id', 'workflow_source_label', 'source_mode', 'source_external_task_id', 'task_name', 'task_id', 'algorithm_key', 'status', 'runtime_status', 'training_assessment', 'edge_validation_assessment', 'release_gate_assessment', 'quality_assessment', 'error_message', 'failure_reason', 'dataset_version_id', 'dataset_manifest', 'manifest_sha256', 'train_sample_count', 'val_sample_count', 'metrics_summary', 'metrics', 'execution_mode', 'train_node_id', 'model_weights', 'epochs', 'imgsz', 'params', 'hyperparams']
     : [];
   const entries = detailRow
     ? Object.entries(detailRow)
