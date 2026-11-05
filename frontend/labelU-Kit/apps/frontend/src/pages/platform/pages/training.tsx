@@ -16,7 +16,7 @@ import { ACTIVE_TRAINING_STATUSES } from '../polling';
 import ResourcePage from '../ResourcePage';
 import { trainingRuntimeStatusLabel, trainingStatusLabel, type Row } from '../shared';
 import AutoIterationSettingsPanel from './AutoIterationSettings';
-import DatasetTreeWorkbench from './datasetTreeWorkbench';
+import DatasetTreeTable from './datasetTreeTable';
 import TrainingAiReportAction from './TrainingAiReport';
 
 type TrainingView = 'datasets' | 'jobs' | 'auto-plan' | 'reports' | 'iteration-settings';
@@ -4554,7 +4554,7 @@ export default function TrainingPage() {
       onChange={handleViewChange}
       destroyInactiveTabPane
       items={[
-        { key: 'datasets', label: '按数据集', children: <DatasetTreeWorkbench mode="training" /> },
+        { key: 'datasets', label: '按数据集', children: <DatasetTreeTable mode="training" /> },
         { key: 'jobs', label: '全部训练作业', children: jobsPanel },
         { key: 'iteration-settings', label: '自动迭代设置', children: <AutoIterationSettingsPanel /> },
       ]}

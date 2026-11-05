@@ -39,7 +39,7 @@ import ServerSearchInput from '@/components/ServerSearchInput';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
 import { listData, listTotal, ModuleHeader, responseStatus, TablePanel, type Row } from '../shared';
 import EdgeValidationModal from './edgeValidationModal';
-import DatasetTreeWorkbench from './datasetTreeWorkbench';
+import DatasetTreeTable from './datasetTreeTable';
 
 const ModelCenterPanel = styled(TablePanel)`
   padding: 0;
@@ -3587,7 +3587,7 @@ export default function ModelsPage() {
     });
   };
   if (view === 'tree') {
-    return <DatasetTreeWorkbench mode="model" />;
+    return <DatasetTreeTable mode="model" />;
   }
   return (
     <>
