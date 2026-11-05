@@ -42,8 +42,8 @@ def _metrics(**kwargs) -> YoloTrainingValMetrics:
 
 def test_policy_defaults_are_page_configurable():
     policy = load_auto_iteration_policy(force_refresh=True)
-    assert policy["metric_basis"] == "val_recall"
-    assert policy["pass_threshold"] == pytest.approx(0.6)
+    assert policy["metric_basis"] == "map50_95"
+    assert policy["pass_threshold"] == pytest.approx(0.5)
     assert policy["max_rounds"] == 4
     assert policy["max_iterations_after_first"] == 3
     assert policy["require_quality_for_compile"] is True

@@ -514,26 +514,26 @@ def maybe_start_auto_iteration_train(job_id: int) -> None:
                 category=(cmd.category or "").strip()[:128],
                 hyperparams_json=hp_json,
                 source_task_ids_json=source_task_ids_json(source_ids),
-                dataset_manifest_json=getattr(completed_job, "dataset_manifest_json", None),
-                training_recipe_key=getattr(completed_job, "training_recipe_key", None),
+                dataset_manifest_json=getattr(job, "dataset_manifest_json", None),
+                training_recipe_key=getattr(job, "training_recipe_key", None),
                 training_recipe_version=getattr(
-                    completed_job, "training_recipe_version", None
+                    job, "training_recipe_version", None
                 ),
-                series_id=getattr(completed_job, "series_id", None),
-                variant_id=getattr(completed_job, "variant_id", None),
-                parent_training_job_id=int(completed_job.id),
+                series_id=getattr(job, "series_id", None),
+                variant_id=getattr(job, "variant_id", None),
+                parent_training_job_id=int(job.id),
                 parent_model_version_id=getattr(
-                    completed_job, "parent_model_version_id", None
+                    job, "parent_model_version_id", None
                 ),
-                branch_key=getattr(completed_job, "branch_key", None),
+                branch_key=getattr(job, "branch_key", None),
                 selection_contract_sha256=getattr(
-                    completed_job, "selection_contract_sha256", None
+                    job, "selection_contract_sha256", None
                 ),
                 selection_contract_json=getattr(
-                    completed_job, "selection_contract_json", None
+                    job, "selection_contract_json", None
                 ),
                 sample_conditions_json=getattr(
-                    completed_job, "sample_conditions_json", None
+                    job, "sample_conditions_json", None
                 ),
                 inheritance_mode="auto_iteration",
             )
