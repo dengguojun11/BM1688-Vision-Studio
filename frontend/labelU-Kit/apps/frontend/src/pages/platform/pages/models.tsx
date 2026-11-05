@@ -39,6 +39,7 @@ import ServerSearchInput from '@/components/ServerSearchInput';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
 import { listData, listTotal, ModuleHeader, responseStatus, TablePanel, type Row } from '../shared';
 import EdgeValidationModal from './edgeValidationModal';
+import DatasetCards from './datasetCards';
 
 const ModelCenterPanel = styled(TablePanel)`
   padding: 0;
@@ -3608,6 +3609,7 @@ export default function ModelsPage() {
             : `当前页 ${activeRowCount} 条记录`}
         </Tag>
       </div>
+      {view === 'pt' && <DatasetCards mode="model" />}
       <ModelCenterPanel className="model-center-panel" style={{ minWidth: 0, width: '100%', overflowX: 'hidden' }}>
         <Space
           className="model-center-header"

@@ -19,6 +19,7 @@ from labelu.internal.application.response.model_version import (
     ModelVersionResponse,
 )
 from labelu.internal.application.service import model_version as service
+from labelu.internal.application.service import model_dataset_summary
 from labelu.internal.common import db as db_module
 from labelu.internal.common.security import security
 from labelu.internal.dependencies.user import get_current_user
@@ -239,6 +240,26 @@ async def list_models(
     )
     return OkRespWithMeta[List[ModelVersionResponse]](
         meta_data=MetaData(total=total, page=page, size=len(data)), data=data
+    )
+
+
+@compat_router.get("/dataset-summary", response_model=OkRespWithMeta[dict])
+async def list_model_dataset_summaries(
+    page: int = Query(default=0, ge=0),
+    size: int = Query(default=20, ge=1, le=100),
+    q: str | None = Query(default=None, max_length=128),
+    authorization: HTTPAuthorizationCredentials = Security(security),
+    db: Session = Depends(db_module.get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """按数据集汇总最新模型和历史最佳模型，供模型中心卡片视图使用。"""
+    _ = authorization
+    rows, total = model_dataset_summary.list_model_dataset_summaries(
+        db, current_user, page=page, size=size, search=q
+    )
+    return OkRespWithMeta[dict](
+        meta_data=MetaData(total=total, page=page, size=len(rows)),
+        data={"datasets": rows},
     )
 
 

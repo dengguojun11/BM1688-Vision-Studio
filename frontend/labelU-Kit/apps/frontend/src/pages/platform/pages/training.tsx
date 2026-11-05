@@ -16,6 +16,7 @@ import { ACTIVE_TRAINING_STATUSES } from '../polling';
 import ResourcePage from '../ResourcePage';
 import { trainingRuntimeStatusLabel, trainingStatusLabel, type Row } from '../shared';
 import AutoIterationSettingsPanel from './AutoIterationSettings';
+import DatasetCards from './datasetCards';
 import TrainingAiReportAction from './TrainingAiReport';
 
 type TrainingView = 'jobs' | 'auto-plan' | 'reports' | 'iteration-settings';
@@ -4497,7 +4498,7 @@ export default function TrainingPage() {
     })();
     return <div style={{ display: 'grid', gap: 14 }}><div><TrainingAiReportAction row={row} /></div>{compileNotice}</div>;
   };
-  const jobsPanel = <ResourcePage module="training" queryKey="training-jobs" needsProject={false} queryFn={async (_scopeId, page = 0, size = 20, query) => await request.get('/v1/training/jobs', { params: { page, size, q: query || undefined } })} pagination pageSize={20} search={jobSearch} onSearchChange={setJobSearch} searchPlaceholder="按作业、任务、数据集、权重或节点搜索" searchAriaLabel="搜索训练作业" actionColumnWidth={compactActions ? 72 : undefined} detailColumnWidth={compactActions ? 60 : undefined} tableLayout={compactActions ? 'fixed' : undefined} scrollX={compactActions ? '100%' : undefined} beforeTable={<><CreateTrainingAction />{actionError && <Alert type="error" showIcon message={actionError} style={{ marginBottom: 14 }} />}</>} staleTime={15_000} pollInterval={10_000} activeStatuses={ACTIVE_TRAINING_STATUSES} detailPath={(row) => row.id ? `/v1/training/jobs/${row.id}` : null} detailActions={trainingDetailActions} rowActions={(row) => {
+  const jobsPanel = <ResourcePage module="training" queryKey="training-jobs" needsProject={false} queryFn={async (_scopeId, page = 0, size = 20, query) => await request.get('/v1/training/jobs', { params: { page, size, q: query || undefined } })} pagination pageSize={20} search={jobSearch} onSearchChange={setJobSearch} searchPlaceholder="按作业、任务、数据集、权重或节点搜索" searchAriaLabel="搜索训练作业" actionColumnWidth={compactActions ? 72 : undefined} detailColumnWidth={compactActions ? 60 : undefined} tableLayout={compactActions ? 'fixed' : undefined} scrollX={compactActions ? '100%' : undefined} beforeTable={<><DatasetCards mode="training" />{actionError && <Alert type="error" showIcon message={actionError} style={{ marginBottom: 14 }} />}<CreateTrainingAction /></>} staleTime={15_000} pollInterval={10_000} activeStatuses={ACTIVE_TRAINING_STATUSES} detailPath={(row) => row.id ? `/v1/training/jobs/${row.id}` : null} detailActions={trainingDetailActions} rowActions={(row) => {
     const status = String(row.status || '').toUpperCase();
     const busy = action.isPending;
     if (status === 'COMPLETED') return <TrainingAiReportAction row={row} compact />;

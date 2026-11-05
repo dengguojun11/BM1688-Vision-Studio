@@ -33,6 +33,7 @@ from labelu.internal.application.response.training import (
 from labelu.internal.application.service import training_iteration as training_iteration_service
 from labelu.internal.application.service import yolo_train as yolo_train_service
 from labelu.internal.application.service import dataset as dataset_service
+from labelu.internal.application.service import dataset_training_summary
 from labelu.internal.application.service import yolo_train_evaluation
 from labelu.internal.application.service import auto_training_plan as auto_training_plan_service
 from labelu.internal.application.service import task as task_service
@@ -2266,6 +2267,26 @@ async def create_training_job(
             dataset_version_id=version.id,
             params=params,
         )
+    )
+
+
+@router.get("/datasets/summary", response_model=OkRespWithMeta[dict])
+async def list_training_dataset_summaries(
+    page: int = Query(0, ge=0),
+    size: int = Query(20, ge=1, le=100),
+    q: str | None = Query(None, max_length=128),
+    authorization: HTTPAuthorizationCredentials = Security(security),
+    db: Session = Depends(db_module.get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """按数据集汇总最近训练和历史最佳训练，供训练中心卡片视图使用。"""
+    _ = authorization
+    rows, total = dataset_training_summary.list_training_dataset_summaries(
+        db, current_user, page=page, size=size, search=q
+    )
+    return OkRespWithMeta[dict](
+        meta_data=MetaData(total=total, page=page, size=len(rows)),
+        data={"datasets": rows},
     )
 
 
