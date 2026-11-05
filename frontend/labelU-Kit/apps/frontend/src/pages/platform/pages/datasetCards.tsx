@@ -194,7 +194,9 @@ export default function DatasetCards({ mode }: { mode: WorkbenchMode }) {
                     </div>
                     <Tag color={statusColor(isTraining ? latestJob?.status : latestModel?.status)}>
                       {isTraining
-                        ? statusText(latestJob?.status, latestJob?.quality_passed)
+                        ? latestJob
+                          ? statusText(latestJob.status, latestJob.quality_passed)
+                          : '未训练'
                         : statusText(latestModel?.status)}
                     </Tag>
                   </Space>

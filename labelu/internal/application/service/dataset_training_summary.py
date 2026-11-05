@@ -111,8 +111,8 @@ def list_training_dataset_summaries(
 ) -> tuple[list[dict[str, Any]], int]:
     datasets, total = crud_dataset.list_datasets(
         db,
-        page,
-        size,
+        0,
+        500,
         user_id=None if is_task_superuser(current_user) else int(current_user.id),
         search=search,
     )
@@ -193,4 +193,9 @@ def list_training_dataset_summaries(
                 "lineage": payloads,
             }
         )
-    return output, total
+    output.sort(
+        key=lambda item: item.get("last_trained_at") or "",
+        reverse=True,
+    )
+    start = max(0, int(page)) * max(1, int(size))
+    return output[start : start + max(1, int(size))], total
