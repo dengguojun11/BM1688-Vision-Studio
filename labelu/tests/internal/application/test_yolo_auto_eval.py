@@ -410,7 +410,7 @@ def test_auto_eval_does_not_retry_beyond_one_failed_retry(db, tmp_path, monkeypa
     assert stored_job.ai_eval_next_status == "FAILED"
 
 
-def test_auto_eval_runs_full_report_before_next_iteration(db, tmp_path, monkeypatch):
+def test_auto_eval_runs_next_iteration_before_full_report(db, tmp_path, monkeypatch):
     from labelu.internal.application.service import yolo_train_evaluation
 
     monkeypatch.setattr(settings, "MEDIA_ROOT", str(tmp_path))
@@ -461,7 +461,7 @@ def test_auto_eval_runs_full_report_before_next_iteration(db, tmp_path, monkeypa
 
     db.expire_all()
     row = db.query(YoloTrainJob).filter(YoloTrainJob.id == 101).one()
-    assert calls == ["full_analysis", "next_iteration"]
+    assert calls == ["next_iteration", "full_analysis"]
     assert row.ai_eval_full_status == "COMPLETED"
     assert row.ai_eval_next_status == "COMPLETED"
 

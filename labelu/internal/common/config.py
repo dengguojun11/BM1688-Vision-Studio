@@ -416,7 +416,7 @@ class Settings(BaseSettings):
 
     YOLO_EVAL_ENABLED: bool = True
     # 训练报告包含曲线、指标和长文本，使用独立超时并仅重试暂时性网络错误。
-    YOLO_EVAL_TIMEOUT_SECONDS: int = Field(default=600, ge=30, le=3600)
+    YOLO_EVAL_TIMEOUT_SECONDS: int = Field(default=1200, ge=30, le=3600)
     YOLO_EVAL_MAX_RETRIES: int = Field(default=1, ge=0, le=2)
     # YOLO 训练 AI 评估：逗号分隔的 provider_key，暂不调用（如 qwen_235b）
     YOLO_EVAL_DISABLED_PROVIDERS: str = "qwen_235b"

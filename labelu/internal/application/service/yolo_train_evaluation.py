@@ -708,7 +708,7 @@ def _read_results_csv_tail(train_dir: Path, lines: int = 80) -> str:
     return "\n".join([head, *tail])
 
 
-def _collect_chart_jpeg(train_dir: Path, max_images: int = 8) -> list[bytes]:
+def _collect_chart_jpeg(train_dir: Path, max_images: int = 4) -> list[bytes]:
     from io import BytesIO
 
     try:
@@ -954,7 +954,9 @@ def run_auto_evaluations_after_train(job_id: int) -> None:
 
     from labelu.internal.common.db import SessionLocal
 
-    for kind in (_KIND_FULL, _KIND_NEXT):
+    # 下一轮建议是自动迭代的硬依赖，先跑它；全维度分析较慢，
+    # 即使超时也不应阻塞自动迭代。
+    for kind in (_KIND_NEXT, _KIND_FULL):
         status_field = _eval_status_field(kind)
         operation_id: str | None = None
         db = SessionLocal()
@@ -1174,16 +1176,21 @@ def _run_yolo_eval_sync(
                         operation_id,
                     )
                     return
+                # 全维度分析输入图更多，限制输出并只请求一次，避免
+                # 600s×重试把一次报告拖成 20 分钟仍未生成。
+                is_full_analysis = report_kind == _KIND_FULL
                 body = chat_multimodal_markdown(
                     base_url=base_url,
                     api_key=api_key,
                     model=model,
                     user_text=user_text,
                     images_jpeg=images,
-                    max_tokens=8192,
+                    max_tokens=4096 if is_full_analysis else 6144,
                     temperature=0.25,
                     timeout=settings.YOLO_EVAL_TIMEOUT_SECONDS,
-                    max_retries=settings.YOLO_EVAL_MAX_RETRIES,
+                    max_retries=(
+                        0 if is_full_analysis else settings.YOLO_EVAL_MAX_RETRIES
+                    ),
                     system_prompt=_YOLO_EVAL_SYSTEM_PROMPT,
                 )
                 if not isinstance(body, str) or not body.strip():
