@@ -2007,6 +2007,17 @@ def _compile_subprocess_env(file_cfg: dict) -> dict:
     """编译子进程环境：仅用 venv-tpu-mlir，避免 PATH 落到源码 tools / envsetup。"""
     env = dict(os.environ)
     env["PYTHONPATH"] = ""
+    # The compiler worker may inherit HOME=/root from supervisor.  libomp
+    # resolves some per-user runtime paths via HOME/TMPDIR; keep them in the
+    # writable platform data area so tpuc-opt does not fail on /root or /tmp.
+    runtime_root = Path(settings.BASE_DATA_DIR) / "train-runtime-home"
+    runtime_tmp = Path(settings.BASE_DATA_DIR) / "train-runtime-tmp"
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    runtime_tmp.mkdir(parents=True, exist_ok=True)
+    env["HOME"] = str(runtime_root)
+    env["TMPDIR"] = str(runtime_tmp)
+    env["OMP_NUM_THREADS"] = "1"
+    env["KMP_USE_SHM"] = "0"
     tpu_py = str(file_cfg.get("tpu_mlir_python") or "").strip()
     if tpu_py:
         py_dir = str(Path(tpu_py).parent)
