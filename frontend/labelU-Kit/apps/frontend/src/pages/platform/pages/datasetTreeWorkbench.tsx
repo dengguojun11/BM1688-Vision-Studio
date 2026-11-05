@@ -1,4 +1,11 @@
-import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import {
+  BranchesOutlined,
+  DatabaseOutlined,
+  FileOutlined,
+  FolderOpenOutlined,
+  ReloadOutlined,
+  SearchOutlined,
+} from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import {
   Alert,
@@ -9,6 +16,7 @@ import {
   Empty,
   Input,
   Row,
+  Segmented,
   Space,
   Spin,
   Tag,
@@ -19,6 +27,8 @@ import type { DataNode } from 'antd/es/tree';
 import { useEffect, useMemo, useState } from 'react';
 
 import request from '@/api/request';
+
+const DirectoryTree = Tree.DirectoryTree;
 
 type WorkbenchMode = 'training' | 'model';
 
@@ -134,6 +144,7 @@ export default function DatasetTreeWorkbench({ mode }: { mode: WorkbenchMode }) 
     ? '/v1/training/datasets/summary'
     : '/v1/models/dataset-summary';
   const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<'all' | 'passed' | 'untrained' | 'published'>('all');
   const [selectedKey, setSelectedKey] = useState<string>();
   const query = useQuery<DatasetSummary[]>({
     queryKey: ['dataset-tree', mode, search],
@@ -148,10 +159,22 @@ export default function DatasetTreeWorkbench({ mode }: { mode: WorkbenchMode }) 
     refetchInterval: 30_000,
   });
   const datasets = useMemo(() => query.data || [], [query.data]);
+  const visibleDatasets = useMemo(() => {
+    if (filter === 'all') return datasets;
+    if (filter === 'passed') {
+      return datasets.filter((dataset) =>
+        (dataset.lineage || []).some((job) => job.quality_passed),
+      );
+    }
+    if (filter === 'untrained') {
+      return datasets.filter((dataset) => !dataset.job_count && !dataset.model_count);
+    }
+    return datasets.filter((dataset) => (dataset.models || []).some((model) => model.published));
+  }, [datasets, filter]);
 
   const treeData = useMemo<DataNode[]>(() => {
     if (isTraining) {
-      return datasets.map((dataset) => {
+      return visibleDatasets.map((dataset) => {
         const rootGroups = new Map<number, SummaryJob[]>();
         for (const job of dataset.lineage || []) {
           const rootId = job.auto_iteration_root_id || job.job_id;
@@ -166,6 +189,7 @@ export default function DatasetTreeWorkbench({ mode }: { mode: WorkbenchMode }) 
           const passed = ordered.some((job) => job.quality_passed);
           return {
             key: `chain:${dataset.dataset_id}:${rootId}`,
+            icon: <BranchesOutlined />,
             title: (
               <span>
                 迭代链 #{rootId}
@@ -176,6 +200,7 @@ export default function DatasetTreeWorkbench({ mode }: { mode: WorkbenchMode }) 
             ),
             children: ordered.map((job) => ({
               key: `job:${dataset.dataset_id}:${job.job_id}`,
+              icon: <FileOutlined />,
               title: jobNodeTitle(job),
               isLeaf: true,
             })),
@@ -183,27 +208,30 @@ export default function DatasetTreeWorkbench({ mode }: { mode: WorkbenchMode }) 
         });
         return {
           key: `dataset:${dataset.dataset_id}`,
+          icon: <FolderOpenOutlined />,
           title: datasetNodeTitle(dataset, mode),
-          children: chains.length
-            ? chains
-            : [{ key: `empty:${dataset.dataset_id}`, title: '暂无训练记录', disabled: true }],
+          children: chains.length ? chains : undefined,
+          isLeaf: !chains.length,
         };
       });
     }
-    return datasets.map((dataset) => ({
+    return visibleDatasets.map((dataset) => ({
       key: `dataset:${dataset.dataset_id}`,
+      icon: <FolderOpenOutlined />,
       title: datasetNodeTitle(dataset, mode),
       children: (dataset.models || []).length
         ? [...(dataset.models || [])]
             .sort((left, right) => String(right.created_at || '').localeCompare(String(left.created_at || '')))
             .map((model) => ({
               key: `model:${dataset.dataset_id}:${model.model_version_id}`,
+              icon: <DatabaseOutlined />,
               title: modelNodeTitle(model),
               isLeaf: true,
             }))
-        : [{ key: `empty:${dataset.dataset_id}`, title: '暂无模型版本', disabled: true }],
+        : undefined,
+      isLeaf: !(dataset.models || []).length,
     }));
-  }, [datasets, isTraining, mode]);
+  }, [visibleDatasets, isTraining, mode]);
 
   useEffect(() => {
     if (selectedKey) return;
@@ -227,7 +255,7 @@ export default function DatasetTreeWorkbench({ mode }: { mode: WorkbenchMode }) 
     return { kind: 'chain', dataset } as const;
   }, [datasets, selectedKey]);
 
-  const defaultExpanded = datasets.flatMap((dataset) => {
+  const defaultExpanded = visibleDatasets.flatMap((dataset) => {
     const keys = [`dataset:${dataset.dataset_id}`];
     if (isTraining) {
       const roots = new Set<number>();
@@ -263,6 +291,25 @@ export default function DatasetTreeWorkbench({ mode }: { mode: WorkbenchMode }) 
             prefix={<SearchOutlined />}
             style={{ width: 220 }}
           />
+          <Segmented
+            value={filter}
+            onChange={(value) => {
+              setFilter(value as typeof filter);
+              setSelectedKey(undefined);
+            }}
+            options={
+              isTraining
+                ? [
+                    { value: 'all', label: '全部' },
+                    { value: 'passed', label: '已达标' },
+                    { value: 'untrained', label: '未训练' },
+                  ]
+                : [
+                    { value: 'all', label: '全部' },
+                    { value: 'published', label: '已发布' },
+                  ]
+            }
+          />
           <Button icon={<ReloadOutlined />} onClick={() => void query.refetch()} loading={query.isFetching}>
             刷新
           </Button>
@@ -278,23 +325,21 @@ export default function DatasetTreeWorkbench({ mode }: { mode: WorkbenchMode }) 
         </div>
       ) : query.error ? (
         <Alert type="error" showIcon message="目录树加载失败，请稍后刷新重试" />
-      ) : !datasets.length ? (
-        <Empty description="暂无数据集" />
+      ) : !visibleDatasets.length ? (
+        <Empty description={filter === 'all' ? '暂无数据集' : '当前筛选条件下暂无数据集'} />
       ) : (
         <Row gutter={16} align="top">
           <Col xs={24} lg={8} xl={7}>
             <Card size="small" title="数据集目录" styles={{ body: { maxHeight: 680, overflow: 'auto' } }}>
-              <Tree
-                showLine
+              <DirectoryTree
+                showIcon
                 blockNode
                 defaultExpandAll={false}
                 defaultExpandedKeys={defaultExpanded}
                 selectedKeys={selectedKey ? [selectedKey] : []}
                 onSelect={(keys) => {
                   const key = String(keys[0] || '');
-                  if (key && !key.startsWith('empty:') && !key.startsWith('chain:')) {
-                    setSelectedKey(key);
-                  } else if (key.startsWith('chain:')) {
+                  if (key && !key.startsWith('empty:')) {
                     setSelectedKey(key);
                   }
                 }}
