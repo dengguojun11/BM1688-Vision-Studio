@@ -30,8 +30,13 @@ from labelu.internal.common.config import settings
 from labelu.internal.common.db import begin_transaction
 from labelu.internal.common.error_code import ErrorCode, LabelUException
 from labelu.internal.domain.models.experiment_dataset_import import ExperimentDatasetImport
+from labelu.internal.domain.models.published_model_catalog import (
+    PublishedModelCatalog,
+    PublishedModelIdentifierAlias,
+)
 from labelu.internal.domain.models.sample import TaskSample
 from labelu.internal.domain.models.strategy_task_integration import StrategyTaskIntegration
+from labelu.internal.domain.models.third_party_call_audit import ThirdPartyCallAudit
 from labelu.internal.domain.models.third_party_optimization import (
     IntegrationPublishDecision,
     OptimizationCycle,
@@ -69,7 +74,48 @@ STAGE_LABELS = {
     "COMPLETED": "已完成",
     "FAILED": "失败",
     "CANCELLED": "已取消",
+    # 回调派发事件使用的内部 step_key，避免时间线里露出 deliver。
+    "deliver": "第三方回调派发",
 }
+# 执行时间线的事件类型同样必须中文化，避免详情里出现 request.stage_changed
+# 这类内部英文标识。
+EVENT_LABELS = {
+    "request.created": "请求已创建",
+    "request.stage_changed": "阶段变更",
+    "request.strategy_stage_changed": "策略阶段变更",
+    "request.package_auto_bound": "数据包自动绑定",
+    "request.pipeline_started": "流水线已启动",
+    "request.pipeline_rejected": "流水线已拒绝",
+    "request.cancelled": "请求已取消",
+    "request.publish_decision": "发布决策",
+    "request.publish_approved": "发布已批准",
+    "request.publish_started": "发布已开始",
+    "request.publish_finished": "发布已完成",
+    "7gai.workflow.callback.dispatch.v1": "第三方回调派发",
+    "7gai.workflow.callback.succeeded.v1": "第三方回调成功",
+    "7gai.workflow.callback.failed.v1": "第三方回调失败",
+}
+
+
+def event_type_label(event_type: str) -> str:
+    """Return the operator-facing Chinese label for a workflow event type."""
+
+    normalized = str(event_type or "").strip()
+    label = EVENT_LABELS.get(normalized)
+    if label:
+        return label
+    if normalized.startswith("request."):
+        return "请求状态更新"
+    return normalized or "状态更新"
+
+
+def stage_label(stage: str) -> str:
+    """Return the operator-facing Chinese label for a workflow step key."""
+
+    normalized = str(stage or "").strip()
+    return STAGE_LABELS.get(normalized, normalized or "未知阶段")
+
+
 STATUS_LABELS = {
     "PENDING": "已受理",
     "RUNNING": "执行中",
@@ -722,9 +768,11 @@ def _workflow_events(db: Session, request: OptimizationRequest) -> list[dict[str
         {
             "id": row.id,
             "event_type": row.event_type,
+            "event_type_label": event_type_label(row.event_type),
             "from_status": row.from_status,
             "to_status": row.to_status,
             "stage": row.step_key,
+            "stage_label": stage_label(row.step_key),
             "payload": _loads(row.payload_json, {}),
             "actor_id": row.actor_id,
             "created_at": _iso(row.created_at),
@@ -765,15 +813,160 @@ def _review_stats(db: Session, task_ids: list[Any]) -> dict[str, Any]:
     }
 
 
+def _resolve_published_models(
+    db: Session, model_ids: Iterable[str]
+) -> dict[str, PublishedModelCatalog]:
+    """Resolve third-party model identifiers against the published catalog.
+
+    The lookup is deliberately batched (one query per identifier kind) so a
+    request list poll never degrades into per-row catalog lookups.
+    """
+
+    texts = sorted(
+        {str(value or "").strip() for value in model_ids if str(value or "").strip()}
+    )
+    if not texts:
+        return {}
+    resolved: dict[str, PublishedModelCatalog] = {}
+    rows = (
+        db.query(PublishedModelCatalog)
+        .filter(
+            PublishedModelCatalog.public_model_id.in_(texts),
+            PublishedModelCatalog.deleted_at.is_(None),
+        )
+        .order_by(PublishedModelCatalog.id.desc())
+        .limit(2000)
+        .all()
+    )
+    for row in rows:
+        resolved.setdefault(str(row.public_model_id or ""), row)
+    numeric_ids = sorted(
+        {int(text) for text in texts if text.isdigit() and int(text) > 0}
+    )
+    if numeric_ids:
+        rows = (
+            db.query(PublishedModelCatalog)
+            .filter(
+                PublishedModelCatalog.aicm_model_set_id.in_(numeric_ids),
+                PublishedModelCatalog.deleted_at.is_(None),
+            )
+            .order_by(PublishedModelCatalog.id.desc())
+            .limit(2000)
+            .all()
+        )
+        for row in rows:
+            resolved.setdefault(str(row.aicm_model_set_id or ""), row)
+    alias_rows = (
+        db.query(PublishedModelIdentifierAlias, PublishedModelCatalog)
+        .join(
+            PublishedModelCatalog,
+            PublishedModelIdentifierAlias.catalog_id == PublishedModelCatalog.id,
+        )
+        .filter(
+            PublishedModelIdentifierAlias.external_model_id.in_(texts),
+            PublishedModelCatalog.deleted_at.is_(None),
+        )
+        .order_by(PublishedModelCatalog.id.desc())
+        .limit(2000)
+        .all()
+    )
+    for alias, catalog in alias_rows:
+        resolved.setdefault(str(alias.external_model_id or ""), catalog)
+    return resolved
+
+
+def _model_display(
+    request: OptimizationRequest, catalog: PublishedModelCatalog | None
+) -> dict[str, Any]:
+    raw = str(request.external_model_id or "").strip()
+    display_name = ""
+    if catalog is not None:
+        display_name = str(
+            getattr(catalog, "display_name", "") or getattr(catalog, "name", "") or ""
+        ).strip()
+    return {
+        "external_model_id": raw or None,
+        "display_name": display_name or None,
+        "catalog_id": (
+            int(catalog.id)
+            if catalog is not None and catalog.id is not None
+            else None
+        ),
+        "public_model_id": (
+            str(catalog.public_model_id or "") if catalog is not None else None
+        ),
+        "resolved": catalog is not None,
+    }
+
+
+def _scene_items(scene: Any) -> list[dict[str, Any]]:
+    if not isinstance(scene, dict):
+        return []
+    return [{"key": str(key), "value": value} for key, value in scene.items()]
+
+
+def _display_context(
+    db: Session, requests: Iterable[OptimizationRequest]
+) -> dict[int, dict[str, Any]]:
+    """Build list/detail display fields in a fixed number of queries."""
+
+    request_list = [request for request in requests if request is not None]
+    if not request_list:
+        return {}
+    strategy_ids: set[str] = set()
+    model_ids: set[str] = set()
+    for request in request_list:
+        strategy_id = str(
+            request.strategy_external_task_id or request.external_request_id or ""
+        ).strip()
+        if strategy_id:
+            strategy_ids.add(strategy_id)
+        model_id = str(request.external_model_id or "").strip()
+        if model_id:
+            model_ids.add(model_id)
+    strategies: dict[str, StrategyTaskIntegration] = {}
+    if strategy_ids:
+        rows = (
+            db.query(StrategyTaskIntegration)
+            .filter(
+                StrategyTaskIntegration.external_task_id.in_(sorted(strategy_ids)),
+                StrategyTaskIntegration.deleted_at.is_(None),
+            )
+            .all()
+        )
+        for row in rows:
+            strategies.setdefault(str(row.external_task_id or ""), row)
+    catalogs = _resolve_published_models(db, model_ids)
+    context: dict[int, dict[str, Any]] = {}
+    for request in request_list:
+        strategy_id = str(
+            request.strategy_external_task_id or request.external_request_id or ""
+        ).strip()
+        strategy = strategies.get(strategy_id)
+        model_id = str(request.external_model_id or "").strip()
+        context[int(request.id)] = {
+            "request_title": (
+                str(strategy.task_name or "").strip() if strategy is not None else ""
+            )
+            or request.external_request_id,
+            "external_model_display": _model_display(request, catalogs.get(model_id)),
+            "scene_items": _scene_items(_loads(request.scene_json, {})),
+        }
+    return context
+
+
 def _request_dict(
     db: Session,
     request: OptimizationRequest,
     *,
     include_images: bool = False,
     include_timeline: bool = False,
+    display: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     coverage = _loads(request.coverage_json, {}) or _coverage(db, request)
     review = _review_stats(db, coverage.get("task_ids") or [])
+    if display is None:
+        display = _display_context(db, [request]).get(int(request.id), {})
     cycle = (
         db.query(OptimizationCycle)
         .filter(OptimizationCycle.request_id == request.id)
@@ -818,6 +1011,11 @@ def _request_dict(
         "labelu_model_id": request.labelu_model_id,
         "export_id": request.export_id,
         "event_label": request.event_label,
+        "request_title": display.get("request_title") or request.external_request_id,
+        "external_model_display": display.get("external_model_display")
+        or _model_display(request, None),
+        "scene_items": display.get("scene_items")
+        or _scene_items(_loads(request.scene_json, {})),
         "scene": _loads(request.scene_json, {}),
         "event_time_from": _iso(request.event_time_from),
         "event_time_to": _iso(request.event_time_to),
@@ -1034,7 +1232,11 @@ def get_requests_by_image(db: Session, external_image_id: str) -> list[dict[str,
         .order_by(OptimizationRequest.id.desc())
         .all()
     )
-    return [_request_dict(db, row, include_images=True) for row in rows]
+    display = _display_context(db, rows)
+    return [
+        _request_dict(db, row, include_images=True, display=display.get(int(row.id)))
+        for row in rows
+    ]
 
 
 def get_requests_by_package(db: Session, package_id: str) -> list[dict[str, Any]]:
@@ -1045,11 +1247,11 @@ def get_requests_by_package(db: Session, package_id: str) -> list[dict[str, Any]
         .order_by(OptimizationRequest.id.desc())
         .all()
     )
-    result = []
+    matched: list[OptimizationRequest] = []
     for row in candidates:
         package_ids = _request_package_ids(row)
         if package in package_ids:
-            result.append(_request_dict(db, row, include_images=True))
+            matched.append(row)
             continue
         exists = (
             db.query(ThirdPartyEventImage.id)
@@ -1060,8 +1262,178 @@ def get_requests_by_package(db: Session, package_id: str) -> list[dict[str, Any]
             .first()
         )
         if exists:
-            result.append(_request_dict(db, row, include_images=True))
-    return result
+            matched.append(row)
+    display = _display_context(db, matched)
+    return [
+        _request_dict(db, row, include_images=True, display=display.get(int(row.id)))
+        for row in matched
+    ]
+
+
+ORIGINAL_REQUEST_MAX_BYTES = 256 * 1024
+
+
+def _latest_request_audit(
+    db: Session, external_task_id: str | None
+) -> ThirdPartyCallAudit | None:
+    identifier = str(external_task_id or "").strip()
+    if not identifier:
+        return None
+    return (
+        db.query(ThirdPartyCallAudit)
+        .filter(ThirdPartyCallAudit.external_task_id == identifier)
+        .order_by(ThirdPartyCallAudit.id.desc())
+        .first()
+    )
+
+
+def _compose_legacy_request(row: StrategyTaskIntegration) -> dict[str, Any]:
+    """Rebuild a legacy strategy payload from the columns we kept."""
+
+    return {
+        "external_task_id": row.external_task_id,
+        "task_name": row.task_name,
+        "task_type": row.task_type,
+        "schema_version": row.schema_version,
+        "source_system": row.source_system,
+        "source_package_id": row.source_package_id,
+        "target": _loads(row.target_json, {}),
+        "data_window": _loads(row.data_window_json, {}),
+        "experiment": _loads(row.experiment_json, {}),
+    }
+
+
+def _compose_v2_request(db: Session, request: OptimizationRequest) -> dict[str, Any]:
+    """Whitelist the persisted request fields for a v2 intake.
+
+    The v2 intake never stores the raw HTTP body, so the operator-facing
+    "original request" view has to be reconstructed from the columns that were
+    actually kept.  Image rows are capped to keep the response bounded.
+    """
+
+    data = _request_dict(db, request, include_images=True)
+    images = data.get("images") or []
+    return {
+        "request_type": data.get("request_type"),
+        "external_request_id": data.get("external_request_id"),
+        "source_system": data.get("source_system"),
+        "client_id": data.get("client_id"),
+        "external_model_id": data.get("external_model_id"),
+        "labelu_model_id": data.get("labelu_model_id"),
+        "event_label": data.get("event_label"),
+        "scene": data.get("scene"),
+        "event_time_from": data.get("event_time_from"),
+        "event_time_to": data.get("event_time_to"),
+        "require_complete": data.get("require_complete"),
+        "allow_partial": data.get("allow_partial"),
+        "min_sample_count": data.get("min_sample_count"),
+        "callback_url": data.get("callback_url"),
+        "package_ids": data.get("package_ids") or [],
+        "images": {"count": len(images), "items": images[:100]},
+    }
+
+
+def _original_intake(audit: ThirdPartyCallAudit | None) -> dict[str, Any]:
+    if audit is None:
+        return {"method": None, "path": None, "outcome": None}
+    return {
+        "method": audit.request_method,
+        "path": audit.request_path,
+        "outcome": audit.outcome,
+    }
+
+
+def _guard_original_payload(
+    payload: Any, warning: str | None
+) -> tuple[Any, bool, str | None]:
+    if payload is None:
+        return None, False, warning
+    try:
+        text = json.dumps(payload, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        text = str(payload)
+    encoded = text.encode("utf-8")
+    if len(encoded) <= ORIGINAL_REQUEST_MAX_BYTES:
+        return payload, False, warning
+    shortened = encoded[:ORIGINAL_REQUEST_MAX_BYTES].decode("utf-8", errors="ignore")
+    notice = "原始报文超过 256KB，已截断"
+    return shortened, True, f"{warning}；{notice}" if warning else notice
+
+
+def original_request(db: Session, request_id: int) -> dict[str, Any]:
+    """Return the admin-only raw/composed third-party request view.
+
+    This is intentionally a separate endpoint: raw request bodies are large and
+    must never inflate the polled list/detail/SSE payloads.
+    """
+
+    request = _get_request(db, request_id)
+    strategy_id = str(
+        request.strategy_external_task_id or request.external_request_id or ""
+    ).strip()
+    strategy = (
+        db.query(StrategyTaskIntegration)
+        .filter(
+            StrategyTaskIntegration.external_task_id == strategy_id,
+            StrategyTaskIntegration.deleted_at.is_(None),
+        )
+        .first()
+        if strategy_id
+        else None
+    )
+    audit = _latest_request_audit(db, request.external_request_id)
+    if audit is None and strategy_id != str(request.external_request_id or "").strip():
+        audit = _latest_request_audit(db, strategy_id)
+
+    raw_available = False
+    payload: Any = None
+    composed: Any = None
+    warning: str | None = None
+    if strategy is not None:
+        raw_text = str(strategy.request_payload_json or "").strip()
+        parsed = _loads(raw_text, None) if raw_text else None
+        if parsed is not None and parsed != {}:
+            payload = parsed
+            raw_available = True
+        else:
+            composed = _compose_legacy_request(strategy)
+            warning = "未找到原始请求报文，以下按已保存字段还原"
+    else:
+        composed = _compose_v2_request(db, request)
+        warning = "v2 接口未持久化原始报文，以下为按字段还原"
+
+    payload, payload_truncated, warning = _guard_original_payload(payload, warning)
+    composed, composed_truncated, warning = _guard_original_payload(composed, warning)
+    truncated = payload_truncated or composed_truncated
+
+    category = strategy.dataset_category if strategy is not None else None
+    return {
+        "request_id": request.id,
+        "source": request.source_system,
+        "raw_available": raw_available,
+        "raw_sha256": audit.request_sha256 if audit is not None else None,
+        "raw_bytes": audit.request_bytes if audit is not None else None,
+        "received_at": _iso(audit.received_at) if audit is not None else None,
+        "intake": _original_intake(audit),
+        "payload": payload,
+        "composed": composed,
+        "linked": {
+            "strategy_external_task_id": request.strategy_external_task_id
+            or (strategy.external_task_id if strategy is not None else None),
+            "strategy_task_name": strategy.task_name if strategy is not None else None,
+            "platform_status": (
+                strategy.platform_status if strategy is not None else None
+            ),
+            "event_type": request.event_label,
+            "model_id": request.external_model_id,
+            "dataset_category_key": (
+                category.category_key if category is not None else None
+            ),
+            "dataset_category_name": category.name if category is not None else None,
+        },
+        "truncated": truncated,
+        "warning": warning,
+    }
 
 
 def list_requests(
@@ -1108,7 +1480,10 @@ def list_requests(
         .limit(max(1, min(int(size), 200)))
         .all()
     )
-    return [_request_dict(db, row) for row in rows], int(total)
+    display = _display_context(db, rows)
+    return [
+        _request_dict(db, row, display=display.get(int(row.id))) for row in rows
+    ], int(total)
 
 
 def data_availability(

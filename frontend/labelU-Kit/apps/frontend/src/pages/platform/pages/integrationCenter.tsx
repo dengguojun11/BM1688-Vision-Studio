@@ -28,6 +28,7 @@ import styled from 'styled-components';
 
 import request from '@/api/request';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
+
 import { listData, listTotal } from '../shared';
 
 const { RangePicker } = DatePicker;
@@ -93,17 +94,17 @@ function formatDateTime(value: unknown) {
   return text.replace('T', ' ').replace('Z', '').slice(0, 19);
 }
 
-type Row = Record<string, any>;
+type IntegrationRow = Record<string, any>;
 
-function asRows(response: any): Row[] {
-  return (listData(response) || []) as Row[];
+function asRows(response: any): IntegrationRow[] {
+  return (listData(response) || []) as IntegrationRow[];
 }
 
 function asTotal(response: any, fallback: number): number {
   return Number(listTotal(response, fallback) || fallback);
 }
 
-function stageTag(row: Row) {
+function stageTag(row: IntegrationRow) {
   return (
     <Space direction="vertical" size={0}>
       <Tag color={STAGE_COLORS[row.stage] || 'default'}>{row.stage_label || row.stage}</Tag>
@@ -114,11 +115,72 @@ function stageTag(row: Row) {
   );
 }
 
+function modelDisplayText(row: IntegrationRow): string {
+  const display = row.external_model_display || {};
+  const name = String(display.display_name || '').trim();
+  const raw = String(display.external_model_id || row.external_model_id || '').trim();
+  if (name) return `${name} (ID ${raw || '-'})`;
+  return raw || '-';
+}
+
+function formatSceneValue(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '-';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    return value
+      .map((item) =>
+        typeof item === 'object' && item !== null ? JSON.stringify(item) : String(item),
+      )
+      .join('、');
+  }
+  if (typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  return String(value);
+}
+
+function sceneEntries(row: IntegrationRow): { key: string; value: unknown }[] {
+  const items = row.scene_items;
+  if (Array.isArray(items)) {
+    return items
+      .filter((item) => item && typeof item === 'object')
+      .map((item) => ({
+        key: String((item as IntegrationRow).key ?? ''),
+        value: (item as IntegrationRow).value,
+      }));
+  }
+  const scene = row.scene;
+  if (scene && typeof scene === 'object' && !Array.isArray(scene)) {
+    return Object.entries(scene as Record<string, unknown>).map(([key, value]) => ({
+      key,
+      value,
+    }));
+  }
+  return [];
+}
+
+function originalPayloadText(data: IntegrationRow | null): string {
+  if (!data) return '';
+  const value = data.payload ?? data.composed ?? null;
+  if (value === null || value === undefined) return '暂无数据';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
 export function IntegrationRequestsPanel() {
-  const [rows, setRows] = useState<Row[]>([]);
+  const [rows, setRows] = useState<IntegrationRow[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [summary, setSummary] = useState<Row>({});
+  const [summary, setSummary] = useState<IntegrationRow>({});
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const [sourceFilter, setSourceFilter] = useState('');
@@ -126,15 +188,19 @@ export function IntegrationRequestsPanel() {
   const [lookupMode, setLookupMode] = useState<'keyword' | 'image' | 'package'>('keyword');
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(20);
-  const [selected, setSelected] = useState<Row | null>(null);
-  const [detail, setDetail] = useState<Row | null>(null);
+  const [selected, setSelected] = useState<IntegrationRow | null>(null);
+  const [detail, setDetail] = useState<IntegrationRow | null>(null);
+  const [originalRequest, setOriginalRequest] = useState<IntegrationRow | null>(null);
+  const [originalRequestId, setOriginalRequestId] = useState<number | null>(null);
+  const [originalLoading, setOriginalLoading] = useState(false);
+  const [originalError, setOriginalError] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
   const [bindOpen, setBindOpen] = useState(false);
   const [availabilityOpen, setAvailabilityOpen] = useState(false);
-  const [availability, setAvailability] = useState<Row | null>(null);
-  const [alerts, setAlerts] = useState<Row>({ counts: {} });
+  const [availability, setAvailability] = useState<IntegrationRow | null>(null);
+  const [alerts, setAlerts] = useState<IntegrationRow>({ counts: {} });
   const [alertsOpen, setAlertsOpen] = useState(false);
-  const [accumulationConfig, setAccumulationConfig] = useState<Row>({});
+  const [accumulationConfig, setAccumulationConfig] = useState<IntegrationRow>({});
   const [configOpen, setConfigOpen] = useState(false);
   const { isTaskSuperuser } = useTaskSuperuser();
   const [streamLive, setStreamLive] = useState(false);
@@ -215,6 +281,27 @@ export function IntegrationRequestsPanel() {
     }
   };
 
+  // 原始请求体积大且仅管理员可见，按需加载一次，绝不进入 3 秒详情轮询。
+  const loadOriginalRequest = async (id: number) => {
+    setOriginalLoading(true);
+    setOriginalError('');
+    try {
+      const response = await request.get(`/v2/integrations/requests/${id}/original-request`);
+      setOriginalRequest(((response as any)?.data || null) as IntegrationRow | null);
+      setOriginalRequestId(id);
+    } catch (error: any) {
+      setOriginalRequest(null);
+      setOriginalRequestId(id);
+      setOriginalError(
+        error?.response?.status === 403
+          ? '仅系统管理员可查看原始请求报文'
+          : error?.response?.data?.msg || error?.message || '原始请求加载失败',
+      );
+    } finally {
+      setOriginalLoading(false);
+    }
+  };
+
   useEffect(() => {
     void loadSummary();
     void loadAlerts();
@@ -274,7 +361,7 @@ export function IntegrationRequestsPanel() {
               try {
                 const payload = JSON.parse(dataLine.slice(5).trim());
                 if (payload && Array.isArray(payload.rows)) {
-                  setRows(payload.rows as Row[]);
+                  setRows(payload.rows as IntegrationRow[]);
                   setTotal(Number(payload.total || payload.rows.length || 0));
                   if (payload.summary) setSummary(payload.summary);
                 }
@@ -307,7 +394,7 @@ export function IntegrationRequestsPanel() {
     return () => window.clearInterval(timer);
   }, [selected]);
 
-  const columns: ColumnsType<Row> = useMemo(
+  const columns: ColumnsType<IntegrationRow> = useMemo(
     () => [
       {
         title: '请求',
@@ -332,16 +419,23 @@ export function IntegrationRequestsPanel() {
       {
         title: '模型 / 事件',
         key: 'model_event',
-        width: 190,
-        render: (_, row) => (
-          <Space direction="vertical" size={0}>
-            <span>{row.external_model_id || '-'}</span>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              {row.event_label || '-'}
-              {row.scene && Object.keys(row.scene).length ? ` · ${JSON.stringify(row.scene)}` : ''}
-            </Typography.Text>
-          </Space>
-        ),
+        width: 240,
+        render: (_, row) => {
+          const title = String(row.request_title || '').trim() || row.external_request_id || '-';
+          return (
+            <Space direction="vertical" size={0} style={{ maxWidth: 230 }}>
+              <Typography.Text strong ellipsis={{ tooltip: title }}>
+                {title}
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                事件：{row.event_label || '-'}
+              </Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                模型：{modelDisplayText(row)}
+              </Typography.Text>
+            </Space>
+          );
+        },
       },
       {
         title: '当前阶段',
@@ -500,6 +594,8 @@ export function IntegrationRequestsPanel() {
       message.error(error?.message || '绑定失败');
     }
   };
+
+  const detailSceneEntries = detail ? sceneEntries(detail) : [];
 
   return (
     <>
@@ -772,7 +868,7 @@ export function IntegrationRequestsPanel() {
           <Descriptions.Item label="回调失败">{alerts?.counts?.callback_failed || 0}</Descriptions.Item>
         </Descriptions>
         <Table
-          rowKey={(row: Row) => `${row.id}-${row.stage || ''}-${row.status || ''}`}
+          rowKey={(row: IntegrationRow) => `${row.id}-${row.stage || ''}-${row.status || ''}`}
           size="small"
           pagination={false}
           dataSource={[
@@ -780,7 +876,7 @@ export function IntegrationRequestsPanel() {
             ...(alerts?.stale || []),
             ...(alerts?.failed || []),
           ].filter(
-            (row: Row, index: number, list: Row[]) =>
+            (row: IntegrationRow, index: number, list: IntegrationRow[]) =>
               list.findIndex((candidate) => candidate.id === row.id) === index,
           )}
           columns={[
@@ -882,6 +978,9 @@ export function IntegrationRequestsPanel() {
         onClose={() => {
           setSelected(null);
           setDetail(null);
+          setOriginalRequest(null);
+          setOriginalRequestId(null);
+          setOriginalError('');
         }}
         extra={
           detail ? (
@@ -948,11 +1047,36 @@ export function IntegrationRequestsPanel() {
               format={() => `${detail.progress?.processed || 0}/${detail.progress?.total || 0}`}
             />
             <Descriptions column={2} size="small" bordered>
+              <Descriptions.Item label="任务名称" span={2}>
+                {detail.request_title || detail.external_request_id || '-'}
+              </Descriptions.Item>
               <Descriptions.Item label="第三方请求 ID">{detail.external_request_id}</Descriptions.Item>
               <Descriptions.Item label="来源系统">{detail.source_system}</Descriptions.Item>
-              <Descriptions.Item label="模型">{detail.external_model_id || '-'}</Descriptions.Item>
+              <Descriptions.Item label="模型">
+                <Space size={4} wrap>
+                  <span>{modelDisplayText(detail)}</span>
+                  {detail.external_model_display?.catalog_id ? (
+                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      目录 #{detail.external_model_display.catalog_id}
+                    </Typography.Text>
+                  ) : null}
+                </Space>
+              </Descriptions.Item>
               <Descriptions.Item label="事件">{detail.event_label || '-'}</Descriptions.Item>
-              <Descriptions.Item label="场景">{detail.scene && Object.keys(detail.scene).length ? JSON.stringify(detail.scene) : '-'}</Descriptions.Item>
+              <Descriptions.Item label="场景" span={2}>
+                {detailSceneEntries.length ? (
+                  <Space direction="vertical" size={0}>
+                    {detailSceneEntries.map((item) => (
+                      <div key={item.key}>
+                        <Typography.Text type="secondary">{item.key}</Typography.Text>：
+                        {formatSceneValue(item.value)}
+                      </div>
+                    ))}
+                  </Space>
+                ) : (
+                  '-'
+                )}
+              </Descriptions.Item>
               <Descriptions.Item label="最小样本数">{detail.min_sample_count}</Descriptions.Item>
               <Descriptions.Item label="工作流">{detail.workflow_id || '-'}</Descriptions.Item>
               <Descriptions.Item label="训练编排">
@@ -1023,7 +1147,7 @@ export function IntegrationRequestsPanel() {
                   {
                     title: '样本',
                     dataIndex: 'sample_id',
-                    render: (value, row: Row) =>
+                    render: (value, row: IntegrationRow) =>
                       value ? (
                         <Typography.Link
                           href={row.task_id ? `/tasks/${row.task_id}/samples/${value}` : undefined}
@@ -1047,7 +1171,7 @@ export function IntegrationRequestsPanel() {
                   <Space direction="vertical" style={{ width: '100%' }}>
                     {Array.isArray(detail.result.f1_curve) && detail.result.f1_curve.length ? (
                       <Table
-                        rowKey={(row: Row) => String(row.threshold)}
+                        rowKey={(row: IntegrationRow) => String(row.threshold)}
                         size="small"
                         pagination={false}
                         dataSource={detail.result.f1_curve}
@@ -1183,18 +1307,111 @@ export function IntegrationRequestsPanel() {
 
             <Card size="small" title="执行时间线">
               <Timeline
-                items={(detail.timeline || []).map((event: Row) => ({
+                items={(detail.timeline || []).map((event: IntegrationRow) => ({
                   color: event.to_status === 'FAILED' ? 'red' : event.to_status === 'SUCCEEDED' ? 'green' : 'blue',
                   children: (
                     <Space direction="vertical" size={0}>
-                      <Typography.Text strong>{event.event_type}</Typography.Text>
+                      <Typography.Text strong>
+                        {String(event.event_type_label || '').trim() || event.event_type}
+                      </Typography.Text>
                       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                        {event.stage || '-'} · {formatDateTime(event.created_at)}
+                        {String(event.stage_label || '').trim() || event.stage || '-'} ·{' '}
+                        {formatDateTime(event.created_at)}
                       </Typography.Text>
                     </Space>
                   ),
                 }))}
               />
+            </Card>
+
+            <Card
+              size="small"
+              title="原始请求"
+              extra={
+                <Button
+                  size="small"
+                  loading={originalLoading}
+                  onClick={() => void loadOriginalRequest(Number(detail.id))}
+                >
+                  {originalRequestId === Number(detail.id) ? '重新加载' : '查看原始请求'}
+                </Button>
+              }
+            >
+              {originalError ? <Alert type="error" showIcon message={originalError} /> : null}
+              {originalLoading && !originalRequest ? (
+                <Typography.Text type="secondary">加载中…</Typography.Text>
+              ) : null}
+              {originalRequest && originalRequestId === Number(detail.id) ? (
+                <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                  <Space wrap size={4}>
+                    <Tag color={originalRequest.raw_available ? 'green' : 'orange'}>
+                      {originalRequest.raw_available ? '原始' : '还原'}
+                    </Tag>
+                    {originalRequest.source ? <Tag>{originalRequest.source}</Tag> : null}
+                    {originalRequest.truncated ? <Tag color="red">已截断</Tag> : null}
+                  </Space>
+                  <Descriptions column={2} size="small" bordered>
+                    <Descriptions.Item label="SHA256" span={2}>
+                      <Typography.Text
+                        copyable={{ text: String(originalRequest.raw_sha256 || '') }}
+                        style={{ wordBreak: 'break-all' }}
+                      >
+                        {originalRequest.raw_sha256 || '-'}
+                      </Typography.Text>
+                    </Descriptions.Item>
+                    <Descriptions.Item label="字节数">
+                      {originalRequest.raw_bytes ?? '-'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="接收时间">
+                      {formatDateTime(originalRequest.received_at)}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="接入路径" span={2}>
+                      {originalRequest.intake?.method || '-'}{' '}
+                      {originalRequest.intake?.path || '-'}
+                      {originalRequest.intake?.outcome
+                        ? ` · ${originalRequest.intake.outcome}`
+                        : ''}
+                    </Descriptions.Item>
+                  </Descriptions>
+                  {!originalRequest.raw_available && originalRequest.warning ? (
+                    <Alert type="warning" showIcon message={originalRequest.warning} />
+                  ) : null}
+                  <div style={{ position: 'relative' }}>
+                    <Button
+                      size="small"
+                      style={{ position: 'absolute', right: 8, top: 8, zIndex: 1 }}
+                      onClick={() => {
+                        const text = originalPayloadText(originalRequest);
+                        if (navigator.clipboard?.writeText) {
+                          navigator.clipboard
+                            .writeText(text)
+                            .then(() => message.success('原始请求已复制'))
+                            .catch(() => message.error('复制失败，请手动选择文本'));
+                        }
+                      }}
+                    >
+                      复制 JSON
+                    </Button>
+                    <pre
+                      style={{
+                        maxHeight: 360,
+                        overflow: 'auto',
+                        margin: 0,
+                        padding: 12,
+                        background: '#fafafa',
+                        borderRadius: 4,
+                        fontSize: 12,
+                      }}
+                    >
+                      {originalPayloadText(originalRequest)}
+                    </pre>
+                  </div>
+                </Space>
+              ) : !originalError && !originalLoading ? (
+                <Typography.Text type="secondary">
+                  按需加载，不参与详情轮询；仅系统管理员可见。
+                </Typography.Text>
+              ) : null}
             </Card>
           </Space>
         )}

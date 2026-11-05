@@ -5,11 +5,16 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 from labelu.internal.domain.models.experiment_dataset_import import ExperimentDatasetImport
+from labelu.internal.domain.models.published_model_catalog import (
+    PublishedModelCatalog,
+    PublishedModelIdentifierAlias,
+)
 from labelu.internal.domain.models.workflow import WorkflowOutbox
 from labelu.internal.domain.models.sample import TaskSample
 from labelu.internal.common.config import settings
 from labelu.internal.domain.models.third_party_call_audit import ThirdPartyCallAudit
 from labelu.internal.domain.models.strategy_task_integration import StrategyTaskIntegration
+from labelu.internal.domain.models.third_party_optimization import OptimizationRequest
 from labelu.internal.application.service import integration_requests as integration_service
 
 
@@ -81,6 +86,14 @@ def test_create_request_tracks_coverage_and_query_by_image(
     timeline = detail.json()["data"]["timeline"]
     assert timeline
     assert any(event["event_type"] == "request.created" for event in timeline)
+    # 执行时间线必须给中文标签，页面不能直接显示 request.created 这类内部标识。
+    created_event = next(
+        event for event in timeline if event["event_type"] == "request.created"
+    )
+    assert created_event["event_type_label"] == "请求已创建"
+    assert created_event["stage_label"] == "已接收"
+    assert all(event.get("event_type_label") for event in timeline)
+    assert all(event.get("stage_label") for event in timeline)
 
 
 def test_create_request_is_idempotent_and_rejects_type_change(
@@ -935,3 +948,346 @@ def test_refresh_and_start_pipeline_are_safe_without_package(
     assert payload["reason"] == "package_or_source_not_ready"
 
 
+def _legacy_strategy_row(
+    external_task_id: str,
+    *,
+    task_name: str = "非机动车违停高评分误报模型优化",
+    request_payload_json: str | None = None,
+    target_json: str | None = None,
+    data_window_json: str | None = None,
+    experiment_json: str | None = None,
+    platform_status: str = "training",
+) -> StrategyTaskIntegration:
+    return StrategyTaskIntegration(
+        external_task_id=external_task_id,
+        task_name=task_name,
+        task_type="model_capability",
+        source_system="strategy_evolution",
+        schema_version="v1",
+        dataset_s3_uri="s3://bucket/legacy",
+        dataset_image_prefix="images/",
+        metadata_key="metadata.json",
+        bucket="bucket",
+        prefix="legacy",
+        import_status="COMPLETED",
+        platform_status=platform_status,
+        automation_stage="training",
+        request_payload_json=request_payload_json,
+        request_sha256=None,
+        target_json=target_json,
+        data_window_json=data_window_json,
+        experiment_json=experiment_json,
+        created_at=datetime.now(),
+        updated_at=datetime.now(),
+    )
+
+
+def _link_legacy_request(client, db, token_headers, strategy, body) -> int:
+    db.add(strategy)
+    db.commit()
+    created = client.post(
+        "/api/v2/integrations/requests", json=body, headers=token_headers
+    )
+    assert created.status_code == 201, created.text
+    request_id = created.json()["data"]["id"]
+    request = db.get(OptimizationRequest, request_id)
+    request.strategy_external_task_id = strategy.external_task_id
+    db.commit()
+    return request_id
+
+
+def test_original_request_returns_legacy_payload_audit_and_display_fields(
+    client, db, testuser_token_headers, testadmin_token_headers
+):
+    external_task_id = f"legacy-raw-{uuid4().hex[:8]}"
+    raw_payload = {
+        "schema_version": "v1",
+        "external_task_id": external_task_id,
+        "task_name": "非机动车违停高评分误报模型优化",
+        "target": {
+            "event_type": "illegalParkingofNonMotorVehicle",
+            "model_id": "591",
+        },
+    }
+    strategy = _legacy_strategy_row(
+        external_task_id,
+        request_payload_json=json.dumps(raw_payload, ensure_ascii=False),
+        target_json='{"event_type":"illegalParkingofNonMotorVehicle","model_id":"591"}',
+        data_window_json='{"start_time":"2026-10-01T00:00:00Z","end_time":"2026-10-02T00:00:00Z"}',
+        experiment_json='{"capability_issue_type":"false_positive"}',
+    )
+    body = _request_body(
+        external_request_id=external_task_id,
+        source_system="strategy_evolution",
+        external_model_id="591",
+        event_label="illegalParkingofNonMotorVehicle",
+        scene={"lighting": "night", "road": "urban"},
+        images=[],
+        min_sample_count=1,
+    )
+    request_id = _link_legacy_request(
+        client, db, testuser_token_headers, strategy, body
+    )
+    sha256 = "a" * 64
+    db.add(
+        ThirdPartyCallAudit(
+            request_id=f"audit-{uuid4().hex[:16]}",
+            source_system="strategy_evolution",
+            operation="model_capability",
+            request_method="POST",
+            request_path="/internal/v1/strategy-evolution/model-trainings",
+            external_task_id=external_task_id,
+            request_sha256=sha256,
+            request_bytes=2048,
+            response_status=202,
+            outcome="accepted",
+            received_at=datetime.now(),
+        )
+    )
+    db.commit()
+
+    response = client.get(
+        f"/api/v2/integrations/requests/{request_id}/original-request",
+        headers=testadmin_token_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["request_id"] == request_id
+    assert data["source"] == "strategy_evolution"
+    assert data["raw_available"] is True
+    assert data["payload"] == raw_payload
+    assert data["composed"] is None
+    assert data["raw_sha256"] == sha256
+    assert data["raw_bytes"] == 2048
+    assert data["received_at"]
+    assert data["intake"] == {
+        "method": "POST",
+        "path": "/internal/v1/strategy-evolution/model-trainings",
+        "outcome": "accepted",
+    }
+    assert data["linked"]["strategy_external_task_id"] == external_task_id
+    assert data["linked"]["strategy_task_name"] == "非机动车违停高评分误报模型优化"
+    assert data["linked"]["platform_status"] == "training"
+    assert data["linked"]["event_type"] == "illegalParkingofNonMotorVehicle"
+    assert data["linked"]["model_id"] == "591"
+    assert data["truncated"] is False
+
+    detail = client.get(
+        f"/api/v2/integrations/requests/{request_id}",
+        headers=testuser_token_headers,
+    ).json()["data"]
+    assert detail["request_title"] == "非机动车违停高评分误报模型优化"
+    assert detail["external_model_display"]["external_model_id"] == "591"
+    assert detail["external_model_display"]["resolved"] is False
+    assert detail["scene_items"] == [
+        {"key": "lighting", "value": "night"},
+        {"key": "road", "value": "urban"},
+    ]
+    # 原始请求字段只属于独立的管理员接口，不能膨胀详情轮询报文。
+    assert "payload" not in detail
+    assert "composed" not in detail
+    assert "intake" not in detail
+
+
+def test_original_request_composes_legacy_row_without_payload(
+    client, db, testuser_token_headers, testadmin_token_headers
+):
+    external_task_id = f"legacy-empty-{uuid4().hex[:8]}"
+    strategy = _legacy_strategy_row(
+        external_task_id,
+        request_payload_json="{}",
+        target_json='{"event_type":"illegalParkingofNonMotorVehicle","model_id":"591"}',
+        data_window_json='{"start_time":"2026-10-01T00:00:00Z","end_time":"2026-10-02T00:00:00Z"}',
+        experiment_json='{"capability_issue_type":"false_positive"}',
+        platform_status="waiting_for_annotations",
+    )
+    body = _request_body(
+        external_request_id=external_task_id,
+        source_system="strategy_evolution",
+        external_model_id="591",
+        event_label="illegalParkingofNonMotorVehicle",
+        images=[],
+        min_sample_count=1,
+    )
+    request_id = _link_legacy_request(
+        client, db, testuser_token_headers, strategy, body
+    )
+    db.query(ThirdPartyCallAudit).filter(
+        ThirdPartyCallAudit.external_task_id == external_task_id
+    ).delete()
+    db.commit()
+
+    response = client.get(
+        f"/api/v2/integrations/requests/{request_id}/original-request",
+        headers=testadmin_token_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["raw_available"] is False
+    assert data["payload"] is None
+    assert data["composed"]["target"]["model_id"] == "591"
+    assert data["composed"]["data_window"]["start_time"] == "2026-10-01T00:00:00Z"
+    assert data["composed"]["experiment"]["capability_issue_type"] == "false_positive"
+    assert data["warning"]
+    assert data["raw_sha256"] is None
+    assert data["raw_bytes"] is None
+    assert data["received_at"] is None
+    assert data["intake"] == {"method": None, "path": None, "outcome": None}
+    assert data["truncated"] is False
+
+
+def test_original_request_returns_composed_v2_payload(
+    client, testuser_token_headers, testadmin_token_headers
+):
+    body = _request_body()
+    created = client.post(
+        "/api/v2/integrations/requests", json=body, headers=testuser_token_headers
+    )
+    assert created.status_code == 201, created.text
+    request_id = created.json()["data"]["id"]
+
+    response = client.get(
+        f"/api/v2/integrations/requests/{request_id}/original-request",
+        headers=testadmin_token_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["raw_available"] is False
+    assert data["payload"] is None
+    assert data["warning"] == "v2 接口未持久化原始报文，以下为按字段还原"
+    assert data["composed"]["request_type"] == "model_optimization"
+    assert data["composed"]["external_request_id"] == body["external_request_id"]
+    assert data["composed"]["event_label"] == body["event_label"]
+    assert data["composed"]["external_model_id"] == body["external_model_id"]
+    assert data["composed"]["package_ids"] == []
+    assert data["composed"]["images"]["count"] == len(body["images"])
+    assert len(data["composed"]["images"]["items"]) == len(body["images"])
+    assert data["linked"]["strategy_external_task_id"] is None
+    assert data["linked"]["strategy_task_name"] is None
+    assert data["linked"]["event_type"] == body["event_label"]
+    assert data["linked"]["model_id"] == body["external_model_id"]
+    assert data["linked"]["dataset_category_key"] is None
+    assert data["truncated"] is False
+
+
+def test_original_request_truncates_oversized_payload(
+    client, db, testuser_token_headers, testadmin_token_headers
+):
+    external_task_id = f"legacy-huge-{uuid4().hex[:8]}"
+    raw_payload = {
+        "external_task_id": external_task_id,
+        "blob": "x" * (256 * 1024 + 128),
+    }
+    strategy = _legacy_strategy_row(
+        external_task_id,
+        request_payload_json=json.dumps(raw_payload),
+    )
+    body = _request_body(
+        external_request_id=external_task_id,
+        source_system="strategy_evolution",
+        external_model_id="591",
+        event_label="illegalParkingofNonMotorVehicle",
+        images=[],
+        min_sample_count=1,
+    )
+    request_id = _link_legacy_request(
+        client, db, testuser_token_headers, strategy, body
+    )
+
+    response = client.get(
+        f"/api/v2/integrations/requests/{request_id}/original-request",
+        headers=testadmin_token_headers,
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["raw_available"] is True
+    assert data["truncated"] is True
+    assert isinstance(data["payload"], str)
+    assert len(data["payload"].encode("utf-8")) <= 256 * 1024
+    assert "已截断" in data["warning"]
+
+
+def test_original_request_requires_system_admin_jwt(client, testuser_token_headers):
+    body = _request_body()
+    created = client.post(
+        "/api/v2/integrations/requests", json=body, headers=testuser_token_headers
+    )
+    request_id = created.json()["data"]["id"]
+    path = f"/api/v2/integrations/requests/{request_id}/original-request"
+
+    anonymous = client.get(path)
+    assert anonymous.status_code == 401
+
+    service_token = client.get(path, headers={"X-7GAI-Service-Token": "svc-token"})
+    assert service_token.status_code == 401
+
+    denied = client.get(path, headers=testuser_token_headers)
+    assert denied.status_code == 403
+
+
+def test_list_and_detail_resolve_model_display_from_published_catalog(
+    client, db, testuser_token_headers
+):
+    public_model_id = f"pub-{uuid4().hex[:10]}"
+    aicm_model_set_id = int(uuid4().int % 1_000_000_000) + 1
+    catalog = PublishedModelCatalog(
+        public_model_id=public_model_id,
+        aicm_model_set_id=aicm_model_set_id,
+        name="非机动车违停模型",
+        display_name="非机动车违停检测模型",
+        source_type="labelu_publish",
+        source_system="aicm",
+        status="active",
+        is_public=True,
+        download_enabled=True,
+        availability_status="available",
+    )
+    db.add(catalog)
+    db.flush()
+    db.add(
+        PublishedModelIdentifierAlias(
+            catalog_id=catalog.id,
+            source_system="third_party",
+            external_model_id="591",
+            alias_type="third_party",
+        )
+    )
+    db.commit()
+
+    cases = ["591", public_model_id, str(aicm_model_set_id)]
+    for model_identifier in cases:
+        body = _request_body(
+            source_system="third-party",
+            external_model_id=model_identifier,
+            event_label="illegalParkingofNonMotorVehicle",
+            scene={"lighting": "night"},
+            images=[],
+            min_sample_count=1,
+        )
+        created = client.post(
+            "/api/v2/integrations/requests", json=body, headers=testuser_token_headers
+        )
+        assert created.status_code == 201, created.text
+        request_id = created.json()["data"]["id"]
+        detail = client.get(
+            f"/api/v2/integrations/requests/{request_id}",
+            headers=testuser_token_headers,
+        ).json()["data"]
+        assert (
+            detail["external_model_display"]["display_name"] == "非机动车违停检测模型"
+        )
+        assert detail["external_model_display"]["catalog_id"] == catalog.id
+        assert detail["external_model_display"]["resolved"] is True
+        assert detail["external_model_display"]["external_model_id"] == model_identifier
+        assert detail["request_title"] == body["external_request_id"]
+        assert detail["scene_items"] == [{"key": "lighting", "value": "night"}]
+
+        listed = client.get(
+            "/api/v2/integrations/requests",
+            params={"source_system": "third-party", "size": 50},
+            headers=testuser_token_headers,
+        )
+        assert listed.status_code == 200, listed.text
+        row = next(item for item in listed.json()["data"] if item["id"] == request_id)
+        assert row["external_model_display"]["catalog_id"] == catalog.id
+        assert row["request_title"] == body["external_request_id"]

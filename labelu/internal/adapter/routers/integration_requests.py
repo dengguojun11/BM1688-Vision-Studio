@@ -254,6 +254,20 @@ async def get_request(
     return OkResp[dict[str, Any]](data=service.get_request(db, request_id))
 
 
+@router.get(
+    "/requests/{request_id}/original-request",
+    response_model=OkResp[dict[str, Any]],
+)
+async def get_original_request(
+    request_id: int,
+    db: Session = Depends(db_module.get_db),
+    _current_user: User = Depends(require_system_admin),
+):
+    """Admin-only raw/composed third-party request view (not polled)."""
+
+    return OkResp[dict[str, Any]](data=service.original_request(db, request_id))
+
+
 @router.post("/requests/{request_id}/refresh", response_model=OkResp[dict[str, Any]])
 async def refresh_request(
     request_id: int,
