@@ -2018,6 +2018,9 @@ def _compile_subprocess_env(file_cfg: dict) -> dict:
     env["TMPDIR"] = str(runtime_tmp)
     env["OMP_NUM_THREADS"] = "1"
     env["KMP_USE_SHM"] = "0"
+    shm_shim = Path(settings.BASE_DATA_DIR) / "shmwrap.so"
+    if shm_shim.is_file():
+        env["LD_PRELOAD"] = str(shm_shim)
     tpu_py = str(file_cfg.get("tpu_mlir_python") or "").strip()
     if tpu_py:
         py_dir = str(Path(tpu_py).parent)
