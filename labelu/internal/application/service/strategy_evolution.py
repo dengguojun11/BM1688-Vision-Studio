@@ -5250,6 +5250,21 @@ def auto_advance_strategy_task(external_task_id: str) -> bool:
             )
             if not row:
                 return False
+            # Backfill the evolution-center request projection for tasks that
+            # were accepted before the bridge existed.  Idempotent and
+            # best-effort: auto-advance must keep working if the projection
+            # cannot be written.
+            try:
+                from labelu.internal.application.service.strategy_optimization_bridge import (
+                    bridge_strategy_task_to_optimization_request,
+                )
+
+                bridge_strategy_task_to_optimization_request(db=db, row=row)
+            except Exception:
+                logger.exception(
+                    "strategy task optimization request bridge failed external_task_id={}",
+                    task_id,
+                )
             before = (
                 str(row.platform_status or ""),
                 str(row.automation_stage or ""),

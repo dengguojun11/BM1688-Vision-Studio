@@ -3,6 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, Body, Depends, Query, Request, status
 from fastapi.responses import JSONResponse
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from labelu.internal.application.command.strategy_evolution import (
@@ -58,6 +59,27 @@ def _gateway_response(
     }
 
 
+def _project_optimization_request(db: Session, external_task_id: str) -> None:
+    """Expose an accepted legacy task to the evolution center request list.
+
+    The projection is best-effort: the strategy task has already been committed
+    and must not be rejected because the linked read model could not be written.
+    """
+    try:
+        from labelu.internal.application.service.strategy_optimization_bridge import (
+            bridge_strategy_task_to_optimization_request,
+        )
+
+        bridge_strategy_task_to_optimization_request(
+            db=db, external_task_id=external_task_id
+        )
+    except Exception:
+        logger.exception(
+            "bridge strategy task to optimization request failed external_task_id={}",
+            external_task_id,
+        )
+
+
 @internal_router.post(
     "/tasks",
     status_code=status.HTTP_202_ACCEPTED,
@@ -68,9 +90,11 @@ async def create_strategy_evolution_task(
     _service_auth: None = Depends(verify_strategy_evolution_internal_request),
 ):
     try:
-        return await service.accept_task(db=db, cmd=cmd)
+        accepted = await service.accept_task(db=db, cmd=cmd)
     except service.StrategyEvolutionError as exc:
         return _task_error_response(exc)
+    _project_optimization_request(db, cmd.external_task_id)
+    return accepted
 
 
 @public_router.post(
@@ -83,9 +107,11 @@ async def create_strategy_task_public(
     _service_auth: None = Depends(verify_strategy_evolution_internal_request),
 ):
     try:
-        return await service.accept_task(db=db, cmd=cmd)
+        accepted = await service.accept_task(db=db, cmd=cmd)
     except service.StrategyEvolutionError as exc:
         return _task_error_response(exc)
+    _project_optimization_request(db, cmd.external_task_id)
+    return accepted
 
 
 @public_router.get(
