@@ -37,6 +37,9 @@ if [[ ! -f "$TPU_MLIR_ROOT/envsetup.sh" ]]; then
 fi
 export PYTHONPATH="${PYTHONPATH:-}"
 export LD_LIBRARY_PATH="${LD_LIBRARY_PATH:-}"
+# tpuc-opt is an OpenMP binary; in the restricted compiler worker it must not
+# allocate a shared-memory team (SHM2) that /dev/shm permissions can deny.
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
 
 TPU_MLIR_PIP_EXTRAS=(psutil tqdm numpy)
 TPU_MLIR_PIP_MODE=0
