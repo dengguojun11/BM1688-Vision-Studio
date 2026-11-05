@@ -575,7 +575,6 @@ def build_edge_validation_bundle(
         ),
         "edge_signature_required": bool(
             getattr(settings, "EDGE_MANIFEST_ED25519_REQUIRE", False)
-            or str(getattr(settings, "APP_ENV", "") or "").lower() == "production"
         ),
         "yolo_train_job_id": yolo_train_job_id,
         "imgsz": int(imgsz or 640),

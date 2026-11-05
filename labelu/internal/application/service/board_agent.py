@@ -1303,7 +1303,6 @@ def build_models_zip_path(export_id: int, db: Session | None = None) -> Path:
         ),
         "edge_signature_required": bool(
             getattr(settings, "EDGE_MANIFEST_ED25519_REQUIRE", False)
-            or str(getattr(settings, "APP_ENV", "") or "").lower() == "production"
         ),
         "execution_generation": str(
             artifact_manifest.get("execution_signature")
