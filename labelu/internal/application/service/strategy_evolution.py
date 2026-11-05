@@ -2522,7 +2522,12 @@ def _should_use_cached_task_detail(
     status_value = str(row.platform_status or "").strip()
     if status_value not in (
         FINAL_PLATFORM_STATUSES
-        | {"waiting_for_model", "waiting_for_annotations", "accepted_not_implemented"}
+        | {
+            "waiting_for_model",
+            "waiting_for_gpu",
+            "waiting_for_annotations",
+            "accepted_not_implemented",
+        }
     ):
         return False
     result = _json_loads_object(row.platform_result_json)
@@ -4315,7 +4320,11 @@ async def _advance_threshold_experiment(
     # Waiting states are retryable checkpoints, not terminal results. Re-run
     # model, package and sample resolution on every watchdog advance so a
     # later import/annotation/publish can unblock the same external task.
-    if current_status in {"waiting_for_model", "waiting_for_annotations"}:
+    if current_status in {
+        "waiting_for_model",
+        "waiting_for_gpu",
+        "waiting_for_annotations",
+    }:
         try:
             cmd = CreateStrategyEvolutionTaskCommand.model_validate(
                 {
@@ -4604,6 +4613,7 @@ async def _advance_model_capability(
     derived_train_job_id = _safe_int(result.get("derived_train_job_id") or row.derived_train_job_id)
     if not latest_model_job and not derived_train_job_id and current_status in {
         "waiting_for_model",
+        "waiting_for_gpu",
         "waiting_for_annotations",
     }:
         if strategy_model_training.model_lookup_due(result):
@@ -4922,6 +4932,7 @@ async def _advance_automation(
             "export_created": "export",
             "edge_validation_created": "edge_validation",
             "waiting_for_model": "model_resolution",
+            "waiting_for_gpu": "model_resolution",
             "waiting_for_annotations": "annotation_resolution",
             "succeeded": "completed",
             "failed": "completed",
@@ -4935,6 +4946,7 @@ async def _advance_automation(
                 "export_created",
                 "edge_validation_created",
                 "waiting_for_model",
+                "waiting_for_gpu",
                 "waiting_for_annotations",
             }
             else (
@@ -5254,7 +5266,12 @@ async def accept_task(
             result=result,
             last_error=(
                 _json_dumps(result)
-                if platform_status in {"waiting_for_model", "waiting_for_annotations"}
+                if platform_status
+                in {
+                    "waiting_for_model",
+                    "waiting_for_gpu",
+                    "waiting_for_annotations",
+                }
                 else None
             ),
         ) or row
@@ -5404,7 +5421,7 @@ def _list_strategy_auto_advance_task_ids(db: Session) -> list[str]:
                 # a terminal automation status. Waiting is inherently
                 # retryable, so the platform status must keep them discoverable.
                 StrategyTaskIntegration.platform_status.in_(
-                    ("waiting_for_model", "waiting_for_annotations")
+                    ("waiting_for_model", "waiting_for_gpu", "waiting_for_annotations")
                 ),
                 and_(
                     StrategyTaskIntegration.platform_status.in_(

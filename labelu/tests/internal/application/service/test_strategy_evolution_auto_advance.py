@@ -48,6 +48,21 @@ def test_strategy_export_ready_rejects_onnx_ready_without_bmodel(monkeypatch):
     assert mod._strategy_export_ready(row) is False
 
 
+def test_auto_advance_scan_keeps_gpu_waiting_rows_discoverable(db: Session) -> None:
+    row = _create_strategy_row(db, external_task_id="strategy-task-gpu-waiting")
+    with begin_transaction(db):
+        crud_strategy_task_integration.update(
+            db,
+            row,
+            {
+                StrategyTaskIntegration.platform_status.key: "waiting_for_gpu",
+                StrategyTaskIntegration.automation_status.key: "succeeded",
+            },
+        )
+
+    assert "strategy-task-gpu-waiting" in mod._list_strategy_auto_advance_task_ids(db)
+
+
 def test_scan_and_auto_advance_strategy_tasks_counts_success(monkeypatch):
     monkeypatch.setattr(
         mod.settings,

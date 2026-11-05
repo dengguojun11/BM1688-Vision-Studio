@@ -1807,9 +1807,45 @@ def _cuda_runtime_snapshot() -> Tuple[bool, int]:
         return False, 0
 
 
+def _nvidia_smi_visible_gpu_count() -> tuple[bool, int]:
+    """Driver-level GPU probe for long-lived web processes.
+
+    A process that imported torch before its CUDA context was valid can keep
+    ``torch.cuda.is_available() == False`` forever (cudaGetDeviceCount error
+    304). The training worker itself re-resolves the device in a fresh
+    process, so the web-side auto-training gate can still use the driver view.
+    """
+    try:
+        proc = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return False, 0
+    if proc.returncode != 0:
+        return False, 0
+    indices = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible is not None:
+        token = str(visible).strip()
+        if not token:
+            return False, 0
+        if token.lower() != "all":
+            allowed = {part.strip() for part in token.split(",") if part.strip()}
+            indices = [index for index in indices if index in allowed]
+    if not indices:
+        return False, 0
+    return True, len(indices)
+
+
 def gpu_training_available() -> tuple[bool, int]:
     """Public GPU probe used by callers that must fail closed instead of CPU."""
-    return _cuda_runtime_snapshot()
+    cuda_ok, device_count = _cuda_runtime_snapshot()
+    if cuda_ok and device_count > 0:
+        return True, device_count
+    return _nvidia_smi_visible_gpu_count()
 
 
 def _gpu_required_exception() -> LabelUException:

@@ -68,3 +68,29 @@ def test_cpu_child_binding_does_not_poison_worker_cuda_env(monkeypatch):
     monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
     assert yolo_train_queue._bind_train_child_cuda_device("cpu") == "cpu"
     assert "CUDA_VISIBLE_DEVICES" not in os.environ
+
+
+def test_gpu_probe_falls_back_to_nvidia_smi_when_torch_cuda_is_poisoned(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("CUDA_VISIBLE_DEVICES", "1")
+    with patch.object(yt, "_cuda_runtime_snapshot", return_value=(False, 0)):
+        with patch.object(
+            yt.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=0, stdout="0\n1\n"),
+        ):
+            assert yt.gpu_training_available() == (True, 1)
+
+
+def test_gpu_probe_reports_no_gpu_when_driver_lists_none(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    with patch.object(yt, "_cuda_runtime_snapshot", return_value=(False, 0)):
+        with patch.object(
+            yt.subprocess,
+            "run",
+            return_value=SimpleNamespace(returncode=1, stdout=""),
+        ):
+            assert yt.gpu_training_available() == (False, 0)

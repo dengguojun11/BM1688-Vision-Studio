@@ -83,6 +83,8 @@ def _status_stage_for(row: StrategyTaskIntegration) -> tuple[str, str]:
         return "WAITING", "WAITING_REVIEW"
     if platform == "waiting_for_model":
         return "WAITING", "WAITING_FOR_MODEL"
+    if platform == "waiting_for_gpu":
+        return "WAITING", "WAITING_FOR_MODEL"
     if platform in {"failed", "callback_failed"}:
         return "FAILED", "FAILED"
     if platform == "comparison_failed":
