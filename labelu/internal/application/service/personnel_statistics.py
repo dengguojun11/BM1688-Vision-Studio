@@ -2,9 +2,10 @@
 
 Definitions used by the statistics screen:
 
-* annotation image: a sample whose rectangle annotation changed for the first
-  time (previous state was not ``DONE``); tag-only saves, uploads and bare
-  "next" clicks do not count;
+* annotation image: a sample whose rectangle annotation actually changed
+  (and the user clicked next/save); tag-only saves, uploads and bare "next"
+  clicks do not count.  A correction made while reviewing an image counts as
+  an annotated image as well as a review approval;
 * annotation box: one added, removed or modified rectangle in such a save;
 * review image: a successful sample save that changed nothing, i.e. the user
   compared the image and clicked next without editing;
@@ -187,9 +188,7 @@ def _today_online_seconds(db, user_ids: list[int]) -> dict[int, int]:
     )
     for row in rows:
         totals[int(row.user_id)] += int(row.active_seconds or 0)
-    return {
-        uid: min(MAX_ONLINE_SECONDS, seconds) for uid, seconds in totals.items()
-    }
+    return {uid: min(MAX_ONLINE_SECONDS, seconds) for uid, seconds in totals.items()}
 
 
 def _deleted_sample_ids(detail_raw: Any) -> list[int]:
@@ -246,7 +245,6 @@ def _collect_daily(
         bucket["task_ids"].add(int(log.task_id))
         if _is_done_state(log.previous_state):
             bucket["review_approved"].add(sample_id)
-            continue
         changed = _rect_change_count(log.previous_data, log.new_data)
         if changed:
             bucket["annotation_images"].add(sample_id)
