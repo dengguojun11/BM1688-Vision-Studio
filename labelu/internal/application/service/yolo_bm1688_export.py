@@ -2438,6 +2438,19 @@ def _run_bmodel_compile_phase_inner(
         f"compile_start={datetime.now().isoformat()}",
         compile_writer=compile_writer,
     )
+    # TPU-MLIR writes intermediate MLIR/weight files into .compile_tmp.  A
+    # previous failed attempt can leave a partially written cache there; the
+    # next tpuc-opt then aborts in OpenMP/SHM initialization.  Always start a
+    # retry from a clean work directory.
+    compile_tmp = Path(out_root) / ".compile_tmp"
+    if compile_tmp.exists():
+        shutil.rmtree(compile_tmp, ignore_errors=True)
+    compile_tmp.mkdir(parents=True, exist_ok=True)
+    _bm1688_log_part(
+        compile_log_parts,
+        f"cleaned compile workdir={compile_tmp}",
+        compile_writer=compile_writer,
+    )
     compile_writer.write_block("compile_command", cmd)
     _bm1688_log_part(
         compile_log_parts,
