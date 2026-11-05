@@ -1551,6 +1551,85 @@ def _sync_models(
     )
 
 
+def _safe_model_id(value: Any) -> int:
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return 0
+
+
+def ensure_remote_model(
+    db: Session,
+    model_id: str,
+    *,
+    environment_id: str = "",
+) -> Optional[PublishedModelCatalog]:
+    """Resolve a model id that exists only in AICM into the local catalog.
+
+    The periodic catalog sync stores AICM model sets as ``remote_legacy`` rows.
+    When a third-party model id arrives before that sync has seen it, this
+    on-demand lookup fetches the AICM model-set list once and upserts the
+    matching row so label-contract resolution can continue.  Network failures
+    are returned as ``None`` so callers keep the task in a retryable state.
+    """
+    text = str(model_id or "").strip()
+    if not text:
+        return None
+    try:
+        return resolve_model(db, text)
+    except LabelUException as exc:
+        if exc.status_code != http_status.HTTP_404_NOT_FOUND:
+            raise
+    env_id = str(environment_id or "").strip() or get_active_environment_id()
+    try:
+        remote_rows = _fetch_all_remote_models(env_id)
+    except Exception as exc:  # remote/config problems are retryable
+        biz_log(
+            "published_model_catalog.ensure_remote_model.skipped",
+            reason=str(exc)[:300],
+            model_id=text,
+        )
+        return None
+    remote = None
+    for candidate in remote_rows:
+        if yolo_aicm_publish._model_set_row_id(candidate) == _safe_model_id(text):
+            remote = candidate
+            break
+    if remote is None:
+        return None
+    values = _remote_values(remote, environment_id=env_id)
+    model_set_id = int(values["aicm_model_set_id"])
+    if model_set_id <= 0:
+        return None
+    with begin_transaction(db):
+        row = catalog_crud.get_by_public_model_id(db, str(model_set_id))
+        if row:
+            _assert_aicm_identity_not_rebound(
+                row,
+                model_set_id=model_set_id,
+                environment_id=env_id,
+            )
+            preserved = {
+                "source_type": row.source_type,
+                "display_name": row.display_name or values["display_name"],
+                "status": row.status,
+                "is_public": row.is_public,
+                "download_enabled": row.download_enabled,
+            }
+            values.update(preserved)
+            row = catalog_crud.update(db, row, **values)
+        else:
+            row = catalog_crud.create(db, **values)
+        _ensure_alias(
+            db,
+            row,
+            source_system="aicm",
+            external_model_id=str(model_set_id),
+            alias_type="aicm",
+        )
+    return row
+
+
 def update_model(
     db: Session,
     current_user: User,

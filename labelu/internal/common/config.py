@@ -526,6 +526,45 @@ class Settings(BaseSettings):
         le=86400,
         description="策略演化结果回调最大退避秒数",
     )
+    # 第三方模型能力任务：本系统没有可续训权重时，用预设权重自动建训练作业。
+    STRATEGY_EVOLUTION_MODEL_TRAIN_WEIGHTS: str = Field(
+        "yolo11n.pt",
+        description="策略演化自动训练使用的预设权重（本地无同契约已训练权重时）",
+    )
+    STRATEGY_EVOLUTION_MODEL_TRAIN_EPOCHS: int = Field(
+        50,
+        ge=1,
+        le=3000,
+        description="策略演化自动训练轮数",
+    )
+    STRATEGY_EVOLUTION_MODEL_TRAIN_IMGSZ: int = Field(
+        640,
+        ge=320,
+        le=1280,
+        description="策略演化自动训练输入尺寸",
+    )
+    STRATEGY_EVOLUTION_LABEL_MATCH_MIN_RATIO: float = Field(
+        0.3,
+        ge=0.0,
+        le=1.0,
+        description="第三方模型标签命中本地标签契约的最小比例（部分命中即可自动选数据集）",
+    )
+    STRATEGY_EVOLUTION_LABEL_MATCH_MIN_COUNT: int = Field(
+        3,
+        ge=1,
+        le=100,
+        description="第三方模型标签命中本地标签契约的最小数量",
+    )
+    STRATEGY_EVOLUTION_MODEL_LOOKUP_RETRY_SECONDS: int = Field(
+        300,
+        ge=30,
+        le=86400,
+        description="策略演化模型/标签契约解析失败后的重试间隔（秒）",
+    )
+    STRATEGY_EVOLUTION_ALLOW_NO_BASELINE: bool = Field(
+        True,
+        description="策略演化模型能力任务没有本地基线导出时，是否跳过对比直接继续发布流程",
+    )
     # 模型列表「验证达标」判定：与 Ultralytics results.csv 末轮指标对比（可通过环境变量覆盖）
     YOLO_VAL_PASS_MAP5095: float = Field(
         0.5,

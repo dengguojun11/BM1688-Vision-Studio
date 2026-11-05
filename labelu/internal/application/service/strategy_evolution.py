@@ -22,6 +22,7 @@ from pydantic import ValidationError
 from sqlalchemy import and_, or_
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from labelu.internal.adapter.persistence import (
     crud_attachment,
@@ -58,6 +59,7 @@ from labelu.internal.application.service import yolo_edge_validation
 from labelu.internal.application.service import yolo_aicm_publish
 from labelu.internal.application.service import yolo_bm1688_export
 from labelu.internal.application.service import yolo_train
+from labelu.internal.application.service import strategy_model_training
 from labelu.internal.application.service.yolo_quality_policy import (
     resolve_policy_for_preset,
 )
@@ -3548,6 +3550,54 @@ def _training_weights_command_fields(
     )
 
 
+async def _attempt_label_based_training(
+    db: Session,
+    *,
+    row: StrategyTaskIntegration,
+    result: dict[str, Any] | None,
+) -> tuple[bool, dict[str, Any]]:
+    """Create the manual-equivalent training job from the model label contract."""
+    admin = _admin_user(db)
+    payload = dict(result or {})
+    try:
+        return await run_in_threadpool(
+            strategy_model_training.ensure_model_training_job_sync,
+            db,
+            row=row,
+            result=payload,
+            admin=admin,
+        )
+    except Exception as exc:  # keep the strategy task retryable
+        logger.exception(
+            "label-based auto training failed external_task_id={}",
+            row.external_task_id,
+        )
+        payload["model_training_status"] = "waiting_for_model"
+        payload["message"] = f"自动训练创建失败：{str(exc)[:300]}"
+        payload["model_lookup_attempted_at"] = datetime.now().strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        return False, payload
+
+
+async def _fallback_label_training(
+    db: Session,
+    row: StrategyTaskIntegration,
+    *,
+    status: str,
+    message: str,
+    payload: dict[str, Any],
+) -> tuple[str, str, dict[str, Any]]:
+    """Defer dataset/training creation to the watchdog.
+
+    The third-party intake must answer quickly; freezing a large dataset and
+    creating a training job happens on the next auto-advance scan where the
+    lease and idempotency guards live.
+    """
+    _ = db, row
+    return status, message, payload
+
+
 async def _orchestrate_model_capability(
     db: Session,
     *,
@@ -3612,10 +3662,12 @@ async def _orchestrate_model_capability(
         model_id=cmd.target.model_id,
     )
     if weight_fields is None:
-        return (
-            "waiting_for_model",
-            "已发布模型映射尚未就绪",
-            {
+        return await _fallback_label_training(
+            db,
+            row,
+            status="waiting_for_model",
+            message="已发布模型映射尚未就绪",
+            payload={
                 "model_training_status": "waiting_for_model",
                 "message": "已发布模型映射尚未就绪",
                 "model_resolution": model_resolution,
@@ -3642,10 +3694,12 @@ async def _orchestrate_model_capability(
         else None
     )
     if source_export_row is None or source_task is None:
-        return (
-            "waiting_for_model",
-            "已发布模型映射尚未就绪",
-            {
+        return await _fallback_label_training(
+            db,
+            row,
+            status="waiting_for_model",
+            message="已发布模型映射尚未就绪",
+            payload={
                 "model_training_status": "waiting_for_model",
                 "message": "已发布模型映射尚未就绪",
                 "model_resolution": {
@@ -3657,10 +3711,12 @@ async def _orchestrate_model_capability(
 
     matched_imports = _matching_import_rows(db, cmd=cmd)
     if not matched_imports:
-        return (
-            "waiting_for_annotations",
-            "请求时间窗内未匹配到已完成标注样本",
-            {
+        return await _fallback_label_training(
+            db,
+            row,
+            status="waiting_for_annotations",
+            message="请求时间窗内未匹配到已完成标注样本",
+            payload={
                 "model_training_status": "waiting_for_annotations",
                 "message": "请求时间窗内未匹配到已完成标注样本",
                 "model_resolution": model_resolution,
@@ -3684,10 +3740,12 @@ async def _orchestrate_model_capability(
     }
     matched_task_ids = sorted(int(task_id) for task_id in sample_ids_by_task.keys())
     if not sample_ids_by_task:
-        return (
-            "waiting_for_annotations",
-            "请求时间窗内未匹配到已完成标注样本",
-            {
+        return await _fallback_label_training(
+            db,
+            row,
+            status="waiting_for_annotations",
+            message="请求时间窗内未匹配到已完成标注样本",
+            payload={
                 "model_training_status": "waiting_for_annotations",
                 "message": "请求时间窗内未匹配到已完成标注样本",
                 "model_resolution": model_resolution,
@@ -3717,10 +3775,12 @@ async def _orchestrate_model_capability(
     )
     matched_task_ids = sorted(int(task_id) for task_id in sample_ids_by_task.keys())
     if not sample_ids_by_task:
-        return (
-            "waiting_for_annotations",
-            "请求时间窗内未匹配到兼容的已完成标注样本",
-            {
+        return await _fallback_label_training(
+            db,
+            row,
+            status="waiting_for_annotations",
+            message="请求时间窗内未匹配到兼容的已完成标注样本",
+            payload={
                 "model_training_status": "waiting_for_annotations",
                 "message": "请求时间窗内未匹配到兼容的已完成标注样本",
                 "model_resolution": model_resolution,
@@ -3743,10 +3803,12 @@ async def _orchestrate_model_capability(
 
     selected_samples_by_task = _selected_samples_by_task(db, sample_ids_by_task)
     if not selected_samples_by_task:
-        return (
-            "waiting_for_annotations",
-            "请求时间窗内未匹配到兼容的已完成标注样本",
-            {
+        return await _fallback_label_training(
+            db,
+            row,
+            status="waiting_for_annotations",
+            message="请求时间窗内未匹配到兼容的已完成标注样本",
+            payload={
                 "model_training_status": "waiting_for_annotations",
                 "message": "请求时间窗内未匹配到兼容的已完成标注样本",
                 "model_resolution": model_resolution,
@@ -4366,6 +4428,88 @@ async def _advance_threshold_experiment(
     return "succeeded", "阈值实验已完成", result
 
 
+def _ensure_candidate_edge_validation_jobs(
+    db: Session,
+    *,
+    row: StrategyTaskIntegration,
+    result: dict[str, Any],
+    fallback_task_id: int | None = None,
+) -> dict[str, Any]:
+    """Create only the candidate edge-validation jobs when no baseline export exists."""
+    if result.get("edge_validation_jobs"):
+        return result
+    candidate_export_id = _safe_int(
+        result.get("derived_export_id") or row.derived_export_id
+    )
+    selected_by_task = (
+        result.get("selected_sample_ids_by_task")
+        if isinstance(result.get("selected_sample_ids_by_task"), dict)
+        else {}
+    )
+    if not selected_by_task and fallback_task_id:
+        fallback_samples = strategy_model_training.select_validation_sample_ids(
+            db, int(fallback_task_id)
+        )
+        if fallback_samples:
+            selected_by_task = {str(int(fallback_task_id)): fallback_samples}
+    if not candidate_export_id or not selected_by_task:
+        return result
+    max_images = int(getattr(settings, "YOLO_EDGE_VALIDATION_MAX_IMAGES", 50))
+    admin = _admin_user(db)
+    candidate_jobs: list[dict[str, Any]] = []
+    latest_candidate_job_id = None
+    for task_id_text, raw_sample_ids in selected_by_task.items():
+        task_id = _safe_int(task_id_text)
+        sample_ids = [_safe_int(item) for item in (raw_sample_ids or [])]
+        sample_ids = [int(item) for item in sample_ids if item][:max_images]
+        if not task_id or not sample_ids:
+            continue
+        detail = yolo_edge_validation.create_job(
+            db=db,
+            cmd=CreateYoloEdgeValidationJobCommand(
+                export_id=int(candidate_export_id),
+                task_id=int(task_id),
+                mode="run_and_eval",
+                sample_ids=sample_ids,
+                thresholds=_edge_thresholds_from_experiment({})[0],
+                threshold_source="strategy_evolution_formal_threshold_scan",
+            ),
+            current_user=admin,
+        )
+        edge_row = crud_yolo_edge_validation_job.get(db, int(detail.id))
+        if edge_row:
+            edge_row.source_type = "third_party"
+            edge_row.source_system = "strategy_evolution"
+            edge_row.source_external_task_id = row.external_task_id
+            edge_row.source_external_package_id = row.source_package_id
+            edge_row.source_integration_id = row.id
+            db.add(edge_row)
+        payload = _edge_job_payload_from_detail(detail, start_status="pending")
+        try:
+            started = yolo_edge_validation.start_job(
+                db=db,
+                job_id=int(detail.id),
+                current_user=admin,
+            )
+            payload["status"] = started.status
+            payload["start_status"] = "started"
+        except Exception as exc:
+            payload["start_status"] = "failed"
+            payload["start_error"] = {
+                "status_code": getattr(
+                    exc, "status_code", status.HTTP_500_INTERNAL_SERVER_ERROR
+                ),
+                "message": str(getattr(exc, "msg", "") or exc),
+            }
+        candidate_jobs.append(payload)
+        latest_candidate_job_id = int(detail.id)
+    result["edge_validation_jobs"] = candidate_jobs
+    result["candidate_model_edge_validation_jobs"] = candidate_jobs
+    if latest_candidate_job_id:
+        result["derived_edge_validation_job_id"] = latest_candidate_job_id
+    return result
+
+
 def _ensure_model_comparison_jobs(
     db: Session,
     *,
@@ -4462,12 +4606,27 @@ async def _advance_model_capability(
         "waiting_for_model",
         "waiting_for_annotations",
     }:
-        return (
-            current_status,
-            str(result.get("message") or current_status),
-            result,
-            None,
-        )
+        if strategy_model_training.model_lookup_due(result):
+            created, bridged = await _attempt_label_based_training(
+                db, row=row, result=result
+            )
+            result = bridged
+            if not created:
+                return (
+                    str(result.get("model_training_status") or current_status),
+                    str(result.get("message") or current_status),
+                    result,
+                    None,
+                )
+            derived_train_job_id = _safe_int(result.get("derived_train_job_id"))
+            current_status = "model_training_created"
+        else:
+            return (
+                current_status,
+                str(result.get("message") or current_status),
+                result,
+                None,
+            )
     if derived_train_job_id and not latest_model_job:
         admin = _admin_user(db)
         live_detail = yolo_train.get_train_job_by_id(
@@ -4524,58 +4683,105 @@ async def _advance_model_capability(
     if export_status == "ONNX_READY":
         result["message"] = "INT8 bmodel 已就绪，继续边端验证"
 
-    result = _ensure_model_comparison_jobs(db, row=row, result=result)
-    source_jobs = [
-        _sync_edge_job_payload(db, payload=job)
-        for job in (result.get("source_model_edge_validation_jobs") or [])
-        if isinstance(job, dict)
-    ]
-    candidate_jobs = [
-        _sync_edge_job_payload(db, payload=job)
-        for job in (result.get("edge_validation_jobs") or [])
-        if isinstance(job, dict)
-    ]
-    result["source_model_edge_validation_jobs"] = source_jobs
-    result["edge_validation_jobs"] = candidate_jobs
-    result["candidate_model_edge_validation_jobs"] = candidate_jobs
-    if not source_jobs or not candidate_jobs or not all(
-        _is_terminal_status(job.get("status")) for job in source_jobs + candidate_jobs
-    ):
-        result["message"] = "边端验证执行中"
-        return "edge_validation_created", "边端验证执行中", result, None
-
-    result["threshold_recommendation"] = _build_model_capability_threshold_recommendation(
-        db,
-        row=row,
-        result=result,
+    baseline_available = bool(
+        _safe_int(result.get("source_export_id") or row.source_export_id)
     )
-
-    source_train_payload = None
-    if row.source_train_job_id:
+    source_jobs: list[dict[str, Any]] = []
+    candidate_jobs: list[dict[str, Any]] = []
+    if not baseline_available and settings.STRATEGY_EVOLUTION_ALLOW_NO_BASELINE:
+        result = _ensure_candidate_edge_validation_jobs(
+            db,
+            row=row,
+            result=result,
+            fallback_task_id=_safe_int(latest_model_job.get("task_id")),
+        )
+        candidate_jobs = [
+            _sync_edge_job_payload(db, payload=job)
+            for job in (result.get("edge_validation_jobs") or [])
+            if isinstance(job, dict)
+        ]
+        result["source_model_edge_validation_jobs"] = source_jobs
+        result["edge_validation_jobs"] = candidate_jobs
+        result["candidate_model_edge_validation_jobs"] = candidate_jobs
+        if not candidate_jobs or not all(
+            _is_terminal_status(job.get("status")) for job in candidate_jobs
+        ):
+            result["message"] = "边端验证执行中"
+            return "edge_validation_created", "边端验证执行中", result, None
+        result["comparison"] = {
+            "skipped": True,
+            "passed": True,
+            "reason": "baseline_unavailable",
+            "message": "没有本地基线导出，按产品要求跳过模型对比",
+        }
         try:
-            source_train_payload = _model_job_payload_from_detail(
-                yolo_train.get_train_job_by_id(
-                    db=db,
-                    job_id=int(row.source_train_job_id),
-                    current_user=_admin_user(db),
+            result["threshold_recommendation"] = (
+                _build_model_capability_threshold_recommendation(
+                    db, row=row, result=result
                 )
             )
         except Exception:
-            source_train_payload = None
+            logger.exception(
+                "model capability threshold recommendation skipped external_task_id={}",
+                row.external_task_id,
+            )
+            result["threshold_recommendation"] = {}
+    else:
+        result = _ensure_model_comparison_jobs(db, row=row, result=result)
+        source_jobs = [
+            _sync_edge_job_payload(db, payload=job)
+            for job in (result.get("source_model_edge_validation_jobs") or [])
+            if isinstance(job, dict)
+        ]
+        candidate_jobs = [
+            _sync_edge_job_payload(db, payload=job)
+            for job in (result.get("edge_validation_jobs") or [])
+            if isinstance(job, dict)
+        ]
+        result["source_model_edge_validation_jobs"] = source_jobs
+        result["edge_validation_jobs"] = candidate_jobs
+        result["candidate_model_edge_validation_jobs"] = candidate_jobs
+        if not source_jobs or not candidate_jobs or not all(
+            _is_terminal_status(job.get("status"))
+            for job in source_jobs + candidate_jobs
+        ):
+            result["message"] = "边端验证执行中"
+            return "edge_validation_created", "边端验证执行中", result, None
 
-    comparison = _build_model_comparison_payload(
-        source_jobs=source_jobs,
-        candidate_jobs=candidate_jobs,
-        source_train_job=source_train_payload,
-        candidate_train_job=latest_model_job,
-        quality_policy=resolve_policy_for_preset(
-            latest_model_job.get("task_rect_preset_slug")
-        ),
-    )
-    result["comparison"] = comparison
-    if not comparison.get("passed"):
-        result["message"] = "候选模型对比未通过"
-        return "comparison_failed", "候选模型对比未通过", result, None
+        result["threshold_recommendation"] = (
+            _build_model_capability_threshold_recommendation(
+                db,
+                row=row,
+                result=result,
+            )
+        )
+
+        source_train_payload = None
+        if row.source_train_job_id:
+            try:
+                source_train_payload = _model_job_payload_from_detail(
+                    yolo_train.get_train_job_by_id(
+                        db=db,
+                        job_id=int(row.source_train_job_id),
+                        current_user=_admin_user(db),
+                    )
+                )
+            except Exception:
+                source_train_payload = None
+
+        comparison = _build_model_comparison_payload(
+            source_jobs=source_jobs,
+            candidate_jobs=candidate_jobs,
+            source_train_job=source_train_payload,
+            candidate_train_job=latest_model_job,
+            quality_policy=resolve_policy_for_preset(
+                latest_model_job.get("task_rect_preset_slug")
+            ),
+        )
+        result["comparison"] = comparison
+        if not comparison.get("passed"):
+            result["message"] = "候选模型对比未通过"
+            return "comparison_failed", "候选模型对比未通过", result, None
 
     publish_job = (
         result.get("publish_job") if isinstance(result.get("publish_job"), dict) else None
