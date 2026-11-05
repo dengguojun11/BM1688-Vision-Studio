@@ -348,9 +348,12 @@ export default function DatasetTreeTable({ mode }: { mode: WorkbenchMode }) {
           size="middle"
           columns={columns}
           dataSource={rows}
-          pagination={false}
+          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (count) => `共 ${count} 条` }}
           scroll={{ x: 1000 }}
-          expandable={{ defaultExpandAllRows: true }}
+          expandable={{
+            defaultExpandAllRows: false,
+            defaultExpandedRowKeys: rows.length ? [rows[0].key] : [],
+          }}
           onRow={(row) => ({
             onClick: (event) => {
               if ((event.target as HTMLElement).closest('button')) return;
