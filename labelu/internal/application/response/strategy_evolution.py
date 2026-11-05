@@ -26,6 +26,8 @@ class StrategyEvolutionTaskListRowResponse(BaseModel):
     source_package_id: str | None = None
     source_type: str = "third_party"
     source_system: str = "strategy_evolution"
+    workflow_source: str = "flexible_workflow"
+    workflow_source_label: str = "柔性工作流"
     source_external_task_id: str | None = None
     source_external_package_id: str | None = None
     created_by_username: str | None = None
@@ -61,6 +63,8 @@ class StrategyEvolutionTaskDetailResponse(BaseModel):
     source_package_id: str | None = None
     source_type: str = "third_party"
     source_system: str = "strategy_evolution"
+    workflow_source: str = "flexible_workflow"
+    workflow_source_label: str = "柔性工作流"
     source_external_task_id: str | None = None
     source_external_package_id: str | None = None
     created_by_username: str | None = None

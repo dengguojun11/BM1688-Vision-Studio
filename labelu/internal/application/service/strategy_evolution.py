@@ -2916,6 +2916,8 @@ def _to_list_row(
         source_package_id=(str(row.source_package_id or "").strip() or None),
         source_type=str(row.source_type or "third_party"),
         source_system=str(row.source_system or "strategy_evolution"),
+        workflow_source="flexible_workflow",
+        workflow_source_label="柔性工作流",
         source_external_task_id=row.external_task_id,
         source_external_package_id=(
             str(row.source_external_package_id or row.source_package_id or "").strip()
@@ -5063,6 +5065,8 @@ def _to_detail(
         source_package_id=(str(row.source_package_id or "").strip() or None),
         source_type=str(row.source_type or "third_party"),
         source_system=str(row.source_system or "strategy_evolution"),
+        workflow_source="flexible_workflow",
+        workflow_source_label="柔性工作流",
         source_external_task_id=row.external_task_id,
         source_external_package_id=(
             str(row.source_external_package_id or row.source_package_id or "").strip()
