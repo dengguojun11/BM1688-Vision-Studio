@@ -919,7 +919,7 @@ def add_chinese_api_docs(app: FastAPI) -> None:
         return JSONResponse(app.openapi())
 
     async def swagger_docs() -> HTMLResponse:
-        return get_swagger_ui_html(
+        response = get_swagger_ui_html(
             openapi_url="/api-docs/openapi.json",
             title="7GAI 中文 API 接口文档",
             swagger_js_url="/api-docs/assets/swagger-ui-bundle.js",
@@ -935,6 +935,55 @@ def add_chinese_api_docs(app: FastAPI) -> None:
                 "showExtensions": True,
                 "tryItOutEnabled": True,
             },
+        )
+        # The platform stores the logged-in JWT in the same-origin
+        # localStorage.  Pre-authorize Swagger automatically so opening the
+        # docs from the top bar fills the Authorization header without an
+        # extra "Authorize" step.  Service-token endpoints remain manually
+        # authorizable because the browser never receives the service secret.
+        html = response.body.decode("utf-8")
+        auto_auth = """
+<script>
+(function () {
+  function readToken() {
+    try {
+      var raw = (localStorage.getItem('token') || localStorage.token || '').trim();
+      if (!raw) return '';
+      return raw.replace(/^bearer\\s+/i, '');
+    } catch (e) {
+      return '';
+    }
+  }
+  function authorize() {
+    var token = readToken();
+    if (!token || !window.ui || typeof window.ui.preauthorizeApiKey !== 'function') {
+      return false;
+    }
+    try {
+      window.ui.preauthorizeApiKey('HTTPBearer', token);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  var attempts = 0;
+  var timer = setInterval(function () {
+    if (authorize() || ++attempts > 60) clearInterval(timer);
+  }, 250);
+  document.addEventListener('DOMContentLoaded', function () {
+    setTimeout(authorize, 300);
+  });
+})();
+</script>
+"""
+        if "</body>" in html:
+            html = html.replace("</body>", auto_auth + "</body>")
+        else:
+            html += auto_auth
+        return HTMLResponse(
+            content=html,
+            status_code=response.status_code,
+            media_type=response.media_type,
         )
 
     async def redoc_docs() -> HTMLResponse:
