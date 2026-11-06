@@ -5347,7 +5347,10 @@ async def accept_task(
             row=row,
         )
 
-    if result is not None:
+    message = str(message or "").strip() or "任务已受理，请通过 external_task_id 查询进度"
+    if result is not None and not (
+        existing_request and cmd.task_type == MODEL_CAPABILITY_TASK_TYPE
+    ):
         if cmd.task_type == MODEL_CAPABILITY_TASK_TYPE:
             initial_stage = "training"
         else:
