@@ -417,23 +417,21 @@ export function IntegrationRequestsPanel() {
         render: (value) => REQUEST_TYPE_LABELS[value] || value,
       },
       {
-        title: '模型 / 事件',
+        title: '事件',
         key: 'model_event',
-        width: 240,
+        width: 260,
         render: (_, row) => {
+          const eventType = String(row.event_label || '-').trim() || '-';
           const title = String(row.request_title || '').trim() || row.external_request_id || '-';
+          const model = modelDisplayText(row);
           return (
-            <Space direction="vertical" size={0} style={{ maxWidth: 230 }}>
-              <Typography.Text strong ellipsis={{ tooltip: title }}>
-                {title}
-              </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                事件：{row.event_label || '-'}
-              </Typography.Text>
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                模型：{modelDisplayText(row)}
-              </Typography.Text>
-            </Space>
+            <Typography.Text
+              code
+              ellipsis={{ tooltip: `${title} · 模型：${model} · event_type: ${eventType}` }}
+              style={{ maxWidth: 250, fontSize: 12 }}
+            >
+              event_type: {eventType}
+            </Typography.Text>
           );
         },
       },
@@ -1062,7 +1060,9 @@ export function IntegrationRequestsPanel() {
                   ) : null}
                 </Space>
               </Descriptions.Item>
-              <Descriptions.Item label="事件">{detail.event_label || '-'}</Descriptions.Item>
+              <Descriptions.Item label="事件">
+                <Typography.Text code>event_type: {detail.event_label || '-'}</Typography.Text>
+              </Descriptions.Item>
               <Descriptions.Item label="场景" span={2}>
                 {detailSceneEntries.length ? (
                   <Space direction="vertical" size={0}>
