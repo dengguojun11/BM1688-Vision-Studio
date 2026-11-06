@@ -3564,6 +3564,18 @@ def _create_strategy_training_dataset_task(
                 and template_task.dataset_category_id is not None
                 else None
             ),
+            dataset_id=(
+                int(template_task.dataset_id)
+                if template_task is not None
+                and template_task.dataset_id is not None
+                else None
+            ),
+            dataset_label_contract_id=(
+                int(template_task.dataset_label_contract_id)
+                if template_task is not None
+                and template_task.dataset_label_contract_id is not None
+                else None
+            ),
             source_type="third_party",
             source_system="strategy_evolution",
             source_external_task_id=cmd.external_task_id,
