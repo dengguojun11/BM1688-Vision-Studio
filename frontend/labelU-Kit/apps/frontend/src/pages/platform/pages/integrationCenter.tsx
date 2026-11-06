@@ -427,10 +427,10 @@ export function IntegrationRequestsPanel() {
           return (
             <Typography.Text
               code
-              ellipsis={{ tooltip: `${title} · 模型：${model} · event_type: ${eventType}` }}
+              ellipsis={{ tooltip: `${title} · 模型：${model}` }}
               style={{ maxWidth: 250, fontSize: 12 }}
             >
-              event_type: {eventType}
+              {`"event_type": "${eventType}"`}
             </Typography.Text>
           );
         },
@@ -1061,7 +1061,7 @@ export function IntegrationRequestsPanel() {
                 </Space>
               </Descriptions.Item>
               <Descriptions.Item label="事件">
-                <Typography.Text code>event_type: {detail.event_label || '-'}</Typography.Text>
+                <Typography.Text code>{`"event_type": "${detail.event_label || '-'}"`}</Typography.Text>
               </Descriptions.Item>
               <Descriptions.Item label="场景" span={2}>
                 {detailSceneEntries.length ? (
