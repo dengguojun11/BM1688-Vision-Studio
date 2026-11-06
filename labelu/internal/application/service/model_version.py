@@ -1479,8 +1479,8 @@ async def register_from_training_job(
     algorithm_key = (
         str(
             params.get("algorithm_key")
-            or getattr(job, "category", None)
             or getattr(job, "job_type", None)
+            or getattr(job, "category", None)
             or ""
         )
         .strip()

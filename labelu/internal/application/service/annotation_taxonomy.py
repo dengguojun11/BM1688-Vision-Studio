@@ -1139,6 +1139,12 @@ async def apply_labels_to_task(
             )
         task.task_label_scope_mode = resolved_scope
         task.dataset_label_contract_id = int(dataset_contract.id)
+        # A dataset label contract is authoritative for the logical dataset.
+        # Applying it must also bind the task to that dataset; otherwise the
+        # task can be trained without a dataset version and the resulting
+        # model cannot be registered under the dataset's model series.
+        if getattr(dataset_contract, "dataset_id", None):
+            task.dataset_id = int(dataset_contract.dataset_id)
     else:
         resolved_scope = resolved_scope or "FULL"
     cfg = _parse_config(config if config is not None else task.config)
