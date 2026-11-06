@@ -1,4 +1,5 @@
 import {
+  ApiOutlined,
   ArrowLeftOutlined,
   DownOutlined,
   MenuFoldOutlined,
@@ -547,6 +548,15 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
             )}
           </div>
           <Space size="middle">
+            <Button
+              type="text"
+              icon={<ApiOutlined />}
+              onClick={() => window.open('/api-docs', '_blank', 'noopener,noreferrer')}
+              aria-label="API 文档"
+              title="查看系统 API 接口文档（请求头、请求体、响应体）"
+            >
+              API 文档
+            </Button>
             <Dropdown
               trigger={['click']}
               menu={{

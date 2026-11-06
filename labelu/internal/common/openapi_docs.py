@@ -530,7 +530,10 @@ DOCS_DESCRIPTION = """
 ## 通用约定
 
 - 业务接口默认前缀为 `/api/v1`；少数第三方回调和内部接入接口使用独立根路径。
-- 普通 JSON 响应通常使用 `code`、`message`、`data`，分页响应另含 `meta_data`。
+- 普通用户接口请求头：`Authorization: Bearer <登录令牌>`。
+- 第三方/内部服务接口请求头：`X-7GAI-Service-Token: <服务令牌>`（兼容 `X-LabelU-Service-Token`、`X-Service-Token`），或使用 HMAC 头 `X-LabelU-Timestamp`、`X-LabelU-Nonce`、`X-LabelU-Signature`。
+- 请求体、查询参数、请求头和响应体字段均在对应接口的 Parameters / Request body / Responses 区域列出，字段必填性与类型以该处为准。
+- 成功响应通常为 `data`（分页另含 `meta_data`）；错误响应使用 `msg`、`err_code`，HTTP 状态码同时反映错误类别。
 - 时间字段采用 ISO 8601 格式；文件下载接口直接返回二进制响应。
 - 每个接口仍会执行真实的身份认证、权限校验和业务校验，文档页面不会绕过安全控制。
 
