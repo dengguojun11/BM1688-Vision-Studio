@@ -710,7 +710,11 @@ def _operation_description(
     )
     if existing and not _contains_chinese(existing):
         return f"{generated}\n\n原始说明：{existing}"
-    return existing or generated
+    if existing:
+        if "身份认证" in existing:
+            return existing
+        return f"{existing}\n\n- 身份认证：{authentication}"
+    return generated
 
 
 def _enrich_parameter(parameter: dict[str, Any]) -> None:
