@@ -396,6 +396,14 @@ class Settings(BaseSettings):
     YOLO_TRAIN_GPU_MIN_FREE_MB_SMALL: int = 4096
     # 本地并发训练上限；0=自动（自动分配模式下等于训练 GPU 数量）
     YOLO_TRAIN_MAX_CONCURRENT_JOBS: int = 0
+    # 新作业开训前要求主机保留的可用内存（MB），避免并发训练把 Web/数据库压进 swap
+    YOLO_TRAIN_MIN_FREE_MEMORY_MB: int = 8192
+    # 单个训练作业的估算内存（MB），用于按主机可用内存限制并发数
+    YOLO_TRAIN_MEMORY_PER_JOB_MB: int = 4096
+    # 主机 1 分钟负载 / CPU 核数 超过该比例时暂缓领取新训练作业
+    YOLO_TRAIN_MAX_CPU_LOAD_RATIO: float = 0.9
+    # 单卡已用显存超过该值且无法关联到本平台作业时，按“已占用”处理，避免并发作业挤到同一张卡
+    YOLO_TRAIN_GPU_BUSY_USED_MB: int = 4096
     # 可选：预训练 .pt 所在目录（如 /data/labeIU/labeIuproject/labeIU），优先于 ~/.config/Ultralytics/weights
     YOLO_PRETRAINED_WEIGHTS_DIR: str = ""
     # DataLoader 进程数；在 systemd 后台线程 + 小数据集场景建议 0，避免 workers=8 卡死

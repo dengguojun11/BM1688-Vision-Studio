@@ -134,6 +134,58 @@ def _host_cpu_count() -> int:
     return max(1, int(os.cpu_count() or 1))
 
 
+def _query_host_available_memory_mb() -> Optional[int]:
+    """Linux MemAvailable；其他平台返回 None（跳过内存门禁）。"""
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.startswith("MemAvailable:"):
+                    return max(0, int(line.split()[1]) // 1024)
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def _query_host_cpu_load_ratio() -> Optional[float]:
+    """1 分钟 load average / CPU 核数；非 Linux 返回 None。"""
+    try:
+        with open("/proc/loadavg", encoding="utf-8") as handle:
+            load_1m = float(handle.read().split()[0])
+    except (OSError, ValueError, IndexError):
+        return None
+    return max(0.0, load_1m / float(_host_cpu_count()))
+
+
+def _memory_concurrency_cap(
+    *, available_mb: Optional[int], reserve_mb: int, per_job_mb: int
+) -> Optional[int]:
+    """按主机可用内存推导可再并发的作业数；内存未知时不做限制。"""
+    if available_mb is None:
+        return None
+    reserve = max(0, int(reserve_mb or 0))
+    per_job = max(512, int(per_job_mb or 4096))
+    return max(1, max(0, int(available_mb) - reserve) // per_job)
+
+
+def yolo_train_host_resources_available() -> Tuple[bool, str]:
+    """开训前的主机内存/CPU 负载门禁，避免并发训练压垮 Web/数据库。"""
+    available_mb = _query_host_available_memory_mb()
+    reserve_mb = int(getattr(settings, "YOLO_TRAIN_MIN_FREE_MEMORY_MB", 8192) or 0)
+    if available_mb is not None and available_mb < reserve_mb:
+        return (
+            False,
+            f"主机可用内存 {available_mb}MB < 保留阈值 {reserve_mb}MB",
+        )
+    load_ratio = _query_host_cpu_load_ratio()
+    max_ratio = float(getattr(settings, "YOLO_TRAIN_MAX_CPU_LOAD_RATIO", 0.9) or 0.9)
+    if load_ratio is not None and load_ratio > max_ratio:
+        return (
+            False,
+            f"主机 CPU 负载 {load_ratio:.2f} > 阈值 {max_ratio:.2f}",
+        )
+    return True, ""
+
+
 def compute_yolo_train_resource_profile(
     *, queue_has_waiters: bool = False
 ) -> YoloTrainResourceProfile:
@@ -182,6 +234,17 @@ def compute_yolo_train_resource_profile(
         max_concurrent = min(auto_cap, cpu_cap)
         if cfg_cap > 0:
             max_concurrent = min(max_concurrent, cfg_cap)
+        memory_cap = _memory_concurrency_cap(
+            available_mb=_query_host_available_memory_mb(),
+            reserve_mb=int(
+                getattr(settings, "YOLO_TRAIN_MIN_FREE_MEMORY_MB", 8192) or 0
+            ),
+            per_job_mb=int(
+                getattr(settings, "YOLO_TRAIN_MEMORY_PER_JOB_MB", 4096) or 4096
+            ),
+        )
+        if memory_cap is not None:
+            max_concurrent = max(1, min(max_concurrent, memory_cap))
     else:
         gpus_per_job = max(1, len(indices))
         # 固定 device（如 0,1 DDP）：所有作业共用同一配置，并发槽位为 1。

@@ -34,6 +34,7 @@ from labelu.internal.common.yolo_train_gpu_allocator import (
 from labelu.internal.common.yolo_train_resource_profile import (
     get_yolo_train_resource_profile,
     log_yolo_train_resource_profile_once,
+    yolo_train_host_resources_available,
 )
 from labelu.internal.domain.models.yolo_train_job import YoloTrainJob, YoloTrainStatus
 
@@ -315,10 +316,21 @@ def _gpu_occupancy_extra_from_nvidia_smi() -> dict[int, Optional[int]]:
 def _build_occupied_gpus(
     *, exclude_job_id: Optional[int] = None
 ) -> dict[int, Optional[int]]:
-    return build_gpu_occupancy(
+    occupied = build_gpu_occupancy(
         exclude_job_id=exclude_job_id,
         extra_from_smi=_gpu_occupancy_extra_from_nvidia_smi(),
     )
+    # A long-running training process may not expose the job directory in its
+    # cmdline (e.g. multiprocessing spawn).  Treat a GPU that already has a
+    # material amount of VRAM in use as busy instead of packing a second job
+    # onto the same card.
+    used_threshold = int(
+        getattr(settings, "YOLO_TRAIN_GPU_BUSY_USED_MB", 4096) or 4096
+    )
+    for gpu_index, used_mb in _gpu_used_memory_mb().items():
+        if occupied.get(gpu_index) is None and used_mb >= used_threshold:
+            occupied[gpu_index] = -1
+    return occupied
 
 
 def count_active_yolo_train_slots(*, exclude_job_id: Optional[int] = None) -> int:
@@ -328,6 +340,21 @@ def count_active_yolo_train_slots(*, exclude_job_id: Optional[int] = None) -> in
     for jid in _ACTIVE_TRAIN_JOBS:
         if exclude_job_id is None or int(jid) != int(exclude_job_id):
             slots.add(int(jid))
+    # Dedicated workers are separate processes; the in-process set cannot see
+    # a job owned by another worker.  Persisted PROCESSING jobs provide the
+    # cross-process slot count used by the concurrency cap.
+    try:
+        with session_scope() as db:
+            rows = (
+                db.query(YoloTrainJob.id)
+                .filter(YoloTrainJob.status == YoloTrainStatus.PROCESSING.value)
+                .all()
+            )
+        for (jid,) in rows:
+            if exclude_job_id is None or int(jid) != int(exclude_job_id):
+                slots.add(int(jid))
+    except Exception:
+        pass
     for jid in active_yolo_train_job_ids_on_gpu():
         if exclude_job_id is None or int(jid) != int(exclude_job_id):
             slots.add(int(jid))
@@ -335,11 +362,19 @@ def count_active_yolo_train_slots(*, exclude_job_id: Optional[int] = None) -> in
 
 
 def _gpu_free_memory_mb() -> dict[int, int]:
+    return _gpu_memory_mb("memory.free")
+
+
+def _gpu_used_memory_mb() -> dict[int, int]:
+    return _gpu_memory_mb("memory.used")
+
+
+def _gpu_memory_mb(field: str) -> dict[int, int]:
     try:
         proc = subprocess.run(
             [
                 "nvidia-smi",
-                "--query-gpu=index,memory.free",
+                f"--query-gpu=index,{field}",
                 "--format=csv,noheader,nounits",
             ],
             capture_output=True,
@@ -404,6 +439,10 @@ def _resolve_train_start_slot(
     if not settings.YOLO_TRAIN_ENABLED:
         return False, "YOLO 训练未启用", None
 
+    host_ok, host_reason = yolo_train_host_resources_available()
+    if not host_ok:
+        return False, host_reason, None
+
     if not yolo_train_gpu_auto_alloc_enabled():
         ok, reason = _yolo_train_resources_available_fixed(exclude_job_id=job_id)
         # Fixed/single-GPU mode still needs an explicit device passed to the
@@ -422,6 +461,15 @@ def _resolve_train_start_slot(
     )
     if profile.cpu_only:
         return True, "", None
+
+    max_concurrent = max(1, int(profile.max_concurrent_jobs))
+    active = count_active_yolo_train_slots(exclude_job_id=job_id)
+    if active >= max_concurrent:
+        return (
+            False,
+            f"已有 {active} 个训练作业占用训练槽（上限 {max_concurrent}）",
+            None,
+        )
 
     free_map = _gpu_free_memory_mb()
     occupied = _build_occupied_gpus(exclude_job_id=job_id)
@@ -464,6 +512,10 @@ def yolo_train_resources_available(
 ) -> Tuple[bool, str]:
     if not settings.YOLO_TRAIN_ENABLED:
         return False, "YOLO 训练未启用"
+
+    host_ok, host_reason = yolo_train_host_resources_available()
+    if not host_ok:
+        return False, host_reason
 
     if yolo_train_gpu_auto_alloc_enabled():
         profile = get_yolo_train_resource_profile(

@@ -7,16 +7,24 @@ import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from loguru import logger
 
 from labelu.internal.application.command.yolo_train import CreateYoloTrainJobCommand
 from labelu.internal.common.config import settings
 
+try:  # POSIX only; Windows/local tests fall back to in-process locking.
+    import fcntl
+except ImportError:  # pragma: no cover - exercised on Windows
+    fcntl = None  # type: ignore[assignment]
+
 _ALLOC_LOCK = threading.Lock()
 # job_id -> 占用的 GPU 编号（双卡作业为 (0, 1)）
 _JOB_GPU_ALLOCATIONS: Dict[int, Tuple[int, ...]] = {}
+# job_id -> open lock handles; held for the lifetime of the training process so
+# multiple worker processes cannot reserve the same physical GPU.
+_JOB_GPU_LOCK_HANDLES: Dict[int, List[Any]] = {}
 
 _MODEL_SIZE_WEIGHT: Dict[str, float] = {
     "n": 1.0,
@@ -232,12 +240,68 @@ def build_gpu_occupancy(
     return occupied
 
 
+def _gpu_lock_dir() -> Path:
+    return Path(str(settings.MEDIA_ROOT)) / "yolo_train" / ".gpu-locks"
+
+
+def _gpu_lock_path(gpu_index: int) -> Path:
+    return _gpu_lock_dir() / f"gpu-{int(gpu_index)}.lock"
+
+
+def _acquire_gpu_locks(job_id: int, indices: Tuple[int, ...]) -> bool:
+    """跨进程独占 GPU；锁随训练进程生命周期持有，进程退出自动释放。"""
+    if fcntl is None:
+        return True
+    normalized = tuple(sorted(set(int(i) for i in indices)))
+    with _ALLOC_LOCK:
+        existing = _JOB_GPU_LOCK_HANDLES.get(int(job_id))
+        if existing is not None:
+            return True
+        handles: List[Any] = []
+        try:
+            _gpu_lock_dir().mkdir(parents=True, exist_ok=True)
+            for index in normalized:
+                handle = open(_gpu_lock_path(index), "a+")
+                try:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError:
+                    handle.close()
+                    raise
+                handles.append(handle)
+        except OSError:
+            for handle in handles:
+                try:
+                    handle.close()
+                except OSError:
+                    pass
+            return False
+        _JOB_GPU_LOCK_HANDLES[int(job_id)] = handles
+    return True
+
+
+def _release_gpu_locks(job_id: int) -> None:
+    if fcntl is None:
+        return
+    with _ALLOC_LOCK:
+        handles = _JOB_GPU_LOCK_HANDLES.pop(int(job_id), [])
+    for handle in handles:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        try:
+            handle.close()
+        except OSError:
+            pass
+
+
 def register_job_gpu_allocation(job_id: int, indices: Tuple[int, ...]) -> None:
     with _ALLOC_LOCK:
         _JOB_GPU_ALLOCATIONS[int(job_id)] = tuple(sorted(set(indices)))
 
 
 def release_job_gpu_allocation(job_id: int) -> None:
+    _release_gpu_locks(job_id)
     with _ALLOC_LOCK:
         _JOB_GPU_ALLOCATIONS.pop(int(job_id), None)
 
@@ -468,6 +532,8 @@ def try_allocate_gpu_for_job(
         indices = persisted.gpu_indices
         if all(occupied_by_gpu.get(i) in (None, int(job_id)) for i in indices):
             if _gpus_meet_free_threshold(indices, free_mb, min_free_mb):
+                if not _acquire_gpu_locks(job_id, indices):
+                    return None
                 register_job_gpu_allocation(job_id, indices)
                 return persisted
         return None
@@ -481,7 +547,18 @@ def try_allocate_gpu_for_job(
         queued_job_count=queued_job_count,
     )
     if plan:
-        persist_job_gpu_allocation(job_id, plan)
+        if not _acquire_gpu_locks(job_id, plan.gpu_indices):
+            logger.info(
+                "YOLO train job {} GPU {} already locked by another worker; defer",
+                job_id,
+                plan.gpu_indices,
+            )
+            return None
+        try:
+            persist_job_gpu_allocation(job_id, plan)
+        except Exception:
+            release_job_gpu_allocation(job_id)
+            raise
         logger.info(
             "YOLO train job {} GPU alloc: device={} tier={} score={} ({})",
             job_id,
