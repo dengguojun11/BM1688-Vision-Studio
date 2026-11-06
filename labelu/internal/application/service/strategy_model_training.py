@@ -340,6 +340,10 @@ def resolve_initial_weights(db: Session, task_id: int) -> dict[str, Any]:
             YoloTrainJob.task_id == int(task_id),
             YoloTrainJob.status == COMPLETED_JOB_STATUS,
             YoloTrainJob.weights_path.isnot(None),
+            # Legacy jobs without an explicit recipe cannot pass the unified
+            # iteration contract; use the preset instead of failing later.
+            YoloTrainJob.training_recipe_key.isnot(None),
+            YoloTrainJob.training_recipe_key != "",
         )
         .order_by(YoloTrainJob.id.desc())
         .first()
@@ -349,6 +353,8 @@ def resolve_initial_weights(db: Session, task_id: int) -> dict[str, Any]:
             "weights_source": "trained",
             "weights_ref_id": int(job.id),
             "model_weights": str(job.model_weights or "yolo11n.pt"),
+            "training_recipe_key": str(job.training_recipe_key or ""),
+            "training_recipe_version": int(job.training_recipe_version or 1),
             "resolved_by": "local_completed_training_job",
         }
     return {
@@ -357,6 +363,8 @@ def resolve_initial_weights(db: Session, task_id: int) -> dict[str, Any]:
         "model_weights": str(
             settings.STRATEGY_EVOLUTION_MODEL_TRAIN_WEIGHTS or "yolo11n.pt"
         ),
+        "training_recipe_key": DEFAULT_TRAINING_RECIPE,
+        "training_recipe_version": 1,
         "resolved_by": "preset_weights",
     }
 
@@ -543,7 +551,10 @@ def ensure_model_training_job_sync(
         weights_ref_id=weights["weights_ref_id"],
         epochs=int(settings.STRATEGY_EVOLUTION_MODEL_TRAIN_EPOCHS),
         imgsz=int(settings.STRATEGY_EVOLUTION_MODEL_TRAIN_IMGSZ),
-        training_recipe_key=DEFAULT_TRAINING_RECIPE,
+        training_recipe_key=str(
+            weights.get("training_recipe_key") or DEFAULT_TRAINING_RECIPE
+        ),
+        training_recipe_version=int(weights.get("training_recipe_version") or 1),
     )
     response = training_task_service.create_label_dimension_training_task(
         db=db,

@@ -246,6 +246,8 @@ def test_resolve_initial_weights_uses_completed_local_job(db):
             status="COMPLETED",
             model_weights="yolo11n.pt",
             weights_path="/tmp/weights/best.pt",
+            training_recipe_key="yolo_detection_v1",
+            training_recipe_version=1,
         )
         db.add(job)
         db.flush()
@@ -255,6 +257,30 @@ def test_resolve_initial_weights_uses_completed_local_job(db):
 
     assert weights["weights_source"] == "trained"
     assert weights["weights_ref_id"] == job_id
+    assert weights["training_recipe_key"] == "yolo_detection_v1"
+
+
+def test_resolve_initial_weights_skips_legacy_job_without_recipe(db):
+    task = _annotated_task(
+        db, name="只有旧训练作业的任务", labels=MODEL_LABELS[:3], done_samples=5
+    )
+    with begin_transaction(db):
+        db.add(
+            YoloTrainJob(
+                task_id=int(task.id),
+                status="COMPLETED",
+                model_weights="yolo11n.pt",
+                weights_path="/tmp/weights/legacy-best.pt",
+                training_recipe_key=None,
+            )
+        )
+        db.flush()
+
+    weights = service.resolve_initial_weights(db, int(task.id))
+
+    assert weights["weights_source"] == "preset"
+    assert weights["weights_ref_id"] is None
+    assert weights["training_recipe_key"] == "yolov11_detection"
 
 
 def test_model_lookup_due_respects_retry_interval(db):
