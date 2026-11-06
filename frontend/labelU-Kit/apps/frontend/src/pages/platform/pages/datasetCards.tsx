@@ -16,6 +16,7 @@ import {
 import { useMemo, useState } from 'react';
 
 import request from '@/api/request';
+import { trainingLineageLabel } from '../shared';
 
 type WorkbenchMode = 'training' | 'model';
 
@@ -261,7 +262,7 @@ export default function DatasetCards({ mode }: { mode: WorkbenchMode }) {
                 title: '方式',
                 key: 'kind',
                 width: 100,
-                render: (_, row) => (row.lineage_kind === 'AUTO' ? '自动迭代' : '人工创建'),
+                render: (_, row) => trainingLineageLabel(row.lineage_kind),
               },
               {
                 title: 'mAP50-95',

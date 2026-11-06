@@ -63,6 +63,19 @@ def _parent_job_id(job: YoloTrainJob) -> int | None:
     return getattr(job, "parent_training_job_id", None)
 
 
+def _lineage_kind(job: YoloTrainJob) -> str:
+    """Classify how a training job entered the dataset lineage."""
+    source_system = str(getattr(job, "source_system", None) or "").strip()
+    if source_system == "strategy_evolution":
+        return "FLEXIBLE"
+    if (
+        getattr(job, "auto_iteration_root_id", None) is not None
+        and int(getattr(job, "auto_iteration_round_no", None) or 1) > 1
+    ):
+        return "AUTO"
+    return "MANUAL"
+
+
 def _job_payload(db: Session, job: YoloTrainJob, task_name: str | None) -> dict[str, Any]:
     quality = evaluate_iteration_quality(db, job)
     metrics = _metric(job)
@@ -80,12 +93,7 @@ def _job_payload(db: Session, job: YoloTrainJob, task_name: str | None) -> dict[
         "auto_iteration_root_id": getattr(job, "auto_iteration_root_id", None),
         "auto_iteration_round_no": getattr(job, "auto_iteration_round_no", None),
         "parent_job_id": _parent_job_id(job),
-        "lineage_kind": (
-            "AUTO"
-            if getattr(job, "auto_iteration_root_id", None) is not None
-            and int(getattr(job, "auto_iteration_round_no", None) or 1) > 1
-            else "MANUAL"
-        ),
+        "lineage_kind": _lineage_kind(job),
         "quality_status": quality.status,
         "quality_passed": bool(quality.passed),
         "metrics": metrics,

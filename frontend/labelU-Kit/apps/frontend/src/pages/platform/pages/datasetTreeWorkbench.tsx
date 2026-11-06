@@ -27,6 +27,7 @@ import type { DataNode } from 'antd/es/tree';
 import { useEffect, useMemo, useState } from 'react';
 
 import request from '@/api/request';
+import { trainingLineageColor, trainingLineageLabel } from '../shared';
 
 const DirectoryTree = Tree.DirectoryTree;
 
@@ -114,8 +115,8 @@ function jobNodeTitle(job: SummaryJob) {
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
       <span style={{ color: '#64748b' }}>第{job.auto_iteration_round_no || 1}轮</span>
       <span>作业 #{job.job_id}</span>
-      <Tag color={job.lineage_kind === 'AUTO' ? 'purple' : 'default'} style={{ marginInlineEnd: 0 }}>
-        {job.lineage_kind === 'AUTO' ? '自动迭代' : '人工创建'}
+      <Tag color={trainingLineageColor(job.lineage_kind)} style={{ marginInlineEnd: 0 }}>
+        {trainingLineageLabel(job.lineage_kind)}
       </Tag>
       <Tag color={status.color} style={{ marginInlineEnd: 0 }}>
         {status.text}
@@ -431,7 +432,7 @@ function TrainingJobDetail({ dataset, job }: { dataset: DatasetSummary; job: Sum
         <Descriptions.Item label="数据集">{dataset.dataset_name}</Descriptions.Item>
         <Descriptions.Item label="作业">#{job.job_id}</Descriptions.Item>
         <Descriptions.Item label="轮次">第{job.auto_iteration_round_no || 1}轮</Descriptions.Item>
-        <Descriptions.Item label="创建方式">{job.lineage_kind === 'AUTO' ? '自动迭代' : '人工创建'}</Descriptions.Item>
+        <Descriptions.Item label="创建方式">{trainingLineageLabel(job.lineage_kind)}</Descriptions.Item>
         <Descriptions.Item label="父作业">{job.parent_job_id ? `#${job.parent_job_id}` : '-'}</Descriptions.Item>
         <Descriptions.Item label="状态"><Tag color={status.color}>{status.text}</Tag></Descriptions.Item>
         <Descriptions.Item label="mAP50-95">{formatMetric(job.metrics?.map50_95)}</Descriptions.Item>

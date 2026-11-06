@@ -6,6 +6,20 @@ import { MODULE_COPY, type PlatformModule } from './modules';
 
 export type Row = Record<string, any> & { id?: number | string };
 
+export function trainingLineageLabel(kind?: string | null): string {
+  const normalized = String(kind || '').trim().toUpperCase();
+  if (normalized === 'FLEXIBLE') return '柔性工作流';
+  if (normalized === 'AUTO') return '自动迭代';
+  return '人工创建';
+}
+
+export function trainingLineageColor(kind?: string | null): string {
+  const normalized = String(kind || '').trim().toUpperCase();
+  if (normalized === 'FLEXIBLE') return 'geekblue';
+  if (normalized === 'AUTO') return 'purple';
+  return 'default';
+}
+
 export interface TrainingFailureGuidance {
   reason: string;
   steps: string[];

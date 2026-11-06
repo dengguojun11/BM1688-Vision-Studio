@@ -18,6 +18,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useMemo, useState } from 'react';
 
 import request from '@/api/request';
+import { trainingLineageColor, trainingLineageLabel } from '../shared';
 
 type WorkbenchMode = 'training' | 'model';
 
@@ -235,8 +236,8 @@ export default function DatasetTreeTable({ mode }: { mode: WorkbenchMode }) {
           <span>{value}</span>
           {row.kind === 'chain' && <Tag color={row.passed ? 'green' : 'red'}>{row.passed ? '已达标' : '未达标'}</Tag>}
           {row.kind === 'job' && (
-            <Tag color={row.lineageKind === 'AUTO' ? 'purple' : 'default'}>
-              {row.lineageKind === 'AUTO' ? '自动迭代' : '人工创建'}
+            <Tag color={trainingLineageColor(row.lineageKind)}>
+              {trainingLineageLabel(row.lineageKind)}
             </Tag>
           )}
         </Space>
@@ -399,7 +400,7 @@ function DetailPanel({ row, mode }: { row: TreeRow; mode: WorkbenchMode }) {
       <Descriptions column={1} size="small" bordered>
         <Descriptions.Item label="作业">#{job.job_id}</Descriptions.Item>
         <Descriptions.Item label="轮次">第{job.auto_iteration_round_no || 1}轮</Descriptions.Item>
-        <Descriptions.Item label="方式">{job.lineage_kind === 'AUTO' ? '自动迭代' : '人工创建'}</Descriptions.Item>
+        <Descriptions.Item label="方式">{trainingLineageLabel(job.lineage_kind)}</Descriptions.Item>
         <Descriptions.Item label="状态">{statusMeta(job.status, job.quality_passed).text}</Descriptions.Item>
         <Descriptions.Item label="mAP50-95">{metric(job.metrics?.map50_95)}</Descriptions.Item>
         <Descriptions.Item label="mAP50">{metric(job.metrics?.map50)}</Descriptions.Item>
