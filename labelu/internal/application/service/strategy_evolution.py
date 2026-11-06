@@ -95,6 +95,71 @@ CALLBACK_TIMESTAMP_HEADER = "X-LabelU-Timestamp"
 CALLBACK_EVENT_ID_HEADER = "X-LabelU-Event-Id"
 IMPORT_READY_STATUSES = {"COMPLETED", "PARTIAL_COMPLETED"}
 
+TASK_TYPE_LABELS = {
+    "model_capability": "模型能力优化",
+    "threshold_experiment": "阈值实验",
+}
+PLATFORM_STATUS_LABELS = {
+    "accepted": "已受理",
+    "waiting_for_model": "等待模型就绪",
+    "waiting_for_gpu": "等待 GPU 可用",
+    "waiting_for_annotations": "等待标注数据",
+    "model_training_created": "已创建模型训练",
+    "export_created": "已创建 BM1688 导出",
+    "edge_validation_created": "已创建边端验证",
+    "comparison_failed": "模型对比未通过",
+    "waiting_for_publish": "等待发布",
+    "waiting_publish_decision": "等待发布决策",
+    "published": "已发布",
+    "succeeded": "已完成",
+    "completed": "已完成",
+    "failed": "失败",
+    "callback_failed": "回调失败",
+    "cancelled": "已取消",
+    "canceled": "已取消",
+    "accepted_not_implemented": "已受理（暂未实现）",
+}
+AUTOMATION_STAGE_LABELS = {
+    "model_resolution": "模型匹配",
+    "annotation_resolution": "标注数据匹配",
+    "training": "模型训练",
+    "model_training": "模型训练",
+    "export": "模型导出",
+    "exporting": "模型导出",
+    "edge_validation": "边端验证",
+    "completed": "已完成",
+}
+AUTOMATION_STATUS_LABELS = {
+    "running": "执行中",
+    "succeeded": "成功",
+    "failed": "失败",
+}
+CALLBACK_STATUS_LABELS = {
+    "pending": "待发送",
+    "running": "发送中",
+    "succeeded": "已送达",
+    "failed": "发送失败",
+    "skipped": "已跳过",
+}
+MODEL_TRAINING_STATUS_LABELS = {
+    "waiting_for_model": "等待模型就绪",
+    "waiting_for_gpu": "等待 GPU 可用",
+    "waiting_for_annotations": "等待标注数据",
+    "training_job_created": "已创建训练作业",
+    "running": "训练中",
+    "succeeded": "训练完成",
+    "failed": "训练失败",
+    "cancelled": "训练已取消",
+    "stale_reference_cleared": "历史训练引用已清理",
+}
+
+
+def _status_label(mapping: dict[str, str], value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return mapping.get(text.lower(), text)
+
 
 def _externalize_model_id_keys(value: Any) -> Any:
     """Expose camelCase model IDs at the external strategy API boundary."""
@@ -289,6 +354,11 @@ def _build_edge_image_compare(result: dict[str, Any]) -> dict[str, Any] | None:
 def _decorate_strategy_result(result: dict[str, Any] | None) -> dict[str, Any] | None:
     if not isinstance(result, dict):
         return result
+    model_training_status = result.get("model_training_status")
+    if model_training_status:
+        result["model_training_status_label"] = _status_label(
+            MODEL_TRAINING_STATUS_LABELS, model_training_status
+        )
     for key in ("edge_validation_jobs", "edge_experiment_jobs"):
         jobs = result.get(key)
         if not isinstance(jobs, list):
@@ -2790,7 +2860,7 @@ def _sync_existing_model_training_result(
     if not synced_jobs:
         result.pop("model_training_jobs", None)
         result["model_training_status"] = "stale_reference_cleared"
-        return result, "stale model training job reference cleared", changed
+        return result, "历史模型训练作业引用已清理", changed
 
     result["model_training_jobs"] = synced_jobs
     latest_job = synced_jobs[-1] if synced_jobs else {}
@@ -2805,7 +2875,7 @@ def _sync_existing_model_training_result(
         result["model_training_status"] = "cancelled"
     else:
         result["model_training_status"] = "training_job_created"
-    return result, "model training job already exists", changed
+    return result, "模型训练作业已存在，不会重复创建", changed
 
 
 def _first_text_message(payload: dict[str, Any] | None) -> str:
@@ -2848,6 +2918,10 @@ def _row_last_message(
     latest_model_job = model_jobs[-1] if model_jobs else {}
     if str(latest_model_job.get("error_message") or "").strip():
         return str(latest_model_job.get("error_message") or "").strip()
+    if isinstance(result, dict):
+        result_message = str(result.get("message") or "").strip()
+        if result_message:
+            return result_message
     if str(latest_model_job.get("progress_snapshot") or "").strip():
         return str(latest_model_job.get("progress_snapshot") or "").strip()
     if str(latest_model_job.get("train_phase_detail") or "").strip():
@@ -2913,6 +2987,7 @@ def _to_list_row(
         external_task_id=row.external_task_id,
         task_name=row.task_name,
         task_type=row.task_type,
+        task_type_label=_status_label(TASK_TYPE_LABELS, row.task_type),
         source_package_id=(str(row.source_package_id or "").strip() or None),
         source_type=str(row.source_type or "third_party"),
         source_system=str(row.source_system or "strategy_evolution"),
@@ -2929,9 +3004,19 @@ def _to_list_row(
         target=_externalize_model_id_keys(target),
         data_window=data_window,
         platform_status=platform_status,
+        platform_status_label=_status_label(PLATFORM_STATUS_LABELS, platform_status),
         automation_stage=(str(row.automation_stage or "").strip() or None),
+        automation_stage_label=_status_label(
+            AUTOMATION_STAGE_LABELS, row.automation_stage
+        ),
         automation_status=(str(row.automation_status or "").strip() or None),
+        automation_status_label=_status_label(
+            AUTOMATION_STATUS_LABELS, row.automation_status
+        ),
         outbound_callback_status=(str(row.outbound_callback_status or "").strip() or None),
+        outbound_callback_status_label=_status_label(
+            CALLBACK_STATUS_LABELS, row.outbound_callback_status
+        ),
         outbound_callback_attempts=int(row.outbound_callback_attempts or 0),
         outbound_callback_next_retry_at=row.outbound_callback_next_retry_at,
         automation_attempts=int(row.automation_attempts or 0),
@@ -5062,6 +5147,7 @@ def _to_detail(
         external_task_id=row.external_task_id,
         task_name=row.task_name,
         task_type=row.task_type,
+        task_type_label=_status_label(TASK_TYPE_LABELS, row.task_type),
         source_package_id=(str(row.source_package_id or "").strip() or None),
         source_type=str(row.source_type or "third_party"),
         source_system=str(row.source_system or "strategy_evolution"),
@@ -5079,9 +5165,21 @@ def _to_detail(
         data_window=_json_loads_object(row.data_window_json),
         experiment=_json_loads_object(row.experiment_json),
         platform_status=row.platform_status or PLATFORM_STATUS_ACCEPTED,
+        platform_status_label=_status_label(
+            PLATFORM_STATUS_LABELS, row.platform_status or PLATFORM_STATUS_ACCEPTED
+        ),
         automation_stage=(str(row.automation_stage or "").strip() or None),
+        automation_stage_label=_status_label(
+            AUTOMATION_STAGE_LABELS, row.automation_stage
+        ),
         automation_status=(str(row.automation_status or "").strip() or None),
+        automation_status_label=_status_label(
+            AUTOMATION_STATUS_LABELS, row.automation_status
+        ),
         outbound_callback_status=(str(row.outbound_callback_status or "").strip() or None),
+        outbound_callback_status_label=_status_label(
+            CALLBACK_STATUS_LABELS, row.outbound_callback_status
+        ),
         outbound_callback_attempts=int(row.outbound_callback_attempts or 0),
         outbound_callback_next_retry_at=row.outbound_callback_next_retry_at,
         automation_attempts=int(row.automation_attempts or 0),

@@ -713,7 +713,7 @@ class TestStrategyEvolutionRouter:
         )
 
         assert changed is True
-        assert message == "stale model training job reference cleared"
+        assert message == "历史模型训练作业引用已清理"
         assert result["model_training_status"] == "stale_reference_cleared"
         assert "model_training_jobs" not in result
 
@@ -1429,7 +1429,7 @@ class TestStrategyEvolutionRouter:
         assert rows["strategy-task-list-waiting"]["last_message"] == "待发布模型映射"
         assert rows["strategy-task-list-model"]["platform_status"] == "waiting_for_model"
         assert rows["strategy-task-list-model"]["model_job_count"] == 0
-        assert rows["strategy-task-list-model"]["last_message"] == "待发布模型映射"
+        assert rows["strategy-task-list-model"]["last_message"] == "已发布模型映射尚未就绪"
 
         filtered = client.get(
             "/internal/v1/strategy-evolution/tasks",

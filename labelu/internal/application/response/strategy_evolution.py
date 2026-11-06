@@ -16,6 +16,7 @@ class StrategyEvolutionThresholdContractResponse(BaseModel):
 
 class StrategyEvolutionTaskAcceptedResponse(BaseModel):
     status: str = "accepted"
+    status_label: str = "已受理"
     message: str = ""
 
 
@@ -23,6 +24,7 @@ class StrategyEvolutionTaskListRowResponse(BaseModel):
     external_task_id: str
     task_name: str
     task_type: str
+    task_type_label: str = ""
     source_package_id: str | None = None
     source_type: str = "third_party"
     source_system: str = "strategy_evolution"
@@ -34,9 +36,13 @@ class StrategyEvolutionTaskListRowResponse(BaseModel):
     target: dict[str, Any] = Field(default_factory=dict)
     data_window: dict[str, Any] = Field(default_factory=dict)
     platform_status: str = "accepted"
+    platform_status_label: str = ""
     automation_stage: str | None = None
+    automation_stage_label: str = ""
     automation_status: str | None = None
+    automation_status_label: str = ""
     outbound_callback_status: str | None = None
+    outbound_callback_status_label: str = ""
     outbound_callback_attempts: int = 0
     outbound_callback_next_retry_at: datetime | None = None
     automation_attempts: int = 0
@@ -60,6 +66,7 @@ class StrategyEvolutionTaskDetailResponse(BaseModel):
     external_task_id: str
     task_name: str
     task_type: str
+    task_type_label: str = ""
     source_package_id: str | None = None
     source_type: str = "third_party"
     source_system: str = "strategy_evolution"
@@ -72,9 +79,13 @@ class StrategyEvolutionTaskDetailResponse(BaseModel):
     data_window: dict[str, Any] = Field(default_factory=dict)
     experiment: dict[str, Any] = Field(default_factory=dict)
     platform_status: str = "accepted"
+    platform_status_label: str = ""
     automation_stage: str | None = None
+    automation_stage_label: str = ""
     automation_status: str | None = None
+    automation_status_label: str = ""
     outbound_callback_status: str | None = None
+    outbound_callback_status_label: str = ""
     outbound_callback_attempts: int = 0
     outbound_callback_next_retry_at: datetime | None = None
     automation_attempts: int = 0
