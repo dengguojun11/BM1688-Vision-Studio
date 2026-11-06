@@ -63,6 +63,7 @@ const DETAIL_LABELS: Record<string, string> = {
   task_id: '任务编号',
   dataset_version_id: '数据集版本',
   dataset_manifest: '数据集清单',
+  label_count: '标签数量',
   metrics_summary: '评估指标',
   error_message: '失败原因',
   failure_reason: '失败原因',

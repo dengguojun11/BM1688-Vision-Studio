@@ -24,6 +24,7 @@ class DatasetResponse(BaseModel):
     dataset_class_order_signature: str | None = None
     dataset_label_ids: list[int] = Field(default_factory=list)
     dataset_labels: list[dict] = Field(default_factory=list)
+    label_count: int = 0
 
 
 class DatasetLabelContractResponse(BaseModel):

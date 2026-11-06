@@ -2265,6 +2265,15 @@ export default function DatasetsPage({ embedded = false }: { embedded?: boolean 
               );
             },
           },
+          {
+            title: '标签数量',
+            dataIndex: 'label_count',
+            key: 'label_count',
+            width: 100,
+            render: (value) => (
+              <Typography.Text strong>{Number(value || 0)} 个</Typography.Text>
+            ),
+          },
           { title: '状态', dataIndex: 'status', key: 'status', render: (value) => <Tag>{value}</Tag> },
           { title: '版本数', dataIndex: 'version_count', key: 'version_count', render: (value) => value ?? 0 },
           {

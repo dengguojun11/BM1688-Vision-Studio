@@ -44,6 +44,7 @@ def test_dataset_creation_exposes_and_freezes_canonical_label_contract(
     dataset = created.json()["data"]
     assert dataset["dataset_label_contract_id"] is not None
     assert dataset["dataset_label_ids"] == [first.id, second.id]
+    assert dataset["label_count"] == 2
 
     current = client.get(
         f"/api/v1/datasets/{dataset['id']}/label-contracts/current",
@@ -71,3 +72,4 @@ def test_dataset_creation_exposes_and_freezes_canonical_label_contract(
 
     labels = refreshed.json()["data"]["dataset_labels"]
     assert [item["label_id"] for item in labels] == [first.id, second.id]
+    assert refreshed.json()["data"]["label_count"] == 2

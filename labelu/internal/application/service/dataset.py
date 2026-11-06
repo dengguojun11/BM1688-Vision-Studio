@@ -166,6 +166,11 @@ def _dataset_response(
         dataset_class_order_signature=contract_class_order_signature,
         dataset_label_ids=contract_label_ids,
         dataset_labels=contract_labels if isinstance(contract_labels, list) else [],
+        label_count=(
+            len(contract_labels)
+            if isinstance(contract_labels, list) and contract_labels
+            else len(contract_label_ids)
+        ),
     )
 
 
