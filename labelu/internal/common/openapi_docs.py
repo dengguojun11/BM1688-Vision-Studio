@@ -647,15 +647,29 @@ def _operation_summary(original: str, method: str, path: str) -> str:
     return f"{action}{resource}{suffix}"
 
 
+def _authentication_text(operation: dict[str, Any]) -> str:
+    security = operation.get("security") or []
+    if not security:
+        return "无需身份认证。"
+    schemes: set[str] = set()
+    for requirement in security:
+        if isinstance(requirement, dict):
+            schemes.update(str(name) for name in requirement.keys())
+    parts: list[str] = []
+    if "HTTPBearer" in schemes:
+        parts.append("`Authorization: Bearer <JWT>`")
+    if "APIKeyHeader" in schemes:
+        parts.append("`X-7GAI-Service-Token`（或 HMAC 签名头）")
+    if not parts:
+        parts.append("接口声明的安全凭据")
+    return "需要 " + " 或 ".join(parts) + "。"
+
+
 def _operation_description(
     *, summary: str, method: str, path: str, operation: dict[str, Any]
 ) -> str:
     existing = str(operation.get("description") or "").strip()
-    authentication = (
-        "需要 Bearer 身份认证。"
-        if operation.get("security")
-        else "无需 Bearer 身份认证。"
-    )
+    authentication = _authentication_text(operation)
     generated = (
         f"{summary}。\n\n"
         f"- 请求方式：`{method.upper()}`\n"
