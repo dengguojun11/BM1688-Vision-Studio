@@ -15,6 +15,38 @@ FLEXIBLE_WORKFLOW_TAG = (
     "专家回流任务、模型阈值、模型优化和第三方回调闭环。",
 )
 
+# Some compatibility routers resolve the caller through a custom dependency
+# instead of ``Security(...)``, so FastAPI leaves their OpenAPI ``security``
+# empty even though they do require credentials.  Document the real scheme.
+DOCS_SECURITY_OVERRIDES: tuple[
+    tuple[str, list[dict[str, list[str]]], str], ...
+] = (
+    (
+        "/api/v2/integrations",
+        [{"HTTPBearer": []}, {"APIKeyHeader": []}],
+        "需要用户 JWT，或服务令牌/HMAC 签名。",
+    ),
+    (
+        "/api/v1/evolution/imports",
+        [{"HTTPBearer": []}],
+        "需要用户 JWT。",
+    ),
+    (
+        "/api/v1/system-logs",
+        [{"HTTPBearer": []}],
+        "需要系统管理员 JWT。",
+    ),
+)
+
+
+def _apply_security_override(path: str, operation: dict[str, Any]) -> None:
+    if operation.get("security"):
+        return
+    for prefix, security, _note in DOCS_SECURITY_OVERRIDES:
+        if path == prefix or path.startswith(prefix + "/"):
+            operation["security"] = security
+            return
+
 CHINESE_TAGS: dict[str, tuple[str, str]] = {
     "users": ("用户与认证", "用户注册、登录、身份信息和账号管理。"),
     "tasks": ("任务管理", "标注任务的创建、配置、查询、更新和协作管理。"),
@@ -760,6 +792,7 @@ def enrich_openapi_schema(schema: dict[str, Any]) -> dict[str, Any]:
             operation["x-labelu-original-summary"] = original_summary
             summary = _operation_summary(original_summary, method, path)
             operation["summary"] = summary
+            _apply_security_override(path, operation)
             operation["description"] = _operation_description(
                 summary=summary,
                 method=method,
