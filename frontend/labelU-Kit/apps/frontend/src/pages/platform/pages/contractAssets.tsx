@@ -63,6 +63,7 @@ type Contract = {
   labels: LabelItem[];
   jobs: JobRow[];
   versions: Version[];
+  orphanVersions: Version[];
   manualJobs: JobRow[];
   flexibleJobs: JobRow[];
   autoJobs: JobRow[];
@@ -141,6 +142,13 @@ function labelsOf(job: JobRow): LabelItem[] {
   return (manifest?.class_names || []).map((value) => ({ label_key: value, label_value: value }));
 }
 
+function labelsOfVersion(version: Version): LabelItem[] {
+  const manifest = version.manifest || {};
+  const dataset = (manifest.dataset_manifest || {}) as Record<string, unknown>;
+  const names = Array.isArray(dataset.class_names) ? dataset.class_names as string[] : [];
+  return names.map((value) => ({ label_key: value, label_value: value }));
+}
+
 function contractKey(job: JobRow) {
   const manifest = job.params?.dataset_manifest;
   if (manifest?.dataset_label_contract_id) return `contract:${manifest.dataset_label_contract_id}`;
@@ -201,7 +209,7 @@ export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode })
           key,
           name: familyName || `标签契约 #${key.split(':')[1]}`,
           revision: job.params?.dataset_manifest?.dataset_contract_revision ?? null,
-          taskIds: [], datasetIds: [], labels: [], jobs: [], versions: [],
+          taskIds: [], datasetIds: [], labels: [], jobs: [], versions: [], orphanVersions: [],
           manualJobs: [], flexibleJobs: [], autoJobs: [], compileCount: 0,
           bmodelVersions: [], publishedVersions: [], updatedAt: null,
         };
@@ -216,6 +224,39 @@ export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode })
       if (jobIsAuto(job)) contract.autoJobs.push(job);
       if (version) {
         contract.versions.push(version);
+        if (version.bm1688_export_id) contract.compileCount += 1;
+        if ((version.artifacts || []).some((artifact) => artifact.artifact_type === 'bmodel')) contract.bmodelVersions.push(version);
+        if (version.published_catalog_id || String(version.status || '').toUpperCase() === 'PUBLISHED') contract.publishedVersions.push(version);
+        const updated = version.updated_at || version.created_at;
+        if (updated && (!contract.updatedAt || updated > contract.updatedAt)) contract.updatedAt = updated;
+      }
+    }
+    // Include model versions that are not linked to a training job (legacy models,
+    // imported weights or rows whose job was removed) so the contract view never
+    // silently hides old assets.
+    const versionIdsInContracts = new Set([...grouped.values()].flatMap((contract) => contract.versions.map((version) => Number(version.id))));
+    for (const family of families) {
+      for (const version of family.versions || []) {
+        if (versionIdsInContracts.has(Number(version.id))) continue;
+        const key = knownByTask.get(Number(family.task_id)) || `task:${family.task_id}`;
+        let contract = grouped.get(key);
+        if (!contract) {
+          contract = {
+            key,
+            name: String((version.manifest || {}).task_name || family.display_name || `任务 #${family.task_id}`),
+            revision: null,
+            taskIds: [Number(family.task_id)],
+            datasetIds: version.dataset_id ? [Number(version.dataset_id)] : [],
+            labels: [],
+            jobs: [], versions: [], orphanVersions: [],
+            manualJobs: [], flexibleJobs: [], autoJobs: [], compileCount: 0,
+            bmodelVersions: [], publishedVersions: [], updatedAt: null,
+          };
+          grouped.set(key, contract);
+        }
+        contract.versions.push(version);
+        contract.orphanVersions.push(version);
+        if (!contract.labels.length) contract.labels = labelsOfVersion(version);
         if (version.bm1688_export_id) contract.compileCount += 1;
         if ((version.artifacts || []).some((artifact) => artifact.artifact_type === 'bmodel')) contract.bmodelVersions.push(version);
         if (version.published_catalog_id || String(version.status || '').toUpperCase() === 'PUBLISHED') contract.publishedVersions.push(version);
@@ -312,6 +353,7 @@ export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode })
                 <Tag color="blue">人工创建 {contract.manualJobs.length}</Tag>
                 <Tag color="purple">柔性工作流 {contract.flexibleJobs.length}</Tag>
                 <Tag color="gold">自动迭代 {contract.autoJobs.length}</Tag>
+                {contract.orphanVersions.length > 0 && <Tag>历史模型 {contract.orphanVersions.length}</Tag>}
               </Space>
               <Space size={[6, 6]} wrap>
                 <Tag>PT {contract.versions.length}</Tag>
@@ -330,7 +372,7 @@ export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode })
         </div>
       )}
       <Typography.Text type="secondary" style={{ fontSize: 11, textAlign: 'center' }}>
-        只显示已产生训练数据的标签契约；卡片可以继续进入编译、边端、已发布和外部导入。
+        只显示已产生训练数据的标签契约；未关联训练作业的历史模型会单独列在契约内。已发布模型、外部导入仍可在顶部对应 Tab 查看。
       </Typography.Text>
       <ModelSnapshotDrawer version={selectedVersion} onClose={() => setSelectedVersion(null)} />
     </div>
@@ -381,6 +423,22 @@ function ContractDetail({ contract, stage, onStage, onBack, onOpenModel }: {
       </Space>
     </div>
   );
+  const renderVersion = (version: Version) => (
+    <div key={version.id} style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 110px 130px', gap: 10, padding: '10px 0', borderBottom: '1px solid #f1f4f8', alignItems: 'center' }}>
+      <Space direction="vertical" size={1}>
+        <Space wrap size={[6, 4]}>
+          <Typography.Text strong>{version.display_name}</Typography.Text>
+          <Tag color="blue">{versionLabel(version)}</Tag>
+          <Tag>未关联训练作业</Tag>
+        </Space>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          模型版本 #{version.id} · 数据集 {version.dataset_id ? `#${version.dataset_id}` : '-'} · 更新 {version.updated_at || version.created_at || '-'}
+        </Typography.Text>
+      </Space>
+      <div>{statusTag(version.status)}</div>
+      <Button size="small" type="link" onClick={() => onOpenModel(version)}>查看模型</Button>
+    </div>
+  );
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -406,6 +464,11 @@ function ContractDetail({ contract, stage, onStage, onBack, onOpenModel }: {
               {group.jobs.map(renderJob)}
             </Card>
           ) : null)}
+          {contract.orphanVersions.length > 0 && (
+            <Card size="small" title={<Space><Tag>历史模型 {contract.orphanVersions.length}</Tag>未关联训练作业的模型版本</Space>}>
+              {contract.orphanVersions.map(renderVersion)}
+            </Card>
+          )}
         </div>
       ) : stage === 'compile' ? (
         <Card size="small" title="编译任务">
