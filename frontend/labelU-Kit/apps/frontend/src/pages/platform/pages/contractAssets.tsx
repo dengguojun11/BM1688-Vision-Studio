@@ -1,8 +1,8 @@
 import { ArrowLeftOutlined, ArrowRightOutlined, ExperimentOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Card, Empty, Segmented, Space, Spin, Tag, Typography } from 'antd';
+import { Alert, Button, Card, Descriptions, Drawer, Empty, Segmented, Space, Spin, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 
 import request from '@/api/request';
 import { listData, listTotal } from '../shared';
@@ -155,9 +155,11 @@ function resolvedContractKey(job: JobRow, knownByTask: Map<number, string>) {
 }
 
 export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode }) {
-  const navigate = useNavigate();
-  const [selected, setSelected] = useState<Contract | null>(null);
-  const [stage, setStage] = useState<Stage>('pt');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [selectedVersion, setSelectedVersion] = useState<Version | null>(null);
+  const stageParam = searchParams.get('contract_stage') as Stage | null;
+  const stage: Stage = stageParam && ['pt', 'compile', 'bmodel', 'published', 'external'].includes(stageParam) ? stageParam : 'pt';
+  const selectedKey = searchParams.get('contract');
   const familiesQuery = useQuery({
     queryKey: ['contract-assets', 'families'],
     queryFn: async () => await fetchAllRows('/v1/models/families'),
@@ -226,20 +228,42 @@ export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode })
 
   const loading = familiesQuery.isLoading || jobsQuery.isLoading;
   const error = familiesQuery.error || jobsQuery.error;
+  const selected = contracts.find((contract) => contract.key === selectedKey) || null;
+  const openContract = (contract: Contract) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('contract', contract.key);
+    next.delete('contract_stage');
+    setSearchParams(next);
+  };
+  const closeContract = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('contract');
+    next.delete('contract_stage');
+    setSearchParams(next);
+  };
+  const changeStage = (nextStage: Stage) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('contract_stage', nextStage);
+    setSearchParams(next);
+  };
 
   if (selected) {
     return (
-      <ContractDetail
-        contract={selected}
-        stage={stage}
-        onStage={setStage}
-        onBack={() => setSelected(null)}
-        onOpenModel={(version) => navigate(`/models?model_id=${version.id}`)}
-      />
+      <>
+        <ContractDetail
+          contract={selected}
+          stage={stage}
+          onStage={changeStage}
+          onBack={closeContract}
+          onOpenModel={setSelectedVersion}
+        />
+        <ModelSnapshotDrawer version={selectedVersion} onClose={() => setSelectedVersion(null)} />
+      </>
     );
   }
 
   return (
+    <>
     <div style={{ display: 'grid', gap: 14 }}>
       <Alert
         type="info"
@@ -263,7 +287,7 @@ export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode })
             <Card
               key={contract.key}
               hoverable
-              onClick={() => { setSelected(contract); setStage('pt'); }}
+              onClick={() => openContract(contract)}
               style={{ borderTop: `3px solid ${contract.flexibleJobs.length ? '#6d28d9' : '#0d53de'}` }}
               bodyStyle={{ display: 'grid', gap: 10 }}
             >
@@ -308,7 +332,9 @@ export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode })
       <Typography.Text type="secondary" style={{ fontSize: 11, textAlign: 'center' }}>
         只显示已产生训练数据的标签契约；卡片可以继续进入编译、边端、已发布和外部导入。
       </Typography.Text>
+      <ModelSnapshotDrawer version={selectedVersion} onClose={() => setSelectedVersion(null)} />
     </div>
+    </>
   );
 }
 
@@ -414,5 +440,31 @@ function ContractDetail({ contract, stage, onStage, onBack, onOpenModel }: {
       )}
       <Typography.Text type="secondary" style={{ fontSize: 11 }}><ExperimentOutlined /> 自动迭代与编译历史仍保留在训练中心/编译任务中，详情字段不删除。</Typography.Text>
     </div>
+  );
+}
+
+function ModelSnapshotDrawer({ version, onClose }: { version: Version | null; onClose: () => void }) {
+  const bmodel = (version?.artifacts || []).filter((artifact) => artifact.artifact_type === 'bmodel');
+  const precision = [...new Set(bmodel.map((artifact) => String(artifact.precision || '').toUpperCase()).filter(Boolean))];
+  return (
+    <Drawer title={version ? `${version.display_name} · ${versionLabel(version)}` : '模型详情'} open={Boolean(version)} onClose={onClose} width={680} destroyOnClose>
+      {version && (
+        <Descriptions column={1} bordered size="small">
+          <Descriptions.Item label="模型">{version.display_name}</Descriptions.Item>
+          <Descriptions.Item label="版本">{versionLabel(version)}</Descriptions.Item>
+          <Descriptions.Item label="训练作业">{version.training_job_id ? `#${version.training_job_id}` : '-'}</Descriptions.Item>
+          <Descriptions.Item label="数据集版本">{version.dataset_version_id ? `#${version.dataset_version_id}` : '-'}</Descriptions.Item>
+          <Descriptions.Item label="训练状态">{statusTag(version.status)}</Descriptions.Item>
+          <Descriptions.Item label="系列 / 分支">
+            {String((version.manifest || {}).series_id || '-')} / {String((version.manifest || {}).variant_id || '-')}
+          </Descriptions.Item>
+          <Descriptions.Item label="BModel 精度">{precision.length ? precision.join(' / ') : '未生成'}</Descriptions.Item>
+          <Descriptions.Item label="边端验证">{edgeTag(version)}</Descriptions.Item>
+          <Descriptions.Item label="发布状态">{publishTag(version)}</Descriptions.Item>
+          <Descriptions.Item label="更新时间">{version.updated_at || version.created_at || '-'}</Descriptions.Item>
+          <Descriptions.Item label="训练权重">{String((version.manifest || {}).weights_path || '-')}</Descriptions.Item>
+        </Descriptions>
+      )}
+    </Drawer>
   );
 }
