@@ -148,6 +148,12 @@ function contractKey(job: JobRow) {
   return `task:${job.task_id}`;
 }
 
+function resolvedContractKey(job: JobRow, knownByTask: Map<number, string>) {
+  const manifest = job.params?.dataset_manifest;
+  if (manifest?.dataset_label_contract_id) return `contract:${manifest.dataset_label_contract_id}`;
+  return knownByTask.get(Number(job.task_id)) || contractKey(job);
+}
+
 export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode }) {
   const navigate = useNavigate();
   const [selected, setSelected] = useState<Contract | null>(null);
@@ -175,9 +181,16 @@ export default function ContractAssetCenter({ mode = 'model' }: { mode?: Mode })
         if (version.training_job_id && manifest.task_name) familyNameByJob.set(Number(version.training_job_id), String(manifest.task_name));
       }
     }
+    const knownByTask = new Map<number, string>();
+    for (const job of jobs) {
+      const contractId = job.params?.dataset_manifest?.dataset_label_contract_id;
+      if (contractId && !knownByTask.has(Number(job.task_id))) {
+        knownByTask.set(Number(job.task_id), `contract:${contractId}`);
+      }
+    }
     const grouped = new Map<string, Contract>();
     for (const job of jobs) {
-      const key = contractKey(job);
+      const key = resolvedContractKey(job, knownByTask);
       const version = versionsByJob.get(Number(job.id));
       let contract = grouped.get(key);
       if (!contract) {
