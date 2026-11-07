@@ -17,9 +17,10 @@ import ResourcePage from '../ResourcePage';
 import { trainingRuntimeStatusLabel, trainingStatusLabel, type Row } from '../shared';
 import AutoIterationSettingsPanel from './AutoIterationSettings';
 import DatasetTreeTable from './datasetTreeTable';
+import ContractAssetCenter from './contractAssets';
 import TrainingAiReportAction from './TrainingAiReport';
 
-type TrainingView = 'datasets' | 'jobs' | 'auto-plan' | 'reports' | 'iteration-settings';
+type TrainingView = 'contracts' | 'datasets' | 'jobs' | 'auto-plan' | 'reports' | 'iteration-settings';
 
 export const TARGET_CHIP_OPTIONS = [
   { value: 'bm1688', label: 'BM1688' },
@@ -298,7 +299,7 @@ const TRAINING_PANELS: Record<'auto-plan' | 'reports', { title: string; descript
 export function trainingViewFromLocation(): TrainingView {
   if (typeof window === 'undefined') return 'datasets';
   const view = new URLSearchParams(window.location.search).get('view');
-  if (view === 'auto-plan' || view === 'reports' || view === 'iteration-settings' || view === 'jobs') {
+  if (view === 'contracts' || view === 'auto-plan' || view === 'reports' || view === 'iteration-settings' || view === 'jobs') {
     return view;
   }
   return 'datasets';
@@ -4528,7 +4529,7 @@ export default function TrainingPage() {
   }, [activeView, isTaskSuperuser, isTaskSuperuserFetched]);
   const handleViewChange = (key: string) => {
     const requested: TrainingView =
-      key === 'auto-plan' || key === 'reports' || key === 'iteration-settings' || key === 'jobs'
+      key === 'contracts' || key === 'auto-plan' || key === 'reports' || key === 'iteration-settings' || key === 'jobs'
         ? key
         : 'datasets';
     const next: TrainingView = requested === 'auto-plan' && isTaskSuperuserFetched && !isTaskSuperuser ? 'jobs' : requested;
@@ -4554,6 +4555,7 @@ export default function TrainingPage() {
       onChange={handleViewChange}
       destroyInactiveTabPane
       items={[
+        { key: 'contracts', label: '按标签契约', children: <ContractAssetCenter mode="training" /> },
         { key: 'datasets', label: '按数据集', children: <DatasetTreeTable mode="training" /> },
         { key: 'jobs', label: '全部训练作业', children: jobsPanel },
         { key: 'iteration-settings', label: '自动迭代设置', children: <AutoIterationSettingsPanel /> },

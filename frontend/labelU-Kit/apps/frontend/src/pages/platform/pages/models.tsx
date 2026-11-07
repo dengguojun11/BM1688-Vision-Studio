@@ -19,12 +19,14 @@ import {
   InputNumber,
   Modal,
   Pagination,
+  Segmented,
   Select,
   Space,
   Spin,
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   Upload,
   message,
@@ -36,6 +38,7 @@ import styled from 'styled-components';
 
 import request from '@/api/request';
 import ServerSearchInput from '@/components/ServerSearchInput';
+import ContractAssetCenter from './contractAssets';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
 import { listData, listTotal, ModuleHeader, responseStatus, TablePanel, type Row } from '../shared';
 import EdgeValidationModal from './edgeValidationModal';
@@ -779,6 +782,18 @@ function lineageReference(name: string | null | undefined, id: number | null | u
   return id == null ? '未记录' : `${kind} #${id}`;
 }
 
+function modelVariantSummary(
+  name: string | null | undefined,
+  id: number | null | undefined,
+): { text: string; labels: string[] } {
+  const raw = String(name || '').trim();
+  if (raw.startsWith('标签:')) {
+    const labels = raw.slice('标签:'.length).split('/').filter(Boolean);
+    return { text: `标签组 · ${labels.length} 个标签`, labels };
+  }
+  return { text: lineageReference(name, id, '分支'), labels: [] };
+}
+
 function selectionContractSummary(contract: Record<string, unknown> | null | undefined) {
   if (!contract) return '未记录';
   const mode = String(contract.mode || '').trim();
@@ -1228,6 +1243,21 @@ export function latestModelFamilyVersion(family: Pick<ModelFamily, 'latest_versi
   return [...versions].sort(
     (left, right) => modelVersionTime(right) - modelVersionTime(left) || Number(right.id) - Number(left.id),
   )[0] || null;
+}
+
+/**
+ * The backend names a family after its series (for example ``yolov11``), so
+ * different tasks with the same algorithm look identical.  Prefer the task
+ * name recorded in the latest version manifest for the row heading.
+ */
+export function modelFamilyTaskName(family: ModelFamily): string {
+  const latest = latestModelFamilyVersion(family);
+  const manifest = (latest?.manifest || {}) as Record<string, unknown>;
+  const manifestTaskName = String(manifest.task_name || '').trim();
+  if (manifestTaskName) return manifestTaskName;
+  const displayName = String(latest?.display_name || family.display_name || '').trim();
+  const withoutJob = displayName.split(' · 作业 #', 1)[0].trim();
+  return withoutJob || `任务 #${family.task_id}`;
 }
 
 function modelBranchIdentity(model: Pick<ModelVersion, 'series_id' | 'variant_id' | 'branch_key'>): string | null {
@@ -2157,13 +2187,16 @@ function ModelLineageCell({ row }: { row: ModelVersion }) {
       row.parent_model_version_id != null,
   );
   if (!hasLineage) return <span style={{ color: '#98a2b3' }}>未记录系列</span>;
+  const variant = modelVariantSummary(row.variant_name, row.variant_id);
   return (
     <Space direction="vertical" size={0}>
-      <span>{lineageReference(row.series_name, row.series_id, '系列')}</span>
-      <span style={{ color: '#667085', fontSize: 12 }}>
-        {lineageReference(row.variant_name, row.variant_id, '分支')}
-        {row.parent_model_version_id != null ? ` · 父模型 #${row.parent_model_version_id}` : ''}
-      </span>
+      <span>系列：{lineageReference(row.series_name, row.series_id, '系列')}</span>
+      <Tooltip title={variant.labels.length ? variant.labels.join('、') : undefined}>
+        <span style={{ color: '#667085', fontSize: 12 }}>分支：{variant.text}</span>
+      </Tooltip>
+      {row.parent_model_version_id != null && (
+        <span style={{ color: '#98a2b3', fontSize: 12 }}>父模型 #{row.parent_model_version_id}</span>
+      )}
     </Space>
   );
 }
@@ -2730,6 +2763,7 @@ export default function ModelsPage() {
   const [selected, setSelected] = useState<ModelVersion | null>(null);
   const [selectedDetailMode, setSelectedDetailMode] = useState<ModelDetailMode>('pt');
   const [externalImportOpen, setExternalImportOpen] = useState(false);
+  const [ptLayout, setPtLayout] = useState<'contracts' | 'classic'>('contracts');
   const [expandedFamilyKeys, setExpandedFamilyKeys] = useState<string[]>([]);
   const [expandedCompileFamilyKeys, setExpandedCompileFamilyKeys] = useState<string[]>([]);
   const requestedView = searchParams.get('view');
@@ -3199,51 +3233,98 @@ export default function ModelsPage() {
   };
   const bmodelColumns: ColumnsType<ModelVersion> = [
     {
-      title: '模型',
+      title: '模型版本',
       key: 'display_name',
-      width: 280,
-      ellipsis: true,
+      width: 220,
       render: (_, row) => (
         <Space direction="vertical" size={0}>
-          <strong>{row.display_name}</strong>
-          <span style={{ color: '#667085', fontSize: 12 }}>分支版本 {modelVersionLabel(row)}</span>
+          <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.display_name}>
+            {row.display_name}
+          </strong>
+          <span style={{ color: '#667085', fontSize: 12 }}>
+            分支版本 {modelVersionLabel(row)}
+            {row.training_job_id ? ` · 训练作业 #${row.training_job_id}` : ''}
+          </span>
         </Space>
       ),
     },
     {
       title: '系列 / 分支',
       key: 'model_lineage',
-      width: 190,
+      width: 180,
       render: (_, row) => <ModelLineageCell row={row} />,
     },
     {
-      title: 'BModel 制品',
+      title: (
+        <Tooltip title="同一版本可能编译多次；每个精度只展示最新一次生成的制品">
+          <span>BModel 制品</span>
+        </Tooltip>
+      ),
       key: 'artifacts',
-      width: 220,
+      width: 180,
       render: (_, row) => {
-        const artifacts = (row.artifacts || []).filter(
-          (artifact) => String(artifact.artifact_type || '').toLowerCase() === 'bmodel',
+        const byPrecision = new Map<string, ModelArtifact>();
+        const rank = (artifact: ModelArtifact) =>
+          (String(artifact.status || '').toUpperCase() === 'READY' ? 1_000_000_000 : 0) +
+          Number(artifact.id || 0);
+        for (const artifact of row.artifacts || []) {
+          if (String(artifact.artifact_type || '').toLowerCase() !== 'bmodel') continue;
+          const precision = String(artifact.precision || '未知').toUpperCase();
+          const previous = byPrecision.get(precision);
+          if (!previous || rank(artifact) > rank(previous)) {
+            byPrecision.set(precision, artifact);
+          }
+        }
+        const preferred = ['FP32', 'FP16', 'INT8'];
+        const precisionTags = [...byPrecision.keys()].sort(
+          (left, right) => {
+            const leftIndex = preferred.indexOf(left);
+            const rightIndex = preferred.indexOf(right);
+            return (leftIndex < 0 ? 99 : leftIndex) - (rightIndex < 0 ? 99 : rightIndex) || left.localeCompare(right);
+          },
         );
         return (
           <Space wrap size={[4, 4]}>
-            {artifacts.map((artifact) => (
-              <Tag key={artifact.id} color={artifact.status === 'READY' ? 'green' : 'gold'}>
-                {String(artifact.precision || '未知').toUpperCase()}
-              </Tag>
-            ))}
-            {!artifacts.length && <Tag>未生成</Tag>}
+            {precisionTags.map((precision) => {
+              const artifact = byPrecision.get(precision);
+              const ready = String(artifact?.status || '').toUpperCase() === 'READY';
+              return (
+                <Tag key={precision} color={ready ? 'green' : 'gold'} title={ready ? `${precision} 已生成` : `${precision} 生成中`}>
+                  {precision}
+                </Tag>
+              );
+            })}
+            {!precisionTags.length && <Tag>未生成</Tag>}
           </Space>
         );
       },
     },
-    { title: '边端状态', key: 'edge', width: 130, render: (_, row) => renderBmodelEdgeStatus(row) },
-    { title: '边端版本效果', key: 'edge_version_trend', width: 190, render: (_, row) => renderEdgeVersionTrend(row) },
-    { title: '发布状态', key: 'release', width: 130, render: (_, row) => renderBmodelPublishStatus(row) },
-    { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 180, render: formatDateTime },
+    {
+      title: '验证与发布',
+      key: 'status_summary',
+      width: 235,
+      render: (_, row) => (
+        <Space direction="vertical" size={2}>
+          <span>
+            <Typography.Text type="secondary">边端验证：</Typography.Text>
+            {renderBmodelEdgeStatus(row)}
+          </span>
+          <span>
+            <Typography.Text type="secondary">发布：</Typography.Text>
+            {renderBmodelPublishStatus(row)}
+          </span>
+          <span>
+            <Typography.Text type="secondary">版本对比：</Typography.Text>
+            {renderEdgeVersionTrend(row)}
+          </span>
+        </Space>
+      ),
+    },
+    { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 150, render: formatDateTime },
     {
       title: '操作',
       key: 'actions',
-      width: 330,
+      width: 260,
       fixed: 'right',
       render: (_, row) => {
         const edgeExportId = modelBm1688ExportId(row);
@@ -3285,10 +3366,17 @@ export default function ModelsPage() {
       ellipsis: true,
       render: (_, family) => {
         const published = family.versions.find((row) => row.id === family.published_version_id);
+        const taskName = modelFamilyTaskName(family);
+        const seriesName = String(family.display_name || '').trim();
         return (
           <Space direction="vertical" size={2}>
-            <strong>{family.display_name || `任务 #${family.task_id}`}</strong>
+            <strong style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={taskName}>
+              {taskName}
+            </strong>
             <Space size={6} wrap>
+              {seriesName && seriesName !== taskName && (
+                <span style={{ color: '#667085', fontSize: 12 }}>系列 {seriesName}</span>
+              )}
               <span style={{ color: '#667085', fontSize: 12 }}>共 {family.version_count} 个版本</span>
               {published && <Tag color="green">已发布 {modelVersionLabel(published)}</Tag>}
             </Space>
@@ -3302,13 +3390,14 @@ export default function ModelsPage() {
       width: 150,
       render: (_, family) => {
         const latest = latestModelFamilyVersion(family);
+        const variant = latest ? modelVariantSummary(latest.variant_name, latest.variant_id) : null;
         return latest ? (
           <Space direction="vertical" size={0}>
             <Space size={6}><span>{modelVersionLabel(latest)}</span><Tag color="blue">系列最新</Tag></Space>
-            {(latest.variant_name || latest.variant_id) && (
-              <span style={{ color: '#667085', fontSize: 12 }}>
-                分支 {latest.variant_name || `#${latest.variant_id}`}
-              </span>
+            {variant && (
+              <Tooltip title={variant.labels.length ? variant.labels.join('、') : undefined}>
+                <span style={{ color: '#667085', fontSize: 12 }}>分支 {variant.text}</span>
+              </Tooltip>
             )}
           </Space>
         ) : '-';
@@ -3317,13 +3406,19 @@ export default function ModelsPage() {
     {
       title: view === 'bmodel' ? '最新边端 / 发布状态' : '最新训练状态',
       key: 'latest_status',
-      width: 210,
+      width: view === 'bmodel' ? 255 : 210,
       render: (_, family) => {
         const latest = latestModelFamilyVersion(family);
         if (!latest) return '-';
         return view === 'bmodel' ? (
-          <Space size={4} wrap>{renderBmodelEdgeStatus(latest)}{renderEdgeVersionTrend(latest)}{renderBmodelPublishStatus(latest)}</Space>
-        ) : ptTrainingStatusTag(latest);
+          <Space direction="vertical" size={2}>
+            <span><Typography.Text type="secondary">边端验证：</Typography.Text>{renderBmodelEdgeStatus(latest)}</span>
+            <span><Typography.Text type="secondary">发布：</Typography.Text>{renderBmodelPublishStatus(latest)}</span>
+            <span><Typography.Text type="secondary">版本对比：</Typography.Text>{renderEdgeVersionTrend(latest)}</span>
+          </Space>
+        ) : (
+          ptTrainingStatusTag(latest)
+        );
       },
     },
     { title: '更新时间', dataIndex: 'updated_at', key: 'updated_at', width: 180, render: formatDateTime },
@@ -3630,6 +3725,17 @@ export default function ModelsPage() {
             <Button type={view === 'pt' ? 'primary' : 'default'} onClick={() => changeView('pt')}>
               训练权重（PT）
             </Button>
+            {view === 'pt' && (
+              <Segmented
+                size="small"
+                value={ptLayout}
+                onChange={(value) => setPtLayout(value as 'contracts' | 'classic')}
+                options={[
+                  { label: '契约卡片', value: 'contracts' },
+                  { label: '经典表格', value: 'classic' },
+                ]}
+              />
+            )}
             <Button type={view === 'compile' ? 'primary' : 'default'} onClick={() => changeView('compile')}>
               编译任务
             </Button>
@@ -3662,6 +3768,20 @@ export default function ModelsPage() {
             ? '查看所有有权限访问的外部权重；管理人员可查看并删除全部记录，标注人员可删除自己上传的记录。'
             : '同一任务与算法的训练迭代归为一个模型系列；展开查看历史版本、召回率和推荐置信度，完整曲线请到训练中心查看。'}
         </p>
+        {view === 'bmodel' && (
+          <Alert
+            className="model-center-alert"
+            type="info"
+            showIcon
+            message="这一页怎么看"
+            description={
+              <span>
+                一个模型系列 = 一个任务 + 一种算法；系列里的每个版本 = 一次训练作业。FP32 / FP16 / INT8 是同一版本的三种 BModel 编译精度，不是三个模型。
+                「验证中」表示边端验证还没结束，「暂不可发布」表示该版本还没通过边端/发布门禁；「首个边端版本」「上一版边端未完成验证」都表示暂时没有可对比的上一版基线。
+              </span>
+            }
+          />
+        )}
         {groupedView && (
           <Space className="model-center-filter" wrap style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
             <ServerSearchInput
@@ -4105,6 +4225,8 @@ export default function ModelsPage() {
             }}
             onSelect={(model) => selectModel(model, hasBm1688Artifact(model) ? 'bmodel' : 'pt')}
           />
+        ) : view === 'pt' && ptLayout === 'contracts' && !hasModelDeepLink ? (
+          <ContractAssetCenter mode="model" />
         ) : query.isLoading ? (
           <div role="status" aria-live="polite" style={{ padding: '28px 0', textAlign: 'center' }}>
             <Spin />
@@ -4118,7 +4240,7 @@ export default function ModelsPage() {
             loading={query.isFetching}
             size="small"
             tableLayout="fixed"
-            scroll={{ x: view === 'bmodel' ? 1020 : 950 }}
+            scroll={{ x: view === 'bmodel' ? 1160 : 950 }}
             expandedRowKeys={expandedFamilyKeys}
             onExpandedRowsChange={(keys) => setExpandedFamilyKeys(keys.map(String))}
             expandable={{
@@ -4134,8 +4256,8 @@ export default function ModelsPage() {
                     dataSource={family.versions}
                     pagination={false}
                     size="small"
-                    tableLayout="fixed"
-                    scroll={{ x: view === 'bmodel' ? 1140 : 1300 }}
+                    tableLayout={view === 'bmodel' ? 'auto' : 'fixed'}
+                    scroll={view === 'bmodel' ? undefined : { x: 1300 }}
                   />
                 </div>
               ),

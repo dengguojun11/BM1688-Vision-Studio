@@ -10,6 +10,7 @@ import ServerSearchInput from '@/components/ServerSearchInput';
 import useTaskSuperuser from '@/hooks/useTaskSuperuser';
 
 import IntegrationRequestsPanel from './integrationCenter';
+import ContractAssetCenter from './contractAssets';
 
 import {
   listData,
@@ -513,7 +514,7 @@ export function summarizeImportGroups(rows: Row[]) {
 
 export default function EvolutionPage() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') === 'third-party' ? 'third-party' : 'integration';
+  const activeTab = searchParams.get('tab') === 'third-party' ? 'third-party' : searchParams.get('tab') === 'contracts' ? 'contracts' : 'integration';
   const changeTab = (key: string) => {
     const next = new URLSearchParams(searchParams);
     if (key === 'integration') next.delete('tab');
@@ -544,6 +545,8 @@ export default function EvolutionPage() {
        * 供其原有内部流程使用。
        */}
       <Tabs activeKey={activeTab} onChange={changeTab} items={[{
+        key: 'contracts', label: '按标签契约', children: <ContractAssetCenter mode="evolution" />,
+      }, {
         key: 'integration',
         label: '模型优化请求',
         children: <IntegrationRequestsPanel />,
